@@ -121,3 +121,16 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Hard Invariant 2: every persisted amount is an integer count of Philippine
+# centavos. Presentation code reads these constants instead of embedding symbols
+# or decimal-place assumptions throughout templates and services.
+CURRENCY_CODE = "PHP"
+CURRENCY_SYMBOL = "₱"
+CURRENCY_MINOR_UNITS = 2
+
+# Customer is the registered-shopper auth model; guest orders keep this relation
+# NULL. This must be set before the first accounts migration because Django
+# cannot safely swap the user model after tables and foreign keys exist.
+AUTH_USER_MODEL = "accounts.Customer"
+LOGIN_URL = "/accounts/login/"
