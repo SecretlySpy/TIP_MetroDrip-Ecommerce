@@ -1,0 +1,33 @@
+{
+	# This address receives ACME expiry notices; it is injected at deployment
+	# time and is not stored as an operator-specific value in the repository.
+	email {$CADDY_EMAIL}
+	admin off
+}
+
+{$STAGING_HOST} {
+	# Compression reduces transfer size while Caddy negotiates the best encoding
+	# supported by each browser.
+	encode zstd gzip
+
+	# These headers provide conservative browser protections without imposing a
+	# CSP that could break Django admin or the evolving storefront during M1.
+	header {
+		-Server
+		# Match Django's 30-day staging bake-in. A one-year/preload policy is a
+		# deliberate release-hardening decision after every HTTPS path is proven.
+		Strict-Transport-Security "max-age=2592000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Caddy preserves the original Host and adds X-Forwarded-Proto by default, so
+	# Django's host, CSRF, secure-cookie, and redirect checks see the public origin.
+	reverse_proxy app:8000
+
+	log {
+		output stdout
+		format console
+	}
+}

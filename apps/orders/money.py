@@ -33,16 +33,21 @@ def require_centavos(value, field_name="amount", *, allow_negative=False):
 
 def format_centavos(value, symbol=None):
     """Format an integer centavo value as a grouped peso amount."""
-    amount = require_centavos(value, allow_negative=True)
+    amount = require_centavos(value)
     selected_symbol = settings.CURRENCY_SYMBOL if symbol is None else symbol
     if not isinstance(selected_symbol, str):
         raise MoneyValueError("currency symbol must be a string.")
 
-    # Work with the absolute magnitude so negative output consistently places
-    # the sign before the currency symbol: -₱1.23.
-    pesos, centavos = divmod(abs(amount), 100)
-    sign = "-" if amount < 0 else ""
-    return f"{sign}{selected_symbol}{pesos:,}.{centavos:02d}"
+    minor_units = settings.CURRENCY_MINOR_UNITS
+    if isinstance(minor_units, bool) or not isinstance(minor_units, int) or minor_units < 0:
+        raise MoneyValueError("currency minor units must be a nonnegative integer.")
+
+    # Reading the configured scale keeps formatting centralized. MetroDrip pins
+    # this to two for PHP centavos, while tests can prove no literal scale leaks.
+    scale = 10**minor_units
+    major, minor = divmod(amount, scale)
+    fraction = f".{minor:0{minor_units}d}" if minor_units else ""
+    return f"{selected_symbol}{major:,}{fraction}"
 
 
 def multiply_centavos(unit_price, quantity):

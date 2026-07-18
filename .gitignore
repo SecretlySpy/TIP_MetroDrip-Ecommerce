@@ -8,9 +8,15 @@ __pycache__/
 staticfiles/
 media/
 db.sqlite3
+backups/
 
-# Secrets — never commit environment files
+# Secrets — never commit environment files. Named examples remain versioned so
+# operators know every required variable without seeing a real credential.
 .env
+.env.*
+deploy/.env.staging
+!*.example
+!deploy/*.example
 
 # Tooling caches
 .pytest_cache/

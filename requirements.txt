@@ -14,6 +14,11 @@ APScheduler~=3.10
 # 12-factor style env configuration (secrets never in the repo).
 python-dotenv~=1.0
 
+# Production/staging runtime: Gunicorn serves Django on Linux; WhiteNoise serves
+# collected static assets without adding another paid storage service at M1.
+gunicorn~=26.0
+whitenoise~=6.12
+
 # QA tooling (handover §2: pytest + ruff, CI on every push)
 pytest~=8.3
 pytest-django~=4.9

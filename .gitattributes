@@ -1,0 +1,7 @@
+# Linux container entrypoints and deployment manifests must keep LF endings even
+# when contributors use Git on Windows.
+*.sh text eol=lf
+Dockerfile text eol=lf
+Caddyfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

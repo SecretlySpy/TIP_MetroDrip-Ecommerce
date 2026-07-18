@@ -1,0 +1,32 @@
+# Source-control and local tooling state never belong in the runtime image.
+.git
+.github
+.venv
+.pytest_cache
+.ruff_cache
+**/__pycache__
+**/*.py[cod]
+
+# Secrets are always injected by Compose. Keep only sanitized examples in the
+# build context so an accidental broad COPY cannot capture real credentials.
+.env
+.env.*
+!.env.example
+deploy/.env.staging
+!deploy/.env.staging.example
+
+# Host-generated and user-uploaded data must not be baked into an immutable
+# image. Static assets are regenerated safely by the startup entrypoint.
+staticfiles
+media
+backups
+*.sql
+coverage.xml
+.coverage
+htmlcov
+
+# Development-only inputs are excluded to keep the staging image focused.
+tests
+docker
+docker-compose.yml
+*.md

@@ -40,5 +40,134 @@ jobs:
         run: pip install -r requirements.txt
       - name: Lint (ruff)
         run: ruff check .
+      - name: Format contract (ruff)
+        run: ruff format --check .
+      - name: Django system check
+        run: python manage.py check
+      - name: Migration drift
+        run: python manage.py makemigrations --check --dry-run
+      - name: Staging deploy settings check
+        env:
+          DJANGO_SECRET_KEY: ci-only-7vB2tXm9Qp4kR8sN6yH3cW5zF1uJ0aL2dG7eT9iO4pV8xK6mN3rS5
+          DJANGO_ALLOWED_HOSTS: staging.example.test
+          DJANGO_CSRF_TRUSTED_ORIGINS: https://staging.example.test
+          STAGING_HOST: staging.example.test
+          MYSQL_PASSWORD: ci-only-database-password
+          STAGING_SEED_PREVIEW_ENABLED: "0"
+          STAGING_ALLOW_INSECURE_HTTP: "0"
+        run: >-
+          python manage.py check --deploy --fail-level WARNING
+          --settings=config.settings.staging
       - name: Tests (pytest)
         run: pytest
+      - name: Reversible migration gate
+        run: |
+          python manage.py migrate --noinput
+          python manage.py migrate catalog zero --noinput
+          python manage.py migrate --noinput
+
+  deployment-contracts:
+    runs-on: ubuntu-latest
+    env:
+      DJANGO_SECRET_KEY: ci-only-7vB2tXm9Qp4kR8sN6yH3cW5zF1uJ0aL2dG7eT9iO4pV8xK6mN3rS5
+      DJANGO_ALLOWED_HOSTS: localhost
+      DJANGO_CSRF_TRUSTED_ORIGINS: https://localhost:18443
+      STAGING_HOST: localhost
+      CADDY_EMAIL: ci@example.test
+      MYSQL_DATABASE: metrodrip_staging_ci
+      MYSQL_USER: metrodrip_ci
+      MYSQL_PASSWORD: ci-only-database-password
+      MYSQL_ROOT_PASSWORD: ci-only-distinct-root-password
+      STAGING_HTTP_PORT: "18080"
+      STAGING_HTTPS_PORT: "18443"
+      STAGING_SEED_DEMO: "1"
+      STAGING_SEED_PREVIEW_ENABLED: "1"
+      STAGING_ALLOW_INSECURE_HTTP: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate entrypoint syntax
+        run: sh -n deploy/entrypoint.sh
+      - name: Validate Compose interpolation and schema
+        run: >-
+          docker compose
+          --env-file deploy/.env.staging.example
+          -f deploy/compose.staging.yml
+          config --quiet
+      - name: Validate Caddy configuration
+        run: >-
+          docker run --rm
+          -e STAGING_HOST=staging.example.test
+          -e CADDY_EMAIL=ci@example.test
+          -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2-alpine
+          caddy validate --config /etc/caddy/Caddyfile
+      - name: Validate Dockerfile build checks
+        run: docker build --check .
+      - name: Build staging image
+        run: >-
+          docker build
+          --tag metrodrip-staging:ci
+          --tag metrodrip-staging:local
+          .
+      - name: Verify image identity and ownership boundaries
+        run: |
+          test "$(docker image inspect metrodrip-staging:ci --format '{{.Config.User}}')" = "10001:10001"
+          docker run --rm --entrypoint /bin/sh metrodrip-staging:ci -c '
+            test "$(stat -c %u /app/manage.py)" = "0" &&
+            test "$(stat -c %g /app/manage.py)" = "0" &&
+            test "$(stat -c %a /app/manage.py)" = "755" &&
+            test "$(stat -c %u /app/staticfiles)" = "10001" &&
+            test "$(stat -c %g /app/staticfiles)" = "10001" &&
+            test "$(stat -c %a /app/staticfiles)" = "755" &&
+            test ! -w /app/manage.py &&
+            test -w /app/staticfiles &&
+            test -x /app/deploy/entrypoint.sh
+          '
+      - name: Run disposable HTTPS stack and persistence smoke
+        run: |
+          compose=(
+            docker compose
+            -p metrodrip-ci
+            --env-file deploy/.env.staging.example
+            -f deploy/compose.staging.yml
+          )
+          "${compose[@]}" up -d --no-build --wait --wait-timeout 180
+
+          ready=""
+          for attempt in $(seq 1 30); do
+            if ready="$(curl -ksSf https://localhost:18443/healthz/ready/)"; then
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = '{"status": "ok"}'
+
+          preview="$(curl -ksSf https://localhost:18443/staging/seed/)"
+          test "${preview#*5 products / 180 variants}" != "$preview"
+          test "$(curl -ksS -o /dev/null -w '%{http_code}' https://localhost:18443/admin/)" = "302"
+          test "$(curl -ksS -o /dev/null -w '%{http_code}' https://localhost:18443/static/admin/css/base.css)" = "200"
+
+          "${compose[@]}" up -d --force-recreate --no-build --wait --wait-timeout 180
+          counts="$("${compose[@]}" exec -T db sh -c '
+            MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --batch --skip-column-names \
+              --user=root "$MYSQL_DATABASE" \
+              --execute="SELECT (SELECT COUNT(*) FROM catalog_product), (SELECT COUNT(*) FROM catalog_productvariant), (SELECT COUNT(*) FROM inventory_stockrecord), (SELECT COUNT(*) FROM inventory_stockmovement);"
+          ')"
+          test "$counts" = $'5\t180\t180\t180'
+
+          ready=""
+          for attempt in $(seq 1 30); do
+            if ready="$(curl -ksSf https://localhost:18443/healthz/ready/)"; then
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = '{"status": "ok"}'
+      - name: Remove disposable HTTPS stack
+        if: always()
+        run: >-
+          docker compose
+          -p metrodrip-ci
+          --env-file deploy/.env.staging.example
+          -f deploy/compose.staging.yml
+          down -v --remove-orphans

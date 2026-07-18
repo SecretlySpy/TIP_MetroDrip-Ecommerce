@@ -115,7 +115,7 @@ TIME_ZONE = "Asia/Manila"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 # collectstatic target; product images use object storage + CDN, never this disk (§2)
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -128,6 +128,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 CURRENCY_CODE = "PHP"
 CURRENCY_SYMBOL = "₱"
 CURRENCY_MINOR_UNITS = 2
+
+# The temporary M1 seed browser must never leak into development/production by
+# accident. Only staging.py can opt in through an explicit environment flag.
+STAGING_SEED_PREVIEW_ENABLED = False
 
 # Customer is the registered-shopper auth model; guest orders keep this relation
 # NULL. This must be set before the first accounts migration because Django

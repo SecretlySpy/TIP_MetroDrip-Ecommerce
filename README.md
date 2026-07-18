@@ -34,3 +34,11 @@ docker compose up -d db
 .venv/Scripts/ruff check .
 .venv/Scripts/pytest            # needs the Docker MySQL up — concurrency tests use real InnoDB locks
 ```
+
+## Staging
+
+The provider-neutral Caddy/Gunicorn/MySQL deployment, environment contract,
+backup procedure, and acceptance smoke are documented in
+[deploy/README.md](deploy/README.md). Local HTTPS validation is complete; M1
+still requires an operator-provided public host, DNS record, and trusted
+certificate before the strict build order proceeds to Epic B.

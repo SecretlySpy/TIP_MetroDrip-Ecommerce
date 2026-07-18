@@ -1,0 +1,128 @@
+name: metrodrip-staging
+
+# Bound local JSON logs so access traffic cannot fill a bootstrap-sized SSD.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    # MySQL 8.4 is the supported LTS line and is pinned to avoid surprise major
+    # upgrades. Its port is never published to the host or public network.
+    image: mysql:8.4
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-storage-engine=InnoDB
+    environment:
+      MYSQL_DATABASE: "${MYSQL_DATABASE:?Set MYSQL_DATABASE in deploy/.env.staging}"
+      MYSQL_USER: "${MYSQL_USER:?Set MYSQL_USER in deploy/.env.staging}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in deploy/.env.staging}"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in deploy/.env.staging}"
+    volumes:
+      - dbdata:/var/lib/mysql
+    networks:
+      - database
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          MYSQL_PWD="$${MYSQL_ROOT_PASSWORD}"
+          mysqladmin ping -h 127.0.0.1 --user=root --silent
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  app:
+    # Only this service is built from the repository. It remains private and is
+    # reachable publicly only through the Caddy reverse proxy.
+    image: metrodrip-staging:local
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.staging
+      DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in deploy/.env.staging}"
+      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS in deploy/.env.staging}"
+      DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:?Set DJANGO_CSRF_TRUSTED_ORIGINS in deploy/.env.staging}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:?Set MYSQL_DATABASE in deploy/.env.staging}"
+      MYSQL_USER: "${MYSQL_USER:?Set MYSQL_USER in deploy/.env.staging}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in deploy/.env.staging}"
+      MYSQL_HOST: db
+      MYSQL_PORT: "3306"
+      STAGING_HOST: "${STAGING_HOST:?Set STAGING_HOST in deploy/.env.staging}"
+      STAGING_SEED_DEMO: "${STAGING_SEED_DEMO:-0}"
+      STAGING_SEED_PREVIEW_ENABLED: "${STAGING_SEED_PREVIEW_ENABLED:-0}"
+      STAGING_ALLOW_INSECURE_HTTP: "${STAGING_ALLOW_INSECURE_HTTP:-0}"
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
+    networks:
+      - edge
+      - database
+    healthcheck:
+      # The direct probe supplies the same host/proxy headers Caddy sends. This
+      # exercises Django host validation, HTTPS awareness, and database readiness.
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import http.client;
+          connection = http.client.HTTPConnection('127.0.0.1', 8000, timeout=5);
+          connection.request('GET', '/healthz/ready/', headers={'Host': '$${STAGING_HOST}', 'X-Forwarded-Proto': 'https'});
+          response = connection.getresponse();
+          raise SystemExit(0 if response.status == 200 else 1)"
+      interval: 15s
+      timeout: 8s
+      retries: 8
+      start_period: 45s
+    stop_grace_period: 30s
+
+  caddy:
+    # Caddy obtains and renews public TLS certificates automatically once DNS
+    # points at this host and inbound TCP ports 80/443 are reachable.
+    image: caddy:2-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      STAGING_HOST: "${STAGING_HOST:?Set STAGING_HOST in deploy/.env.staging}"
+      CADDY_EMAIL: "${CADDY_EMAIL:?Set CADDY_EMAIL in deploy/.env.staging}"
+    ports:
+      - "${STAGING_HTTP_PORT:-80}:80"
+      - "${STAGING_HTTPS_PORT:-443}:443"
+      - "${STAGING_HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - edge
+
+volumes:
+  # Named volumes survive container replacement and ordinary Compose restarts.
+  dbdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  # The edge network gives Caddy outbound access for ACME certificate issuance.
+  edge:
+  # Only Django and MySQL join this internal network; it has no public route.
+  database:
+    internal: true

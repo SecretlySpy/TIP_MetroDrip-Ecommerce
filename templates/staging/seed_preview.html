@@ -1,0 +1,50 @@
+{% load money %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MetroDrip staging seed</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, system-ui, sans-serif; }
+      body { margin: 0; background: #f4f4f2; color: #141414; }
+      main { width: min(70rem, calc(100% - 2rem)); margin: 2rem auto; }
+      header { border: 2px solid #141414; background: #c8f031; padding: 1.5rem; }
+      h1 { margin: 0 0 .5rem; font-size: clamp(2rem, 7vw, 4rem); text-transform: uppercase; }
+      .summary { font-family: "IBM Plex Mono", monospace; }
+      .grid { display: grid; gap: 1rem; margin-top: 1rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+      article { border: 1px dashed #75756e; background: #fff; padding: 1rem; }
+      h2 { margin-top: 0; }
+      dl { margin-bottom: 0; }
+      dt { color: #75756e; font-size: .8rem; text-transform: uppercase; }
+      dd { margin: .15rem 0 .75rem; font-family: "IBM Plex Mono", monospace; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Staging seed</h1>
+        <div class="summary" data-testid="seed-summary">
+          {{ product_count }} products / {{ total_variants }} variants
+        </div>
+      </header>
+      <section class="grid" aria-label="Seeded products">
+        {% for product in products %}
+          <article>
+            <h2>{{ product.name }}</h2>
+            <dl>
+              <dt>Category</dt>
+              <dd>{{ product.category.name }}</dd>
+              <dt>Base price</dt>
+              <dd>{{ product.base_price|peso }}</dd>
+              <dt>Variants</dt>
+              <dd>{{ product.variant_count }}</dd>
+            </dl>
+          </article>
+        {% empty %}
+          <article><h2>No active seed products found.</h2></article>
+        {% endfor %}
+      </section>
+    </main>
+  </body>
+</html>
