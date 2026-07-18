@@ -1,0 +1,20 @@
+# MetroDrip — locked stack (see MetroDrip_AI_Handover.md §2)
+# Python 3.14 / Django 5.2 LTS. MySQL 8 (InnoDB, utf8mb4) is the only supported database.
+
+Django~=5.2
+
+# MySQL driver. mysqlclient is Django's officially supported driver; PyMySQL is
+# installed as a pure-Python fallback for platforms without a mysqlclient wheel
+# (see config/settings/base.py for the shim and DECISIONS.md for rationale).
+PyMySQL~=1.1
+
+# Background jobs: in-process scheduler for reservation expiry + low-stock scan (v1).
+APScheduler~=3.10
+
+# 12-factor style env configuration (secrets never in the repo).
+python-dotenv~=1.0
+
+# QA tooling (handover §2: pytest + ruff, CI on every push)
+pytest~=8.3
+pytest-django~=4.9
+ruff~=0.11

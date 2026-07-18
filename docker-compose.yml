@@ -1,0 +1,24 @@
+# Local development database only — the app itself runs on the host (runserver).
+# MySQL 8 LTS with the charset invariant pinned server-side (Hard Invariant 6).
+services:
+  db:
+    image: mysql:8.4
+    container_name: metrodrip-mysql
+    command:
+      - mysqld
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: metrodrip
+      MYSQL_USER: metrodrip
+      MYSQL_PASSWORD: metrodrip
+    ports:
+      - "3306:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+      # Grants the app user rights over pytest's test_* databases.
+      - ./docker/mysql-init.sql:/docker-entrypoint-initdb.d/grants.sql:ro
+
+volumes:
+  dbdata:
