@@ -1,106 +1,116 @@
 {% extends "base.html" %}
 {% load money %}
-{% block title %}Order Status | MetroDrip{% endblock %}
+{% block title %}Order {{ order.order_no }}{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-12 max-w-4xl">
-    <div class="flex justify-between items-end mb-8 border-b-4 border-ink pb-4">
-        <div>
-            <h1 class="font-display text-4xl uppercase tracking-tighter">Order Status</h1>
-            <p class="font-mono text-muted text-sm mt-2">Order #{{ order.order_no }}</p>
-        </div>
-        <div class="text-right">
-            <span class="inline-block bg-volt text-ink border-2 border-ink px-4 py-1 font-display text-xl uppercase tracking-wider">
-                {{ order.get_status_display }}
-            </span>
-        </div>
+<div class="container">
+  <section class="section">
+
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: var(--space-md); border-bottom: 4px solid var(--color-ink); padding-bottom: var(--space-md);">
+      <div>
+        <h1>Order Status</h1>
+        <p class="text-mono text-muted mt-sm" style="font-size: 0.85rem;">Order <span class="sku-tag">{{ order.order_no }}</span></p>
+      </div>
+      <span class="status-badge status-badge--{{ order.status }}">{{ order.get_status_display }}</span>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <!-- Details -->
-        <div>
-            <h2 class="font-display text-2xl uppercase tracking-tighter mb-4">Summary</h2>
-            <div class="bg-surface border-2 border-ink p-6 font-mono text-sm space-y-4">
-                <div class="flex justify-between border-b border-border pb-2">
-                    <span class="text-muted uppercase">Date</span>
-                    <span>{{ order.created_at|date:"M d, Y" }}</span>
-                </div>
-                <div class="flex justify-between border-b border-border pb-2">
-                    <span class="text-muted uppercase">Subtotal</span>
-                    <span>{{ order.subtotal|centavos_to_peso }}</span>
-                </div>
-                <div class="flex justify-between border-b border-border pb-2">
-                    <span class="text-muted uppercase">Shipping</span>
-                    <span>{{ order.shipping_fee|centavos_to_peso }}</span>
-                </div>
-                <div class="flex justify-between font-bold text-lg pt-2">
-                    <span class="uppercase">Total</span>
-                    <span>{{ order.total|centavos_to_peso }}</span>
-                </div>
-            </div>
+    {% if steps %}
+      {# Fulfillment timeline: pending → paid → packed → shipped → delivered #}
+      <div class="order-steps" role="list" aria-label="Order progress">
+        {% for step in steps %}
+          <div class="order-step order-step--{{ step.state }}" role="listitem">{{ step.label }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
 
-            <h2 class="font-display text-2xl uppercase tracking-tighter mt-8 mb-4">Shipping Info</h2>
-            <div class="bg-white border-2 border-ink p-6 font-mono text-sm space-y-2">
-                <p><strong class="uppercase text-muted text-xs block mb-1">Name</strong> {{ order.shipping_address.name }}</p>
-                <p><strong class="uppercase text-muted text-xs block mb-1 mt-3">Address</strong> {{ order.shipping_address.address_line1 }}<br>{{ order.shipping_address.city }}<br>{{ order.shipping_address.zone }}</p>
-                
-                {% if order.shipment %}
-                    <p class="mt-4 pt-4 border-t border-border">
-                        <strong class="uppercase text-muted text-xs block mb-1">Tracking</strong>
-                        Courier: {{ order.shipment.get_courier_display|default:order.shipment.courier }}<br>
-                        Waybill: {{ order.shipment.waybill_no|default:"Pending" }}<br>
-                        {% if order.shipment.tracking_url %}
-                            <a href="{{ order.shipment.tracking_url }}" target="_blank" class="text-volt bg-ink px-2 py-1 inline-block mt-2">Track Package</a>
-                        {% endif %}
-                    </p>
+    <div class="checkout-layout mt-lg">
+
+      <div>
+        <div class="panel">
+          <h2 class="panel__title">Summary</h2>
+          <div class="summary-line">
+            <span class="waybill-card__label">Date</span>
+            <span class="text-mono">{{ order.created_at|date:"M d, Y" }}</span>
+          </div>
+          <div class="summary-line">
+            <span class="waybill-card__label">Subtotal</span>
+            <span class="text-mono">{{ order.subtotal|peso }}</span>
+          </div>
+          <div class="summary-line">
+            <span class="waybill-card__label">Shipping</span>
+            <span class="text-mono">{{ order.shipping_fee|peso }}</span>
+          </div>
+          <div class="summary-line summary-line--total">
+            <span>Total</span>
+            <span class="text-price">{{ order.total|peso }}</span>
+          </div>
+        </div>
+
+        <div class="panel mt-lg">
+          <h2 class="panel__title">Shipping Info</h2>
+          <div class="text-mono" style="font-size: 0.85rem;">
+            <span class="form-label">Name</span>
+            <p>{{ order.shipping_address.name }}</p>
+            <span class="form-label mt-md" style="margin-top: var(--space-md);">Address</span>
+            <p>
+              {{ order.shipping_address.address_line1 }}<br>
+              {{ order.shipping_address.city }}<br>
+              {{ order.shipping_address.zone }}
+            </p>
+
+            {% if order.shipment %}
+              <div style="border-top: 1px solid var(--color-border); margin-top: var(--space-md); padding-top: var(--space-md);">
+                <span class="form-label">Tracking</span>
+                <p>
+                  Courier: {{ order.shipment.courier|upper }}<br>
+                  Waybill: <span class="sku-tag">{{ order.shipment.waybill_no|default:"Pending" }}</span>
+                </p>
+                {% if order.shipment.tracking_url %}
+                  <a href="{{ order.shipment.tracking_url }}" target="_blank" rel="noopener" class="btn btn--secondary btn--sm mt-sm">Track Package ↗</a>
                 {% endif %}
-            </div>
+              </div>
+            {% endif %}
+          </div>
         </div>
+      </div>
 
-        <!-- Items -->
-        <div>
-            <h2 class="font-display text-2xl uppercase tracking-tighter mb-4">Items</h2>
-            <div class="bg-white border-2 border-ink p-6">
-                <div class="space-y-4">
-                    {% for item in order.items.all %}
-                        <div class="flex justify-between items-start font-mono text-sm border-b border-border pb-4 last:border-0 last:pb-0">
-                            <div>
-                                <p class="font-bold text-ink">{{ item.variant.product.name }}</p>
-                                <p class="text-muted text-xs mt-1">SKU: {{ item.variant.sku }}</p>
-                                <p class="text-muted text-xs">Size: {{ item.variant.get_size_display }} | Color: {{ item.variant.color }} | Fit: {{ item.variant.get_fit_display }}</p>
-                                <p class="text-muted text-xs mt-1">Qty: {{ item.qty }}</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-ink">{{ item.unit_price_snapshot|centavos_to_peso }}</p>
-                            </div>
-                        </div>
-                        
-                        <!-- Review Form if Delivered -->
-                        {% if order.status == "delivered" and request.user == order.customer %}
-                        <div class="mt-2 pl-4 border-l-2 border-volt">
-                            <form method="POST" action="{% url 'reviews:submit-review' %}" class="flex gap-2 items-center">
-                                {% csrf_token %}
-                                <input type="hidden" name="order_no" value="{{ order.order_no }}">
-                                <input type="hidden" name="product_id" value="{{ item.variant.product.id }}">
-                                
-                                <select name="rating" required class="border border-ink p-1 font-mono text-xs">
-                                    <option value="">Rate...</option>
-                                    <option value="5">5 Stars</option>
-                                    <option value="4">4 Stars</option>
-                                    <option value="3">3 Stars</option>
-                                    <option value="2">2 Stars</option>
-                                    <option value="1">1 Star</option>
-                                </select>
-                                
-                                <input type="text" name="body" placeholder="Write a review..." class="border border-ink p-1 font-mono text-xs flex-1">
-                                <button type="submit" class="bg-ink text-volt px-2 py-1 font-mono text-xs uppercase">Submit</button>
-                            </form>
-                        </div>
-                        {% endif %}
-                    {% endfor %}
-                </div>
+      <div class="panel">
+        <h2 class="panel__title">Items</h2>
+        {% for item in order.items.all %}
+          <div class="summary-line" style="align-items: flex-start;">
+            <div>
+              <p class="text-mono" style="font-weight: 700;">{{ item.variant.product.name }}</p>
+              <p class="text-mono text-muted" style="font-size: 0.7rem;">
+                {{ item.variant.get_size_display }} / {{ item.variant.color }} / {{ item.variant.get_fit_display }}
+                × {{ item.qty }}
+              </p>
+              <span class="sku-tag">{{ item.variant.sku }}</span>
+
+              {# FR-17: verified purchase review — owner of a delivered order only #}
+              {% if order.status == "delivered" and request.user == order.customer %}
+                <form method="POST" action="{% url 'reviews:submit-review' %}" class="mt-sm" style="display: flex; gap: var(--space-sm); align-items: center; flex-wrap: wrap;">
+                  {% csrf_token %}
+                  <input type="hidden" name="order_no" value="{{ order.order_no }}">
+                  <input type="hidden" name="product_id" value="{{ item.variant.product.id }}">
+                  <select name="rating" required class="form-select" style="width: auto; padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                    <option value="">Rate…</option>
+                    <option value="5">★★★★★</option>
+                    <option value="4">★★★★</option>
+                    <option value="3">★★★</option>
+                    <option value="2">★★</option>
+                    <option value="1">★</option>
+                  </select>
+                  <input type="text" name="body" placeholder="Write a review…" class="form-input" style="flex: 1; min-width: 10rem; padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                  <button type="submit" class="btn btn--secondary btn--sm">Submit</button>
+                </form>
+              {% endif %}
             </div>
-        </div>
+            <span class="text-mono">{{ item.unit_price_snapshot|peso }}</span>
+          </div>
+        {% endfor %}
+      </div>
+
     </div>
+  </section>
 </div>
 {% endblock %}

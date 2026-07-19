@@ -16,3 +16,7 @@ def peso(value):
         # Templates should not turn one missing/invalid display value into a 500
         # response. Domain services remain strict and raise the original error.
         return ""
+
+
+# Alias kept because several templates spell the filter out in full.
+register.filter("centavos_to_peso", peso)

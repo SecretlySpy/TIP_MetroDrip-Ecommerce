@@ -1,48 +1,58 @@
 {% extends "base.html" %}
 {% load money %}
-{% block title %}Order Placed | MetroDrip{% endblock %}
+{% block title %}Order Placed{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-12 max-w-3xl">
-    <div class="bg-surface border-2 border-ink p-8 text-center relative overflow-hidden">
-        <!-- Decor: Barcode strip -->
-        <div class="absolute top-0 left-0 w-full h-2 bg-ink border-b-4 border-white border-dashed"></div>
-        
-        <h1 class="font-display text-4xl uppercase tracking-tighter mt-4 mb-2 text-volt inline-block bg-ink px-4 py-1">Order Confirmed</h1>
-        <p class="font-mono text-muted mb-8">Thank you for your purchase.</p>
-        
-        <div class="bg-white border-2 border-ink p-6 mb-8 text-left">
-            <h2 class="font-display text-2xl uppercase tracking-tighter border-b-2 border-border pb-2 mb-4">Order Details</h2>
-            
-            <div class="grid grid-cols-2 gap-4 font-mono text-sm mb-6">
-                <div>
-                    <span class="block text-muted uppercase tracking-wide text-xs">Order Number</span>
-                    <span class="font-bold text-ink">{{ order.order_no }}</span>
-                </div>
-                <div>
-                    <span class="block text-muted uppercase tracking-wide text-xs">Date</span>
-                    <span class="text-ink">{{ order.created_at|date:"M d, Y" }}</span>
-                </div>
-                <div>
-                    <span class="block text-muted uppercase tracking-wide text-xs">Total</span>
-                    <span class="font-bold text-ink">{{ order.total|centavos_to_peso }}</span>
-                </div>
-                <div>
-                    <span class="block text-muted uppercase tracking-wide text-xs">Payment Status</span>
-                    <span class="text-ink uppercase">{{ order.payment.status }}</span>
-                </div>
-            </div>
+<div class="container" style="max-width: 720px;">
+  <section class="section text-center">
 
-            <div class="border-t border-border pt-4 mt-4 text-center">
-                <a href="{% url 'storefront:order-status' token %}" class="inline-block bg-volt text-ink border-2 border-ink px-6 py-2 font-display text-lg uppercase tracking-wider hover:bg-ink hover:text-white transition-colors">
-                    Track Order Status
-                </a>
-            </div>
+    <div class="panel" style="position: relative; overflow: hidden;">
+      <div class="barcode-strip" aria-hidden="true" style="position: absolute; top: 0; left: 0; right: 0;"></div>
+
+      <h1 class="mt-lg" style="display: inline-block; background: var(--color-ink); color: var(--color-volt); padding: 0.25rem 1rem;">
+        Order Confirmed
+      </h1>
+      <p class="text-mono text-muted mt-sm">Thank you for your purchase.</p>
+
+      <div class="panel mt-lg" style="text-align: left;">
+        <h2 class="panel__title">Order Details</h2>
+
+        <div class="form-row form-row--2col text-mono" style="font-size: 0.85rem;">
+          <div>
+            <span class="form-label">Order Number</span>
+            <span class="sku-tag">{{ order.order_no }}</span>
+          </div>
+          <div>
+            <span class="form-label">Date</span>
+            {{ order.created_at|date:"M d, Y" }}
+          </div>
+          <div>
+            <span class="form-label">Total</span>
+            <span class="text-price">{{ order.total|peso }}</span>
+          </div>
+          <div>
+            <span class="form-label">Payment Status</span>
+            <span class="badge {% if order.payment.status == 'paid' %}badge--success{% else %}badge--muted{% endif %}">
+              {{ order.payment.get_status_display|default:"Pending" }}
+            </span>
+          </div>
         </div>
-        
-        <a href="{% url 'storefront:shop' %}" class="font-mono text-sm uppercase tracking-wide text-ink hover:text-muted border-b border-ink pb-1 transition-colors">
-            Continue Shopping
-        </a>
+
+        <div class="text-center mt-lg" style="border-top: 1px solid var(--color-border); padding-top: var(--space-lg);">
+          <a href="{% url 'storefront:order-status' token %}" class="btn btn--primary btn--lg">
+            Track Order Status
+          </a>
+        </div>
+      </div>
+
+      <p class="text-mono text-muted mt-lg" style="font-size: 0.75rem;">
+        A confirmation email with your tracking link is on its way to
+        {{ order.shipping_address.email }}.
+      </p>
+
+      <a href="{% url 'storefront:shop' %}" class="section__link">Continue Shopping →</a>
     </div>
+
+  </section>
 </div>
 {% endblock %}

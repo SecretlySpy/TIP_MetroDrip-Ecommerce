@@ -19,6 +19,7 @@ pytestmark = pytest.mark.django_db
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def category():
     return Category.objects.create(name="T-Shirts", slug="t-shirts")
@@ -54,8 +55,11 @@ def product2(category2):
 @pytest.fixture()
 def variant(product):
     v = ProductVariant.objects.create(
-        product=product, sku="MD-MTEE-M-JBLK-REG",
-        size=Size.M, color="Jet Black", fit=Fit.REGULAR,
+        product=product,
+        sku="MD-MTEE-M-JBLK-REG",
+        size=Size.M,
+        color="Jet Black",
+        fit=Fit.REGULAR,
     )
     StockRecord.objects.create(variant=v, qty_on_hand=10, qty_reserved=0, low_stock_threshold=5)
     return v
@@ -64,8 +68,11 @@ def variant(product):
 @pytest.fixture()
 def variant_out_of_stock(product):
     v = ProductVariant.objects.create(
-        product=product, sku="MD-MTEE-L-CWHT-SLM",
-        size=Size.L, color="Concrete White", fit=Fit.SLIM,
+        product=product,
+        sku="MD-MTEE-L-CWHT-SLM",
+        size=Size.L,
+        color="Concrete White",
+        fit=Fit.SLIM,
     )
     StockRecord.objects.create(variant=v, qty_on_hand=0, qty_reserved=0, low_stock_threshold=5)
     return v
@@ -74,8 +81,11 @@ def variant_out_of_stock(product):
 @pytest.fixture()
 def variant2(product2):
     v = ProductVariant.objects.create(
-        product=product2, sku="MD-SHOD-S-MNAV-OVR",
-        size=Size.S, color="Midnight Navy", fit=Fit.OVERSIZED,
+        product=product2,
+        sku="MD-SHOD-S-MNAV-OVR",
+        size=Size.S,
+        color="Midnight Navy",
+        fit=Fit.OVERSIZED,
     )
     StockRecord.objects.create(variant=v, qty_on_hand=5, qty_reserved=0, low_stock_threshold=5)
     return v
@@ -89,6 +99,7 @@ def client():
 # ---------------------------------------------------------------------------
 # Homepage Tests
 # ---------------------------------------------------------------------------
+
 
 class TestHomepage:
     def test_homepage_returns_200(self, client):
@@ -107,6 +118,7 @@ class TestHomepage:
 # ---------------------------------------------------------------------------
 # Shop Listing Tests
 # ---------------------------------------------------------------------------
+
 
 class TestShopListing:
     def test_shop_returns_200(self, client):
@@ -190,6 +202,7 @@ class TestShopListing:
 # Product Detail Tests
 # ---------------------------------------------------------------------------
 
+
 class TestProductDetail:
     def test_detail_returns_200(self, client, product, variant):
         response = client.get(f"/shop/{product.slug}/")
@@ -217,7 +230,11 @@ class TestProductDetail:
         assert '"available": 10' in content  # from the StockRecord fixture
 
     def test_detail_shows_out_of_stock_variant(
-        self, client, product, variant, variant_out_of_stock,
+        self,
+        client,
+        product,
+        variant,
+        variant_out_of_stock,
     ):
         """Out-of-stock variants are included with available=0."""
         response = client.get(f"/shop/{product.slug}/")
@@ -234,6 +251,7 @@ class TestProductDetail:
 # Cart Page Tests
 # ---------------------------------------------------------------------------
 
+
 class TestCartPage:
     def test_cart_page_returns_200(self, client):
         response = client.get("/cart/")
@@ -249,6 +267,7 @@ class TestCartPage:
 # Cart Availability Endpoint Tests
 # ---------------------------------------------------------------------------
 
+
 class TestCartAvailability:
     def test_availability_returns_stock(self, client, variant):
         response = client.get(f"/api/cart/availability/?ids={variant.id}")
@@ -263,9 +282,7 @@ class TestCartAvailability:
         assert data["availability"]["99999"] == 0
 
     def test_availability_multiple_ids(self, client, variant, variant_out_of_stock):
-        response = client.get(
-            f"/api/cart/availability/?ids={variant.id},{variant_out_of_stock.id}"
-        )
+        response = client.get(f"/api/cart/availability/?ids={variant.id},{variant_out_of_stock.id}")
         assert response.status_code == 200
         data = json.loads(response.content)
         assert data["availability"][str(variant.id)] == 10

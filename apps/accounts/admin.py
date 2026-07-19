@@ -7,10 +7,10 @@ WishlistItem is registered as a read-only convenience view.
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
+from apps.core.admin import ExportCsvMixin
+
 from .models import Customer, WishlistItem
 
-
-from apps.core.admin import ExportCsvMixin
 
 @admin.register(Customer)
 class CustomerAdmin(BaseUserAdmin, ExportCsvMixin):
@@ -33,10 +33,13 @@ class CustomerAdmin(BaseUserAdmin, ExportCsvMixin):
         ("Important dates", {"fields": ("last_login", "date_joined")}),
     )
     add_fieldsets = (
-        (None, {
-            "classes": ("wide",),
-            "fields": ("email", "name", "password1", "password2"),
-        }),
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": ("email", "name", "password1", "password2"),
+            },
+        ),
     )
     readonly_fields = ("date_joined", "last_login")
 

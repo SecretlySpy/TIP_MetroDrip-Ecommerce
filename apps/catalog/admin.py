@@ -72,9 +72,7 @@ class ProductAdmin(admin.ModelAdmin):
         for product in queryset:
             # Discover existing colors from this product's variants; if none
             # exist yet, use a single placeholder so the matrix isn't empty.
-            existing_colors = list(
-                product.variants.values_list("color", flat=True).distinct()
-            )
+            existing_colors = list(product.variants.values_list("color", flat=True).distinct())
             if not existing_colors:
                 existing_colors = ["Default"]
 

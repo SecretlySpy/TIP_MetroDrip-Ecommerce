@@ -150,6 +150,12 @@ def _required_password_environment(name):
     return value
 
 
+# Mock payment completion must never exist outside development (Invariant 3:
+# webhooks are the only payment truth in any deployed environment).
+if os.environ.get("MOCK_PAYMENTS", "").strip() == "1":
+    raise ImproperlyConfigured("MOCK_PAYMENTS cannot be enabled in production or staging.")
+MOCK_PAYMENTS = False
+
 # Fail fast rather than silently using development credentials or hosts.
 SECRET_KEY = _required_secret_environment("DJANGO_SECRET_KEY")
 ALLOWED_HOSTS = _required_hostnames_environment("DJANGO_ALLOWED_HOSTS")
@@ -168,9 +174,9 @@ DATABASES["default"].update(  # noqa: F405
     }
 )
 
-# WhiteNoise serves hashed admin/site assets after collectstatic without serving
-# product media, which remains reserved for object storage + CDN.
-MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")  # noqa: F405
+# WhiteNoise middleware already sits after SecurityMiddleware in base.py; prod
+# only upgrades the storage backend to hashed+compressed manifests. Product
+# media remains reserved for object storage + CDN.
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {

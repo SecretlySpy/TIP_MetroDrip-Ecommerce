@@ -1,269 +1,226 @@
 {% extends "base.html" %}
-{% load money %}
-{% block title %}Checkout | MetroDrip{% endblock %}
+{% block title %}Checkout{% endblock %}
+{% block meta_description %}Secure MetroDrip checkout — cards, GCash, and Maya via PayMongo.{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8 max-w-6xl" x-data="checkout()">
-    <h1 class="font-display text-4xl uppercase tracking-tighter mb-8">Checkout</h1>
+<div class="container" x-data="checkout()" x-init="init()">
+  <section class="section">
+    <h1>Checkout</h1>
 
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        <!-- Left: Form -->
-        <div class="lg:col-span-7">
-            <div class="bg-surface border-2 border-ink p-6 lg:p-8">
-                <h2 class="font-display text-2xl uppercase tracking-tighter mb-6 pb-2 border-b-2 border-border">Shipping Details</h2>
-                
-                <form id="checkoutForm" @submit.prevent="submitOrder">
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block font-mono text-sm uppercase tracking-wide mb-1">Full Name *</label>
-                            <input type="text" x-model="form.customer_name" required class="w-full bg-white border-2 border-ink px-4 py-2 focus:outline-none focus:ring-2 focus:ring-volt font-mono">
-                        </div>
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block font-mono text-sm uppercase tracking-wide mb-1">Email *</label>
-                                <input type="email" x-model="form.email" required class="w-full bg-white border-2 border-ink px-4 py-2 focus:outline-none focus:ring-2 focus:ring-volt font-mono">
-                            </div>
-                            <div>
-                                <label class="block font-mono text-sm uppercase tracking-wide mb-1">Phone Number *</label>
-                                <input type="tel" x-model="form.phone" required class="w-full bg-white border-2 border-ink px-4 py-2 focus:outline-none focus:ring-2 focus:ring-volt font-mono">
-                            </div>
-                        </div>
+    <div class="checkout-layout mt-lg">
 
-                        <div>
-                            <label class="block font-mono text-sm uppercase tracking-wide mb-1">Address *</label>
-                            <input type="text" x-model="form.address_line1" required class="w-full bg-white border-2 border-ink px-4 py-2 focus:outline-none focus:ring-2 focus:ring-volt font-mono" placeholder="House/Unit No., Street, Barangay">
-                        </div>
+      {# --- Left: shipping form --- #}
+      <div class="panel">
+        <h2 class="panel__title">Shipping Details</h2>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block font-mono text-sm uppercase tracking-wide mb-1">City *</label>
-                                <input type="text" x-model="form.city" required class="w-full bg-white border-2 border-ink px-4 py-2 focus:outline-none focus:ring-2 focus:ring-volt font-mono">
-                            </div>
-                            <div>
-                                <label class="block font-mono text-sm uppercase tracking-wide mb-1">Region/Zone *</label>
-                                <select x-model="form.zone_id" @change="updateShipping" required class="w-full bg-white border-2 border-ink px-4 py-2 focus:outline-none focus:ring-2 focus:ring-volt font-mono">
-                                    <option value="">Select Region</option>
-                                    {% for zone in zones %}
-                                        <option value="{{ zone.id }}" data-fee="{{ zone.fee }}">{{ zone.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mt-8 pt-6 border-t-2 border-border">
-                        <button type="submit" :disabled="isSubmitting || cartItems.length === 0" 
-                                class="w-full bg-volt text-ink border-2 border-ink px-8 py-4 font-display text-xl uppercase tracking-wider hover:bg-ink hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                            <span x-show="!isSubmitting">Proceed to Payment</span>
-                            <span x-show="isSubmitting">Processing...</span>
-                        </button>
-                        <template x-if="errorMessage">
-                            <p class="mt-4 text-danger font-mono text-sm" x-text="errorMessage"></p>
-                        </template>
-                    </div>
-                </form>
+        <form id="checkoutForm" @submit.prevent="submitOrder">
+          {% csrf_token %}
+          <div class="form-stack">
+            <div>
+              <label class="form-label" for="co-name">Full Name *</label>
+              <input id="co-name" class="form-input" type="text" x-model="form.customer_name" required autocomplete="name">
             </div>
+
+            <div class="form-row form-row--2col">
+              <div>
+                <label class="form-label" for="co-email">Email *</label>
+                <input id="co-email" class="form-input" type="email" x-model="form.email" required autocomplete="email">
+              </div>
+              <div>
+                <label class="form-label" for="co-phone">Phone Number *</label>
+                <input id="co-phone" class="form-input" type="tel" x-model="form.phone" required autocomplete="tel" placeholder="09XXXXXXXXX">
+              </div>
+            </div>
+
+            <div>
+              <label class="form-label" for="co-address">Address *</label>
+              <input id="co-address" class="form-input" type="text" x-model="form.address_line1" required autocomplete="street-address" placeholder="House/Unit No., Street, Barangay">
+            </div>
+
+            <div class="form-row form-row--2col">
+              <div>
+                <label class="form-label" for="co-city">City *</label>
+                <input id="co-city" class="form-input" type="text" x-model="form.city" required autocomplete="address-level2">
+              </div>
+              <div>
+                <label class="form-label" for="co-zone">Region / Zone *</label>
+                <select id="co-zone" class="form-select" x-model="form.zone_id" @change="updateShipping" required>
+                  <option value="">Select Region</option>
+                  {% for zone in zones %}
+                    <option value="{{ zone.id }}" data-fee="{{ zone.fee }}">{{ zone.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-lg" style="border-top: 2px solid var(--color-border); padding-top: var(--space-lg);">
+            <button type="submit" class="btn btn--primary btn--lg btn--block"
+                    :disabled="isSubmitting || cartItems.length === 0">
+              <span x-show="!isSubmitting">Proceed to Payment</span>
+              <span x-show="isSubmitting">Processing…</span>
+            </button>
+            <template x-if="errorMessage">
+              <p class="form-error" x-text="errorMessage" role="alert"></p>
+            </template>
+            <p class="text-mono text-muted mt-sm" style="font-size: 0.7rem;">
+              Payment is handled securely by PayMongo (cards, GCash, Maya). Card details never touch our servers.
+            </p>
+          </div>
+        </form>
+      </div>
+
+      {# --- Right: waybill-style order summary (§14 motif) --- #}
+      <div class="waybill-card">
+        <div class="waybill-card__header">Order Summary</div>
+
+        <div style="max-height: 40vh; overflow-y: auto;">
+          <template x-for="item in cartItems" :key="item.variantId">
+            <div class="summary-line" style="align-items: flex-start;">
+              <div>
+                <div class="text-mono" style="font-weight: 700;" x-text="item.productName"></div>
+                <div class="text-mono text-muted" style="font-size: 0.7rem;"
+                     x-text="`${item.size} / ${item.color} / ${item.fit} × ${item.qty}`"></div>
+                <span class="sku-tag" x-text="item.sku"></span>
+              </div>
+              <span class="text-mono" x-text="formatMoney(item.price * item.qty)"></span>
+            </div>
+          </template>
         </div>
 
-        <!-- Right: Summary -->
-        <div class="lg:col-span-5">
-            <div class="bg-white border-2 border-ink p-6 relative">
-                <div class="absolute top-0 right-0 w-8 h-full border-l-2 border-ink border-dashed flex flex-col justify-between py-2 items-center text-muted">
-                    <span class="block w-1 h-1 rounded-full bg-ink"></span>
-                    <span class="block w-1 h-1 rounded-full bg-ink"></span>
-                    <span class="block w-1 h-1 rounded-full bg-ink"></span>
-                    <span class="block w-1 h-1 rounded-full bg-ink"></span>
-                    <span class="block w-1 h-1 rounded-full bg-ink"></span>
-                </div>
-
-                <h2 class="font-display text-2xl uppercase tracking-tighter mb-6 pr-8">Order Summary</h2>
-
-                <div class="space-y-4 mb-6 pr-8 max-h-[40vh] overflow-y-auto">
-                    <template x-for="item in cartItems" :key="item.variant_id">
-                        <div class="flex justify-between items-start text-sm font-mono border-b border-border pb-4">
-                            <div>
-                                <p class="font-bold text-ink" x-text="item.name"></p>
-                                <p class="text-muted text-xs mt-1" x-text="`Size: ${item.size} | Color: ${item.color} | Fit: ${item.fit}`"></p>
-                                <p class="text-muted text-xs mt-1" x-text="`Qty: ${item.qty}`"></p>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-ink" x-text="formatMoney(item.price * item.qty)"></p>
-                            </div>
-                        </div>
-                    </template>
-                </div>
-
-                <div class="border-t-2 border-ink pt-4 pr-8 font-mono">
-                    <div class="flex justify-between mb-2">
-                        <span class="text-muted uppercase tracking-wide text-sm">Subtotal</span>
-                        <span x-text="formatMoney(subtotal)"></span>
-                    </div>
-                    <div class="flex justify-between mb-4">
-                        <span class="text-muted uppercase tracking-wide text-sm">Shipping</span>
-                        <span x-text="shippingFee > 0 ? formatMoney(shippingFee) : 'Select Zone'"></span>
-                    </div>
-                    <div class="flex justify-between items-end border-t border-border pt-4">
-                        <span class="font-display text-xl uppercase tracking-tighter">Total</span>
-                        <span class="font-display text-2xl" x-text="formatMoney(subtotal + shippingFee)"></span>
-                    </div>
-                </div>
-            </div>
+        <div class="mt-md">
+          <div class="summary-line">
+            <span class="waybill-card__label">Subtotal</span>
+            <span x-text="formatMoney(subtotal)"></span>
+          </div>
+          <div class="summary-line">
+            <span class="waybill-card__label">Shipping</span>
+            <span x-text="shippingFee > 0 ? formatMoney(shippingFee) : '— select zone —'"></span>
+          </div>
+          <div class="summary-line summary-line--total">
+            <span>Total</span>
+            <span class="text-price" x-text="formatMoney(subtotal + shippingFee)"></span>
+          </div>
         </div>
+      </div>
 
     </div>
+  </section>
 </div>
 
 <script>
 document.addEventListener('alpine:init', () => {
-    Alpine.data('checkout', () => ({
-        cartItems: [],
-        subtotal: 0,
-        shippingFee: 0,
-        isSubmitting: false,
-        errorMessage: '',
-        form: {
-            customer_name: '',
-            email: '',
-            phone: '',
-            address_line1: '',
-            city: '',
-            zone_id: ''
-        },
+  Alpine.data('checkout', () => ({
+    cartItems: [],
+    subtotal: 0,
+    shippingFee: 0,
+    isSubmitting: false,
+    errorMessage: '',
+    form: {
+      customer_name: '',
+      email: '',
+      phone: '',
+      address_line1: '',
+      city: '',
+      zone_id: ''
+    },
 
-        init() {
-            this.loadCart();
-        },
+    init() {
+      this.loadCart();
+    },
 
-        loadCart() {
-            const savedCart = localStorage.getItem('metrodrip_cart');
-            if (savedCart) {
-                try {
-                    this.cartItems = JSON.parse(savedCart);
-                    this.calculateSubtotal();
-                } catch (e) {
-                    console.error('Failed to parse cart JSON');
-                }
-            }
-            if (this.cartItems.length === 0) {
-                window.location.href = "{% url 'storefront:cart' %}";
-            }
-        },
+    loadCart() {
+      // Single cart contract: cart.js writes camelCase keys (variantId,
+      // productName, priceDisplay); the checkout payload maps them to the
+      // API's snake_case fields in submitOrder().
+      try {
+        this.cartItems = JSON.parse(localStorage.getItem('metrodrip_cart') || '[]');
+      } catch {
+        this.cartItems = [];
+      }
+      this.subtotal = this.cartItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+      if (this.cartItems.length === 0) {
+        window.location.href = "{% url 'storefront:cart' %}";
+      }
+    },
 
-        calculateSubtotal() {
-            this.subtotal = this.cartItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
-        },
+    updateShipping(event) {
+      const selected = event.target.options[event.target.selectedIndex];
+      this.shippingFee = selected && selected.value ? parseInt(selected.dataset.fee, 10) : 0;
+    },
 
-        updateShipping(e) {
-            const selectedOption = e.target.options[e.target.selectedIndex];
-            if (selectedOption && selectedOption.value) {
-                this.shippingFee = parseInt(selectedOption.dataset.fee, 10);
-            } else {
-                this.shippingFee = 0;
-            }
-        },
+    formatMoney(centavos) {
+      return '₱' + (centavos / 100).toLocaleString('en-PH', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+      });
+    },
 
-        formatMoney(centavos) {
-            return '₱' + (centavos / 100).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        },
+    async submitOrder() {
+      this.isSubmitting = true;
+      this.errorMessage = '';
 
-        async submitOrder() {
-            this.isSubmitting = true;
-            this.errorMessage = '';
-            
-            const payload = {
-                ...this.form,
-                items: this.cartItems
-            };
-            
-            try {
-                const response = await fetch("{% url 'storefront:checkout' %}", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRFToken": getCookie("csrftoken")
-                    },
-                    body: JSON.stringify(payload)
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok && data.success) {
-                    // Clear cart
-                    localStorage.removeItem('metrodrip_cart');
-                    // Dispatch event to update navbar badge
-                    window.dispatchEvent(new Event('cart-updated'));
-                    // Redirect to payment
-                    window.location.href = data.checkout_url;
-                } else {
-                    this.errorMessage = data.error || 'Checkout failed. Please try again.';
-                    this.isSubmitting = false;
-                }
-            } catch (err) {
-                this.errorMessage = 'Network error. Please try again.';
-                this.isSubmitting = false;
-            }
+      const payload = {
+        ...this.form,
+        items: this.cartItems.map(item => ({ variant_id: item.variantId, qty: item.qty }))
+      };
+
+      try {
+        const response = await fetch("{% url 'storefront:checkout' %}", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": document.querySelector('#checkoutForm [name=csrfmiddlewaretoken]').value
+          },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          localStorage.removeItem('metrodrip_cart');
+          window.dispatchEvent(new Event('cart-updated'));
+          window.location.href = data.checkout_url;
+        } else {
+          this.errorMessage = data.error || 'Checkout failed. Please try again.';
+          this.isSubmitting = false;
         }
-    }));
-});
-
-// Helper for CSRF token
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
+      } catch {
+        this.errorMessage = 'Network error. Please try again.';
+        this.isSubmitting = false;
+      }
     }
-    return cookieValue;
-}
+  }));
+});
 </script>
 
 {% if GOOGLE_MAPS_API_KEY %}
+{# FR-13 enhancement tier: autocomplete assists the address field; the manual
+   zone dropdown above stays authoritative, so an API outage never blocks checkout. #}
 <script async defer src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_API_KEY }}&libraries=places&callback=initAutocomplete"></script>
 <script>
-let autocomplete;
 function initAutocomplete() {
-    const addressInput = document.querySelector('input[x-model="form.address_line1"]');
-    if (addressInput) {
-        autocomplete = new google.maps.places.Autocomplete(addressInput, {
-            componentRestrictions: { country: "ph" },
-            fields: ["address_components", "formatted_address"],
-            types: ["address"]
-        });
-        
-        autocomplete.addListener("place_changed", () => {
-            const place = autocomplete.getPlace();
-            if (!place.address_components) return;
-            
-            // Integrate with Alpine
-            addressInput.dispatchEvent(new Event('input'));
-            
-            let city = "";
-            for (const component of place.address_components) {
-                const type = component.types[0];
-                if (type === "locality" || type === "administrative_area_level_2") {
-                    city = component.long_name;
-                }
-            }
-            
-            if (city) {
-                const cityInput = document.querySelector('input[x-model="form.city"]');
-                if (cityInput) {
-                    cityInput.value = city;
-                    cityInput.dispatchEvent(new Event('input'));
-                }
-            }
-        });
+  const addressInput = document.getElementById('co-address');
+  if (!addressInput) return;
+  const autocomplete = new google.maps.places.Autocomplete(addressInput, {
+    componentRestrictions: { country: "ph" },
+    fields: ["address_components", "formatted_address"],
+    types: ["address"]
+  });
+  autocomplete.addListener("place_changed", () => {
+    const place = autocomplete.getPlace();
+    if (!place.address_components) return;
+    addressInput.dispatchEvent(new Event('input'));
+    for (const component of place.address_components) {
+      const type = component.types[0];
+      if (type === "locality" || type === "administrative_area_level_2") {
+        const cityInput = document.getElementById('co-city');
+        if (cityInput) {
+          cityInput.value = component.long_name;
+          cityInput.dispatchEvent(new Event('input'));
+        }
+      }
     }
+  });
 }
 </script>
 {% endif %}
-
 {% endblock %}

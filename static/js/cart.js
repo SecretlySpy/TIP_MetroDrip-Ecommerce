@@ -40,6 +40,9 @@ function cartPage() {
       window.addEventListener('storage', (e) => {
         if (e.key === 'metrodrip_cart') this.loadCart();
       });
+      // Server-side availability check (defined on the cart page) flags lines
+      // whose stock changed since they were added.
+      if (window.checkCartAvailability) window.checkCartAvailability(this);
     },
 
     loadCart() {

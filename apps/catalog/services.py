@@ -36,8 +36,7 @@ def get_catalog_queryset(*, filters=None, sort=None, search=None):
         filters = {}
 
     qs = (
-        Product.objects
-        .filter(is_active=True)
+        Product.objects.filter(is_active=True)
         .select_related("category")
         .annotate(
             # Price range across all variants for display on the product card.
@@ -81,12 +80,12 @@ def get_catalog_queryset(*, filters=None, sort=None, search=None):
     if price_min := filters.get("price_min"):
         try:
             qs = qs.filter(base_price__gte=int(price_min))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             pass
     if price_max := filters.get("price_max"):
         try:
             qs = qs.filter(base_price__lte=int(price_max))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             pass
 
     # --- Search ---
@@ -147,8 +146,7 @@ def get_product_detail(slug):
     """
     try:
         product = (
-            Product.objects
-            .filter(is_active=True, slug=slug)
+            Product.objects.filter(is_active=True, slug=slug)
             .select_related("category")
             .annotate(
                 review_avg=Avg(
@@ -165,16 +163,17 @@ def get_product_detail(slug):
                 models.Prefetch(
                     "variants",
                     queryset=(
-                        Product.variants.rel.related_model.objects
-                        .select_related("stock")
-                        .order_by("size", "color", "fit")
+                        Product.variants.rel.related_model.objects.select_related("stock").order_by(
+                            "size", "color", "fit"
+                        )
                     ),
                 ),
                 models.Prefetch(
                     "reviews",
                     queryset=(
-                        Product.reviews.rel.related_model.objects
-                        .filter(status=ReviewStatus.APPROVED)
+                        Product.reviews.rel.related_model.objects.filter(
+                            status=ReviewStatus.APPROVED
+                        )
                         .select_related("customer")
                         .order_by("-created_at")
                     ),

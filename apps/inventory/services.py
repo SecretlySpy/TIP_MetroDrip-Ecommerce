@@ -45,12 +45,16 @@ def _require_positive_int(value, name):
     return value
 
 
-def reserve_stock(*, variant_id, qty, session_key=""):
+def reserve_stock(*, variant_id, qty, session_key="", order=None):
     """Place a TTL-bound hold on `qty` units of one SKU (B-1/B-2, FR-5).
 
     Returns the ACTIVE Reservation. Raises InsufficientStock when availability
     is short; raises StockRecord.DoesNotExist for an unknown/unstocked variant
     so a catalog bug cannot silently sell an untracked SKU.
+
+    Checkout passes `order` so the webhook can later commit exactly this
+    order's holds — matching holds heuristically (by variant/qty) could commit
+    another shopper's reservation.
     """
     _require_positive_int(qty, "qty")
 
@@ -71,6 +75,7 @@ def reserve_stock(*, variant_id, qty, session_key=""):
             variant_id=variant_id,
             qty=qty,
             session_key=session_key,
+            order=order,
             expires_at=timezone.now()
             + datetime.timedelta(minutes=settings.RESERVATION_TTL_MINUTES),
         )

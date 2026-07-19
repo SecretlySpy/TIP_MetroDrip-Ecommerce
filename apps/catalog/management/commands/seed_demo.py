@@ -1,10 +1,15 @@
 """Seed a deterministic, idempotent catalog for local demos and QA."""
 
+from django.conf import settings
+from django.contrib.flatpages.models import FlatPage
+from django.contrib.sites.models import Site
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from apps.catalog.models import Category, Fit, Product, ProductVariant, Size
+from apps.cms.models import HomepageBanner
 from apps.inventory.models import MovementReason, StockMovement, StockRecord
+from apps.shipping.models import ShippingZone
 
 # Each product owns a category and two product-specific colors so the seed data
 # exercises the complete three-axis variant model without ambiguous shared data.
@@ -69,6 +74,31 @@ FIT_SKU_CODES = {
     Fit.OVERSIZED: "OVR",
 }
 
+# D-02: zone-based flat rates in integer centavos. Create-only so admin edits
+# to live rates survive a reseed.
+ZONE_SEEDS = (
+    ("NCR", 9900),
+    ("Luzon", 15900),
+    ("VisMin", 19900),
+)
+
+# FR-20 CMS-lite starter pages. Content is intentionally minimal placeholder
+# copy the brand replaces in the admin; URLs match the footer links.
+FLATPAGE_SEEDS = (
+    ("/about/", "About MetroDrip", "MetroDrip is a Metro Manila streetwear brand."),
+    (
+        "/faq/",
+        "Frequently Asked Questions",
+        "Q: How long does delivery take?\nA: 1-3 days within NCR, 3-7 days elsewhere.",
+    ),
+    (
+        "/privacy/",
+        "Privacy Policy",
+        "We collect only the personal data needed to fulfill your order, "
+        "per the Data Privacy Act of 2012 (RA 10173).",
+    ),
+)
+
 
 class Command(BaseCommand):
     """Create the complete demo variant matrix without rewriting live stock."""
@@ -85,6 +115,9 @@ class Command(BaseCommand):
             "variants": 0,
             "stock_records": 0,
             "stock_movements": 0,
+            "shipping_zones": 0,
+            "flatpages": 0,
+            "banners": 0,
         }
 
         # One transaction prevents a partially seeded catalog or a stock balance
@@ -156,6 +189,34 @@ class Command(BaseCommand):
                                     reason=MovementReason.RESTOCK,
                                 )
                                 created_counts["stock_movements"] += 1
+
+            # --- Storefront operating data: zones, CMS pages, homepage banner ---
+
+            for zone_name, zone_fee in ZONE_SEEDS:
+                _zone, zone_created = ShippingZone.objects.get_or_create(
+                    name=zone_name, defaults={"fee": zone_fee, "is_active": True}
+                )
+                created_counts["shipping_zones"] += int(zone_created)
+
+            site = Site.objects.get(pk=settings.SITE_ID)
+            for url, title, content in FLATPAGE_SEEDS:
+                page, page_created = FlatPage.objects.get_or_create(
+                    url=url, defaults={"title": title, "content": content}
+                )
+                # Attaching to the site is idempotent and required for rendering.
+                page.sites.add(site)
+                created_counts["flatpages"] += int(page_created)
+
+            _banner, banner_created = HomepageBanner.objects.get_or_create(
+                title="New Season Drop",
+                defaults={
+                    "image_url": "https://placehold.co/1200x480/141414/C8F031?text=METRODRIP",
+                    "link_url": "/shop/",
+                    "is_active": True,
+                    "order": 0,
+                },
+            )
+            created_counts["banners"] += int(banner_created)
 
         # A compact result is friendly to both humans and CI log parsers.
         summary = ", ".join(f"{label}={count}" for label, count in created_counts.items())

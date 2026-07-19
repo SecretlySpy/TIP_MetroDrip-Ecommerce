@@ -18,29 +18,29 @@
     
     <div>
       <label for="name" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Full Name</label>
-      <input type="text" id="name" name="name" required style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 4px;">
+      <input type="text" id="name" name="name" required style="width: 100%; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: 4px;">
     </div>
 
     <div>
       <label for="email" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Email Address</label>
-      <input type="email" id="email" name="email" required style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 4px;">
+      <input type="email" id="email" name="email" required style="width: 100%; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: 4px;">
     </div>
     
     <div>
       <label for="phone" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Phone Number (Optional)</label>
-      <input type="tel" id="phone" name="phone" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 4px;">
+      <input type="tel" id="phone" name="phone" style="width: 100%; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: 4px;">
     </div>
     
     <div>
       <label for="password" style="display: block; font-weight: 500; margin-bottom: 0.5rem;">Password</label>
-      <input type="password" id="password" name="password" required style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 4px;">
+      <input type="password" id="password" name="password" required style="width: 100%; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: 4px;">
     </div>
     
     <button type="submit" class="btn btn--primary" style="margin-top: 1rem; width: 100%;">Create Account</button>
   </form>
   
-  <p style="text-align: center; margin-top: 2rem; color: var(--text-muted);">
-    Already have an account? <a href="{% url 'accounts:login' %}" style="color: var(--color-primary); text-decoration: underline;">Log in here</a>.
+  <p style="text-align: center; margin-top: 2rem; color: var(--color-muted);">
+    Already have an account? <a href="{% url 'accounts:login' %}" style="color: var(--color-ink); text-decoration: underline;">Log in here</a>.
   </p>
 </div>
 {% endblock %}

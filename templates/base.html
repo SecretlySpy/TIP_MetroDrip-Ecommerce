@@ -60,6 +60,13 @@
 
   {# --- Main Content --- #}
   <main class="main-content">
+    {% if messages %}
+      <div class="container" style="padding-top: var(--space-md);">
+        {% for message in messages %}
+          <div class="alert alert--{{ message.tags|default:'info' }}" role="alert">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
 
@@ -71,7 +78,8 @@
         <ul class="footer__links">
           <li><a href="{% url 'storefront:shop' %}" class="footer__link">Shop</a></li>
           <li><a href="/pages/about/" class="footer__link">About</a></li>
-          <li><a href="/pages/contact/" class="footer__link">Contact</a></li>
+          <li><a href="/pages/faq/" class="footer__link">FAQ</a></li>
+          <li><a href="{% url 'storefront:contact' %}" class="footer__link">Contact</a></li>
           <li><a href="/pages/privacy/" class="footer__link">Privacy</a></li>
         </ul>
         <p class="footer__copy">&copy; {% now "Y" %} MetroDrip. All rights reserved. Metro Manila, Philippines.</p>

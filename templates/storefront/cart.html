@@ -6,6 +6,30 @@
 
 {% block extra_js %}
 <script src="{% static 'js/cart.js' %}"></script>
+<script>
+  /**
+   * Live availability check (C-4): on cart load, ask the server how many
+   * units each line can still get and clamp/flag lines that went stale.
+   * The API returns zero for variants that no longer exist.
+   */
+  document.addEventListener('alpine:init', () => {
+    window.checkCartAvailability = async function (component) {
+      const ids = component.items.map(item => item.variantId);
+      if (!ids.length) return;
+      try {
+        const response = await fetch(`{% url 'storefront:cart-availability' %}?ids=${ids.join(',')}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        component.items.forEach(item => {
+          const available = data.availability[String(item.variantId)] ?? 0;
+          item.available = available;
+          item.stale = item.qty > available;
+        });
+        component.saveCart();
+      } catch { /* availability is a hint; checkout re-validates authoritatively */ }
+    };
+  });
+</script>
 {% endblock %}
 
 {% block content %}
@@ -55,6 +79,9 @@
                           <span x-text="item.fit"></span>
                         </div>
                         <span class="sku-tag" x-text="item.sku"></span>
+                        <template x-if="item.stale">
+                          <div class="form-error" x-text="item.available > 0 ? `Only ${item.available} left in stock — adjust quantity` : 'Out of stock — remove this item'"></div>
+                        </template>
                         <br>
                         <button class="cart-item__remove" @click="removeItem(item.variantId)">
                           Remove
@@ -112,7 +139,7 @@
           </div>
 
           <div style="margin-top: var(--space-lg);">
-            <a href="#" class="btn btn--primary btn--block btn--lg">
+            <a href="{% url 'storefront:checkout' %}" class="btn btn--primary btn--block btn--lg">
               Proceed to Checkout
             </a>
             <a href="{% url 'storefront:shop' %}" class="btn btn--secondary btn--block mt-sm" style="font-size: 0.75rem;">

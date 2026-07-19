@@ -6,6 +6,7 @@ from django.db import models
 
 class ShippingZone(models.Model):
     """Zone-based flat shipping rates (D-02). NCR, Luzon, VisMin, etc."""
+
     name = models.CharField(max_length=50, unique=True)
     fee = models.PositiveIntegerField(help_text="Flat fee in centavos")
     is_active = models.BooleanField(default=True)

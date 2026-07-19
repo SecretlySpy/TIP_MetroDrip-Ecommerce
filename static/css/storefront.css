@@ -1312,3 +1312,164 @@ h5 { font-size: 1rem; }
 .pulse {
   animation: pulse 2s ease-in-out infinite;
 }
+
+/* =============================================================================
+   Extensions: forms, alerts, panels, checkout, order status, account pages
+   (added with the storefront QA pass — same token vocabulary as above)
+   ============================================================================= */
+
+/* --- Forms --- */
+.form-stack { display: flex; flex-direction: column; gap: var(--space-md); }
+.form-row { display: grid; gap: var(--space-md); grid-template-columns: 1fr; }
+@media (min-width: 640px) { .form-row--2col { grid-template-columns: 1fr 1fr; } }
+
+.form-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-xs);
+  color: var(--color-ink);
+}
+
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--color-ink);
+  background: var(--color-surface-raised);
+  border: 2px solid var(--color-ink);
+  border-radius: 0;
+  transition: box-shadow var(--transition-fast);
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-volt);
+}
+.form-textarea { resize: vertical; min-height: 8rem; }
+.form-error {
+  color: var(--color-danger);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  margin-top: var(--space-sm);
+}
+
+/* --- Alerts / Django messages --- */
+.alert {
+  padding: var(--space-md) var(--space-lg);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  border: 2px solid var(--color-ink);
+  background: var(--color-surface-raised);
+  margin-bottom: var(--space-md);
+}
+.alert--success { border-color: var(--color-success); background: #e9f7ef; }
+.alert--error, .alert--danger { border-color: var(--color-danger); background: #fdecec; }
+.alert--warning { border-color: #b98900; background: #fdf6e3; }
+
+/* --- Generic panel (checkout, order status, auth cards) --- */
+.panel {
+  background: var(--color-surface-raised);
+  border: 2px solid var(--color-ink);
+  padding: var(--space-xl);
+}
+.panel__title {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  font-size: 1.4rem;
+  letter-spacing: 0.02em;
+  border-bottom: 2px solid var(--color-border);
+  padding-bottom: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+/* --- Checkout layout --- */
+.checkout-layout {
+  display: grid;
+  gap: var(--space-xl);
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+@media (min-width: 960px) { .checkout-layout { grid-template-columns: 3fr 2fr; } }
+
+.summary-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.summary-line--total {
+  border-bottom: none;
+  border-top: 2px solid var(--color-ink);
+  margin-top: var(--space-sm);
+  padding-top: var(--space-md);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+/* --- Order status --- */
+.status-badge {
+  display: inline-block;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 1.1rem;
+  padding: 0.25rem 0.9rem;
+  border: 2px solid var(--color-ink);
+  background: var(--color-volt);
+  color: var(--color-ink);
+}
+.status-badge--pending { background: var(--color-surface); }
+.status-badge--cancelled, .status-badge--refunded { background: var(--color-danger); color: #fff; }
+
+.order-steps {
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: var(--space-lg) 0;
+}
+.order-step {
+  flex: 1;
+  text-align: center;
+  padding: 0.5rem 0.25rem;
+  border: 1px solid var(--color-border);
+  border-left: none;
+  color: var(--color-muted);
+  background: var(--color-surface-raised);
+}
+.order-step:first-child { border-left: 1px solid var(--color-border); }
+.order-step--done { background: var(--color-ink); color: var(--color-volt); border-color: var(--color-ink); }
+.order-step--current { background: var(--color-volt); color: var(--color-ink); font-weight: 700; border-color: var(--color-ink); }
+
+/* --- Account pages --- */
+.account-grid {
+  display: grid;
+  gap: var(--space-xl);
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+@media (min-width: 820px) { .account-grid { grid-template-columns: 300px 1fr; } }
+
+.order-card {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  padding: var(--space-lg);
+}
+.order-card__header {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.auth-card { max-width: 420px; margin: var(--space-3xl) auto; }

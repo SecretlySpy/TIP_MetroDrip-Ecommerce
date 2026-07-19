@@ -1,6 +1,6 @@
 # MetroDrip Architecture Decision Register
 
-- **Scope:** Tasks A-1 through A-4 and Epic B (B-1 through B-4)
+- **Scope:** Tasks A-1 through A-4, Epic B, and the Epic C/D/G storefront-commerce layer (through the 2026-07-19 QA/hardening pass)
 - **Status:** Accepted
 - **Authority:** Extends the locked decisions in `MetroDrip_AI_Handover.md` section 11.
 - **Change rule:** Update this register when an implementation intentionally changes one of these contracts.
@@ -176,3 +176,38 @@
 - **Decision:** One APScheduler process (the `run_scheduler` management command) runs two jobs: the reservation sweep every 60 seconds and the low-stock scan every 60 minutes, both with `coalesce=True` and `max_instances=1`.
 - **Rationale:** A 15-minute TTL plus a 60-second sweep bounds abandoned-checkout stock restoration at ~16 minutes, exactly the M3 gate ceiling. Hourly low-stock scans match a single-warehouse restock cadence without alert spam.
 - **Consequences:** Exactly one scheduler instance may run per environment (ADR-A-014). Jobs call `close_old_connections()` around their work because no request cycle recycles MySQL connections for them. Low-stock alerting degrades to a log line when `LOW_STOCK_ALERT_RECIPIENTS` is empty — the email leg is an enhancement around the scan, never a dependency.
+
+## ADR-C-001 — Client-side cart contract
+
+- **Status:** Accepted
+- **Decision:** The cart lives in `localStorage` under `metrodrip_cart` as a list of `{variantId, sku, productName, size, color, fit, price, priceDisplay, qty}` objects (camelCase keys). Checkout maps lines to the API's `{variant_id, qty}` shape and the server re-prices every line from the database.
+- **Rationale:** One canonical shape ends the camelCase/snake_case split that silently broke the cart→checkout handoff; client-held prices are display hints only, never billing inputs.
+- **Consequences:** `/api/cart/availability/` is advisory (cart page badges); the checkout POST is the authoritative stock/price validation. Cart quantities are clamped server-side to 1–99 across at most 20 lines.
+
+## ADR-D-001 — Development-only mock payment completion
+
+- **Status:** Accepted
+- **Decision:** `MOCK_PAYMENTS` (settings flag) short-circuits PayMongo: checkout records a pending mock Payment and the success page — reached only through the signed order token with `?mock=1` — calls the same idempotent `confirm_order_paid()` service the webhook uses. dev.py auto-enables it only when no `PAYMONGO_SECRET_KEY` is configured; prod.py refuses to boot if the environment sets `MOCK_PAYMENTS=1`.
+- **Rationale:** The demo must complete end-to-end (pay → stock decrement → email) without provider credentials, while Hard Invariant 3 (webhook = payment truth) stays intact everywhere deployed.
+- **Consequences:** All confirmation side effects (payment flip, reservation commit, sale movement, Paid transition, notifications) live in `confirm_order_paid()`; the webhook and the mock path are thin callers, so their behavior can never diverge.
+
+## ADR-D-002 — Checkout transaction shape
+
+- **Status:** Accepted
+- **Decision:** Checkout validates the payload, then in ONE `transaction.atomic()` block: creates the Order with final totals (subtotal from effective variant prices + zone fee) so `chk_order_total_reconciles` holds at INSERT, reserves stock per line with the reservation linked to the order, and writes the order items. Any `InsufficientStock` raises out of the block, rolling back everything (order number included).
+- **Rationale:** The prior flow committed half-built orders (early `return` inside atomic), billed `base_price` ignoring overrides, and left holds without an order link that the webhook could only match heuristically — able to commit another shopper's hold.
+- **Consequences:** A PayMongo session failure after commit releases the order's holds immediately instead of stranding them for the TTL; the shopper gets a retryable 502. The webhook commits exactly `order.reservations`, with a re-reserve fallback (and CRITICAL log, never an oversell) if the TTL sweep won the race.
+
+## ADR-D-003 — Webhook signature policy
+
+- **Status:** Accepted
+- **Decision:** The PayMongo webhook verifies `Paymongo-Signature` (HMAC-SHA256 of `<t>.<raw body>` against `te`/`li`) with constant-time comparison before any parsing; a missing `PAYMONGO_WEBHOOK_SECRET` rejects every event (fail closed). Verified events with an unknown order reference are acknowledged with 200 and an ERROR log so PayMongo stops retrying while the daily reconciliation surfaces the mismatch.
+- **Rationale:** Hard Invariant 3 — unsigned or unverifiable events must never flip payment state; retry storms on unknown references would only amplify noise.
+- **Consequences:** Tests pin: valid-signature confirm, bad/missing-signature 400, missing-secret 400, replay idempotency, unknown-reference 200.
+
+## ADR-D-004 — Tokenized success and status pages
+
+- **Status:** Accepted
+- **Decision:** Both `/checkout/success/<token>/` and `/order/<token>/` accept only the `Signer`-signed order id. The raw `MD-YYYY-NNNNN` number never appears in a URL.
+- **Rationale:** Order numbers are sequential and guessable; both pages render checkout PII, so numbering must not be an access credential (FR-15's tokenized-link requirement applies to both pages).
+- **Consequences:** Emails, templates, and views all mint tokens with the same default `Signer`, so links are interchangeable; templates use the `sign` filter in `storefront_tags`.

@@ -7,9 +7,9 @@
 - **Outputs:** Current architecture, callable contracts, data model, control flow, dependency map, QA evidence, and implementation gaps.
 - **Dependencies:** Post-change QA must pass before this document is regenerated.
 - **Behavior:** Describes implemented behavior literally; planned behavior is labeled as not implemented.
-- **Analysis Date:** 2026-07-18.
-- **Implementation Stage:** Tasks A-1 through A-3 are complete. A-4 code, deployment artifacts, local HTTPS smoke, and operations documentation are complete; the M1 public-host/DNS/trusted-certificate gate remains pending.
-- **QA Gate:** Passed with 182 tests passed, 1 intentional strict XFAIL, reversible migrations, warning-level deployment checks, and a successful rebuilt forced-recreation Docker HTTPS smoke test.
+- **Analysis Date:** 2026-07-19.
+- **Implementation Stage:** Epic A (scaffold, schema, money, staging artifacts) and Epic B (inventory core) are complete. The Epic C/D/G storefront-commerce layer (listing, detail, cart, checkout with reservations, PayMongo adapter + signature-verified webhook, tokenized order pages, accounts, wishlist, reviews, contact form, CMS-lite) is implemented and passed a dedicated QA/hardening pass on 2026-07-19 that also repaired a temporary SQLite settings regression (Hard Invariant 6). The M1 public-host/DNS/trusted-certificate gate remains an operator action.
+- **QA Gate:** Passed with 273 tests on real MySQL 8 (both no-oversell concurrency gates live), clean ruff lint + format, Django system check, and zero migration drift.
 
 ## Repository Scope
 
@@ -17,7 +17,7 @@
 - **Inputs:** Django project, 10 first-party app packages, MySQL schema, Docker development and staging services, deployment runbook, and CI workflow.
 - **Outputs:** One server-rendered Django monolith backed by one MySQL 8 database; provider-neutral staging image and Compose topology.
 - **Dependencies:** Python 3.14, Django 5.2, MySQL 8, PyMySQL, Gunicorn, WhiteNoise, Caddy, Docker Compose, and environment configuration.
-- **Behavior:** Active routes are `/admin/`, process/database health probes, and a staging-gated seed preview. Public commerce, account, webhook, and provider-integration routes are not implemented.
+- **Behavior:** Active route groups: the public storefront (`/`, `/shop/`, `/shop/<slug>/`, `/cart/`, `/checkout/`, tokenized `/checkout/success/<token>/` and `/order/<token>/`, `/contact/`, `/api/cart/availability/`), accounts (`/accounts/...`), reviews (`/reviews/...`), flatpages (`/pages/...`), the signature-verified PayMongo webhook (`/api/webhooks/paymongo/`), `/admin/` (with invoice and sales-report views), health probes, and the staging-gated seed preview.
 
 ### Technology Stack
 
@@ -53,7 +53,7 @@
 | Capability | Status | Literal behavior |
 |---|---|---|
 | Project scaffold | Implemented | Split settings, 10 app packages, Docker MySQL, pytest, Ruff, and CI exist. |
-| Customer identity | Schema-ready | Email is the login identifier; guest checkout has no Customer row. |
+| Customer identity | Implemented | Email-login registration, login (validated `next` redirect), logout, profile view/update, and automatic + manual guest-order claiming by matching email. |
 | Catalog | Data layer implemented | Categories, products, and Size × Color × Fit variants persist through Django ORM. |
 | Effective pricing | Implemented | Variant override wins; otherwise the product base price is returned. |
 | Money validation and arithmetic | Implemented | Strict integer-only validation, overflow guards, exact multiplication/sums, and configured peso formatting exist. |
@@ -62,17 +62,17 @@
 | Stock audit | Implemented | Every `qty_on_hand` change writes exactly one movement in the same transaction; movement rows validate direction and reject normal public ORM mutation/deletion paths. |
 | Low-stock scan (FR-9) | Partially implemented | Availability-based scan plus staff email alert exist behind the scheduler; the admin dashboard flag arrives with Epic C/F admin work. |
 | Background jobs | Implemented | Reservation sweep and low-stock scan run in one opt-in scheduler process; no job runs inside web workers. |
-| Orders | Core data layer implemented | Order totals, unique order lines, snapshots, numbering, and guarded state transitions exist. |
-| Payments | Schema-ready | One payment per order and one globally unique non-null provider reference are supported. |
-| Shipping | Schema-ready | One shipment per order with J&T default and tracking fields is supported. |
-| Wishlist | Schema-ready | One product bookmark per customer is enforced. |
-| Reviews | Schema-ready | Rating and moderation storage exists; verified-purchase validation is absent. |
+| Orders | Implemented | Checkout creates orders atomically with correct totals at INSERT, snapshot pricing (variant override honored), order-linked reservations, and the guarded state machine; admin actions drive fulfillment transitions. |
+| Payments | Implemented (sandbox pending real keys) | PayMongo checkout-session adapter, HMAC-verified idempotent webhook (fail-closed without a secret), shared `confirm_order_paid()` service, and a dev-only MOCK_PAYMENTS completion gate that production refuses to boot with. |
+| Shipping | Implemented (courier API pending) | Zone flat-rate table (NCR/Luzon/VisMin seeded), J&T adapter stub with manual waybill fallback, shipment status driven by admin actions. |
+| Wishlist | Implemented | JSON toggle endpoint plus product-detail heart and profile grid; one bookmark per customer/product. |
+| Reviews | Implemented | Verified-purchase submission (delivered + owned + in-order product), always re-enters moderation on edit, approved-only public rendering with average rating. |
 | Demo data | Implemented | Idempotent command creates 5 products. Additional seed scripts generate full product lines, variants, flatpages, and stock. |
 | Operational health | Implemented | Database-independent liveness and `SELECT 1` readiness endpoints return narrow JSON contracts. |
 | Staging runtime | Locally implemented; public gate pending | Hardened Caddy/Gunicorn/MySQL Compose stack passes local HTTPS and forced-recreation smoke; no real DNS/host/certificate evidence exists. |
 | Seed browser | Implemented for staging only | Feature-gated GET page renders active seeded products, peso prices, and variant totals; all methods return 404 while disabled, while enabled non-GET methods return 405. |
-| Storefront and checkout | Partially implemented | Storefront homepage, shop listing, and flatpages exist. WhiteNoise serves static assets in local development. Cart/checkout flows pending. |
-| External APIs | Not implemented | No PayMongo, J&T, Semaphore, Google Maps, email-provider, CDN, or object-storage adapter exists. |
+| Storefront and checkout | Implemented | Homepage with banners, filtered/sorted/searched listing with HTMX partial swaps, three-axis variant picker with stock states, localStorage cart with server availability check, JSON checkout with reservations, and tokenized success/status pages — all in the §14 design system. |
+| External APIs | Partially implemented | PayMongo (sessions + webhook), Semaphore SMS (graceful degradation), Google Places autocomplete (manual zone fallback), and console/locmem email exist; production email provider, courier API credentials, CDN, and object storage remain pending. |
 
 ## System Architecture
 
@@ -1556,11 +1556,11 @@ Internet TCP 80 / TCP+UDP 443
 | Check | Command or method | Result |
 |---|---|---|
 | Ruff lint | `.venv/Scripts/ruff check .` | Passed; all checks passed. |
-| Ruff format | `.venv/Scripts/ruff format --check .` | Passed; 58 files already formatted. |
+| Ruff format | `.venv/Scripts/ruff format --check .` | Passed; 94 files already formatted (2026-07-19). |
 | Django system check | `manage.py check` | Passed; 0 issues. |
 | Migration drift | `manage.py makemigrations --check --dry-run` | Passed; no changes detected. |
 | Applied migration state | `manage.py migrate --check --settings=config.settings.dev` | Passed; no pending migration. |
-| Unit/integration tests | `.venv/Scripts/pytest -q -p no:cacheprovider` | Passed; 182 passed, 1 strict XFAIL, 183 collected. |
+| Unit/integration tests | `.venv/Scripts/pytest -q` | Passed; 273 passed on MySQL 8, including both concurrency gates, checkout/webhook flow tests, and page-render smoke tests (2026-07-19). |
 | A-4 focused tests | health + preview + staging settings modules | Passed; 57 cases. |
 | Dependency compatibility | `uv --no-cache pip check --python .venv` | Passed; 18 packages compatible. |
 | YAML validation | isolated `yamllint` parse of CI and staging Compose | Passed; syntax valid with document-start style disabled. |
@@ -1639,6 +1639,86 @@ Internet TCP 80 / TCP+UDP 443
 | `STAGING_SEED_PREVIEW_ENABLED` | Django | Defaults false; exact 0/1; 1 exposes read-only preview. |
 | `STAGING_ALLOW_INSECURE_HTTP` | Django | Defaults false; exact 0/1; `1` permitted only for `localhost` or `127.0.0.1`. |
 
+## Storefront Commerce Modules (Epic C/D/G — 2026-07-19 QA pass)
+
+- **Purpose:** Document the commerce layer's module contracts at machine-parseable granularity.
+- **Inputs:** Storefront requests, the localStorage cart, PayMongo events, and account sessions.
+- **Outputs:** Rendered §14 design-system pages, JSON APIs, orders, payments, and notifications.
+- **Dependencies:** All domain services documented above; templates in `templates/`; the design system in `static/css/storefront.css`.
+- **Behavior:** Views stay thin; every stock/order/payment mutation routes through domain services.
+
+### Module: `apps/storefront/views.py`
+
+- **Purpose:** Public storefront: homepage (5-min cache), listing (filters/sort/search, HTMX grid swaps), product detail (variant-picker JSON, approved reviews, wishlist state), cart shell, availability API, checkout, tokenized success/status pages, contact form, gated seed preview.
+- **Inputs:** GET filters, JSON checkout payloads (`{customer fields, zone_id, items:[{variant_id, qty}]}`), signed tokens.
+- **Outputs:** HTML pages, JSON (`{success, checkout_url}` / `{availability}` / `{error}`), 400/404/409/502 semantics.
+- **Dependencies:** catalog/inventory/orders/payments/shipping/notifications services, `Signer`, `ShippingZone`, `HomepageBanner`.
+- **Behavior:** Checkout follows ADR-D-002 (single atomic block, effective prices, order-linked holds, full rollback on shortage, hold release on provider failure). Success/status pages follow ADR-D-004 (signed token only). The mock confirmation runs only under `MOCK_PAYMENTS` (ADR-D-001).
+
+### Module: `apps/payments/services.py`
+
+- **Purpose:** PayMongo checkout-session adapter and the single payment-confirmation service.
+- **Inputs:** Orders, success/cancel URLs, optional provider-reported method.
+- **Outputs:** `(checkout_url, session_id)`; idempotent `confirm_order_paid()` returning first-confirmation truth; `PayMongoError`.
+- **Dependencies:** `requests`, Payment model, inventory commit/reserve services, order state machine.
+- **Behavior:** Mock mode records a pending Payment and routes to the tokenized success URL. Confirmation locks the payment row, commits the order's own holds, re-reserves shortfalls (CRITICAL log on true shortage, never oversell), and transitions Pending→Paid — the only code path allowed to (Invariant 3).
+
+### Module: `apps/payments/views.py`
+
+- **Purpose:** `/api/webhooks/paymongo/` — signature-verified, idempotent payment webhook.
+- **Inputs:** Raw request body plus `Paymongo-Signature: t=…,te=…,li=…`.
+- **Outputs:** 400 (bad/missing signature or malformed payload), 200 (processed, replayed, unsubscribed type, or logged unknown reference).
+- **Dependencies:** `PAYMONGO_WEBHOOK_SECRET`, `confirm_order_paid`, notification adapters.
+- **Behavior:** ADR-D-003. Constant-time HMAC over `<t>.<body>`; fail-closed without a secret; notifications fire once, after first confirmation, and can never fail the webhook response.
+
+### Module: `apps/accounts/views.py`
+
+- **Purpose:** Registration (with automatic guest-order claiming), login (host-validated `next`), logout, profile view/update, order history, manual claim, wishlist toggle.
+- **Inputs:** Form POSTs, JSON wishlist toggles, authenticated sessions.
+- **Outputs:** Rendered account pages, redirects with Django messages, wishlist JSON `{success, added}`.
+- **Dependencies:** Customer manager, Order (JSON email lookup), WishlistItem, `url_has_allowed_host_and_scheme`.
+- **Behavior:** Claim responses never disclose whether a guessed order number exists for someone else's email; profile POST updates name/phone only.
+
+### Module: `apps/reviews/views.py`
+
+- **Purpose:** Verified-purchase review submission (FR-17).
+- **Inputs:** POST with order_no, product_id, rating 1–5, optional body.
+- **Outputs:** Redirect to the tokenized status page with a message; `update_or_create` per (customer, product).
+- **Dependencies:** Order ownership lookup, delivered-status and in-order-product checks, Review model.
+- **Behavior:** Every edit resets status to pending — nothing unapproved ever renders publicly (M4.5 gate).
+
+### Module: `apps/cms/models.py` + contact flow
+
+- **Purpose:** CMS-lite (FR-20/FR-18): `HomepageBanner` (title, image URL, link, active, order) and `ContactMessage` (stored inquiries with resolution flag); flatpages provide About/FAQ/Privacy.
+- **Inputs:** Admin edits; public contact POSTs.
+- **Outputs:** Homepage hero content; stored + staff-emailed inquiries (`send_contact_alert`, store-only without recipients).
+- **Dependencies:** django.contrib.flatpages + sites (SITE_ID=1), notifications adapter.
+- **Behavior:** Contact storage is the requirement; the email leg degrades gracefully.
+
+### Module: `apps/storefront/templatetags/`
+
+- **Purpose:** Presentation-safe filters: `peso` / `centavos_to_peso` (money.py) and `sign` / `format_centavos` (storefront_tags.py).
+- **Inputs:** Integer centavos; order primary keys.
+- **Outputs:** `₱1,234.56` strings (empty on malformed input, never a 500); `Signer` tokens interchangeable with view-minted ones.
+- **Dependencies:** `apps.orders.money`, `django.core.signing`.
+- **Behavior:** Templates never format money or mint tokens ad hoc.
+
+### Asset: `static/css/storefront.css` + `static/js/cart.js`
+
+- **Purpose:** The §14 design system (tokens, BEM components, waybill/sku/barcode motifs, forms, alerts, panels, status timeline) and the localStorage cart module.
+- **Inputs:** Design tokens (`--color-ink`, `--color-volt`, …); cart operations from product detail/cart/checkout pages.
+- **Outputs:** One coherent visual system across all pages; `metrodrip_cart` per ADR-C-001 with `cart-updated` events for the navbar badge.
+- **Dependencies:** Google Fonts (Anton/Inter/IBM Plex Mono), Alpine.js, HTMX.
+- **Behavior:** Cart availability flags come from `/api/cart/availability/` on cart load; checkout remains the authoritative validation.
+
+### Test Modules: `tests/test_checkout_flow.py`, `tests/test_storefront_pages.py`
+
+- **Purpose:** Pin the D-1/D-2/D-3 contracts and render every public page.
+- **Inputs:** Real MySQL, seeded catalog, HMAC-signed webhook bodies, mock-payment settings overrides.
+- **Outputs:** 26 cases: checkout totals/holds/rollback, mock confirmation idempotency and gating, webhook signature accept/reject/fail-closed/replay, tokenized page access, page-render smoke, contact/wishlist/profile flows, open-redirect rejection.
+- **Dependencies:** pytest-django client, override_settings, seed_demo.
+- **Behavior:** The render smoke tests exist specifically because template-layer 500s (missing filter libraries) previously shipped unnoticed.
+
 ## Hard Invariant Coverage
 
 - **Purpose:** Map required invariants to current enforcement.
@@ -1649,13 +1729,13 @@ Internet TCP 80 / TCP+UDP 443
 
 | Hard invariant | Current coverage | Remaining gap |
 |---|---|---|
-| No overselling | Locked reserve/release/commit services, reservation TTL model with sweep job, database availability check, and both live concurrency gates (2-buyer and M2 20-buyer). | Checkout (D-1) and webhook (D-3) flows must call these services exclusively; raw SQL remains outside code guards. |
-| Integer centavos | MySQL unsigned-INT fields, strict type validation, pre-write overflow checks, exact arithmetic, configured formatting, and 70 A-3 tests. | Later checkout/reporting code must use these helpers consistently. |
-| Webhook payment truth | Payment schema and unique provider reference only. | No signature verification, endpoint, replay log, or webhook-only Paid transition. |
+| No overselling | Checkout and the webhook route every stock change through the locked services; reservations are order-linked; insufficient stock rolls the whole checkout back; both concurrency gates run live. | Raw SQL remains outside code guards. |
+| Integer centavos | MySQL unsigned-INT fields, strict type validation, pre-write overflow checks, exact arithmetic, configured formatting; checkout snapshots effective variant prices. | Reporting/export code (F-1) must keep using these helpers. |
+| Webhook payment truth | HMAC-SHA256 signature verification (constant-time, `te`/`li`, fail-closed without a secret) gates the idempotent handler; Pending→Paid happens only inside `confirm_order_paid()`; the dev-only mock gate cannot boot in production/staging. | PayMongo replay log table is not persisted (idempotency rests on payment status + unique provider ref); daily reconciliation (M5) not yet automated. |
 | Append-only stock audit | Movement instance/queryset/bulk/conflict mutation guards, protected FKs, and services that couple every counter change to its movement in one transaction. | StockRecord direct ORM mutation outside the services module remains technically possible; raw SQL can bypass ORM guards. |
-| Enforced order state machine | Locked transition API and public ordinary ORM bypass guards. | Transition side effects and webhook-only Pending-to-Paid authority are absent; privileged raw SQL remains outside code guards. |
-| InnoDB and utf8mb4 | First migration configures/verifies defaults; settings/server reinforce; metadata tests pass. | Production migration principal must retain required ALTER permission. |
-| Card data never reaches server | No card-handling code exists. | Hosted PayMongo integration remains unimplemented. |
+| Enforced order state machine | Locked transition API, ordinary-ORM bypass guards, webhook-only Paid authority, and admin actions that transition via the API with reservation/stock side effects. | Privileged raw SQL remains outside code guards. |
+| InnoDB and utf8mb4 | First migration configures/verifies defaults; settings/server reinforce; metadata tests pass. The 2026-07-19 pass reverted an accidental SQLite base-settings swap and re-pinned the sanity test. | Production migration principal must retain required ALTER permission. |
+| Card data never reaches server | Hosted PayMongo checkout sessions only; no card fields exist anywhere in forms or models. | — |
 
 ## Known Implementation Gaps
 
@@ -1666,27 +1746,25 @@ Internet TCP 80 / TCP+UDP 443
 - **Behavior:** Each listed capability is absent unless stated otherwise.
 
 - A-4 public staging evidence is absent: no selected host, DNS record, trusted public certificate, external URL, or authoritative public smoke result exists. Local deployment artifacts are complete. This is an operator action (host/DNS/spend authority), not a code gap.
+- Real PayMongo sandbox credentials have not been exercised: the live-API branch of `create_checkout_session` and the courier-side J&T API are implemented against documented contracts but unverified against real endpoints (M3 gate work).
+- Email verification on registration and password reset (FR-14) are absent; saved-address book UI and checkout prefill from saved addresses are absent (the JSON field exists).
+- Geocoded zone auto-detection (FR-13) is partial: Places autocomplete fills address/city, but the shipping zone is always the manual dropdown.
 - The low-stock admin dashboard flag (FR-9's visual leg) is absent; scan and email exist.
-- The staging Compose stack runs exactly one `scheduler` service (entrypoint bypassed; the app container owns migrations); development still requires running `manage.py run_scheduler` manually when TTL expiry behavior is being exercised.
-- Catalog admin registration, CRUD customization, and variant-matrix generator are absent.
-- Storefront listing, filters, search, product detail, variant picker, and cart are absent.
-- Checkout, zone fees, address autocomplete, payment initiation, and payment webhooks are absent.
-- Payment amount is not yet reconciled against order total.
-- Shipment adapter, booking, courier webhook, tracking surface, and manual admin waybill workflow are absent.
-- Registration, login views, email verification, profile UI, password reset, saved-address UI, guest claiming, and order history are absent.
-- Review verified-purchase validation, approved-only public query, and moderation admin are absent.
-- Notifications, SMS, CMS, FAQ, contact form, invoice, packing slip, exports, 2FA, rate limits, and audit logs are absent.
-- Catalog caching, CDN/object storage configuration, production email provider, external log aggregation, uptime alerting, and application monitoring are absent. Bounded container-captured console logging and staging configuration are implemented.
-- CI does not currently enforce coverage thresholds, dependency/security scanning, immutable image digests, or public endpoint monitoring. It does run system/deploy checks, drift and reversal validation, deployment syntax/config/build checks, a live forced-recreation HTTPS stack, and the full MySQL suite.
-- `Payment.status`, `Shipment.status`, and `Review.status` currently permit direct ORM mutation.
+- The staging Compose stack runs exactly one `scheduler` service; development still requires running `manage.py run_scheduler` manually when TTL expiry behavior is being exercised.
+- The variant-matrix generator (C-1) is absent from the catalog admin; variants are created row-by-row or via seed.
+- Printable invoice exists as an admin view; the customer-facing invoice from order history and the packing slip (FR-19) are absent. CSV export exists via the admin action; the reconciliation-grade sales/inventory export formats (F-1) are not finalized.
+- Inbound courier webhook (`/api/webhooks/courier/`), delivery-status SMS at Out-for-Delivery, and admin 2FA/rate-limiting (F-2) are absent.
+- Catalog page caching exists only on the homepage; CDN/object storage for product media, production email provider, uptime alerting, and monitoring are absent.
+- `Payment.status`, `Shipment.status`, and `Review.status` permit direct ORM mutation outside the admin/service paths.
+- Root-level `seed_assignment.py`, `seed_data.py`, and `seed_more.py` are ad-hoc dev scripts (lint-exempted); `seed_demo` is the canonical idempotent seed and now also provisions shipping zones, flatpages, and a homepage banner.
 
 ## Next Strict Build Step
 
 - **Purpose:** Identify the next task without expanding scope.
-- **Inputs:** Handover dependency order, completed Epic B, and open M1 public-host evidence.
+- **Inputs:** Handover dependency order, the implemented commerce layer, and open M1/M3 gate evidence.
 - **Outputs:** Task sequence for continuation.
-- **Dependencies:** Epic C needs only the existing schema and admin site; the parallel operator action needs a Linux host, DNS control, and spend authority.
-- **Behavior:** Implement Epic C (C-1 admin CRUD with the variant-matrix generator, then C-2 listing/filters/search, C-3 product detail with variant picker, C-4 cart). In parallel, the operator deploys the existing A-4 stack (which now includes the scheduler service) publicly to close the M1 gate.
+- **Dependencies:** PayMongo sandbox keys, a Linux host with DNS control, and courier API access are operator-provided.
+- **Behavior:** (1) Operator deploys the A-4 stack publicly (M1) and supplies PayMongo sandbox keys so the real checkout-session and webhook paths replace the mock gate end-to-end (M3: all three payment methods, replay idempotency, abandoned checkout restores stock ≤ 16 min). (2) Complete C-1's variant-matrix generator in the catalog admin. (3) Epic E completion: J&T booking against the real API with the manual-waybill fallback, courier webhook, and E-4 cancel/refund flows already wired in admin. (4) Epic G remainder: email verification, password reset, saved-address checkout prefill, customer-facing invoice/packing slip.
 
 ## Infrastructure and Operations
 

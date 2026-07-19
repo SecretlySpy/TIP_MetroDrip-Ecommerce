@@ -87,8 +87,21 @@ WSGI_APPLICATION = "config.wsgi.application"
 # defensively so a misconfigured server can never silently create MyISAM tables.
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": os.environ.get("MYSQL_DATABASE", "metrodrip"),
+        "USER": os.environ.get("MYSQL_USER", "metrodrip"),
+        "PASSWORD": os.environ.get("MYSQL_PASSWORD", "metrodrip"),
+        "HOST": os.environ.get("MYSQL_HOST", "127.0.0.1"),
+        "PORT": os.environ.get("MYSQL_PORT", "3306"),
+        "OPTIONS": {
+            "charset": "utf8mb4",
+            "init_command": "SET default_storage_engine=INNODB, sql_mode='STRICT_TRANS_TABLES'",
+        },
+        # pytest-created databases must also honor the charset invariant.
+        "TEST": {
+            "CHARSET": "utf8mb4",
+            "COLLATION": "utf8mb4_0900_ai_ci",
+        },
     }
 }
 
@@ -140,6 +153,26 @@ LOW_STOCK_ALERT_RECIPIENTS = [
 DEFAULT_FROM_EMAIL = os.environ.get(
     "DJANGO_DEFAULT_FROM_EMAIL", "MetroDrip <no-reply@metrodrip.example>"
 )
+
+# --- Payments (D-2/D-3, Hard Invariant 3) ---
+PAYMONGO_SECRET_KEY = os.environ.get("PAYMONGO_SECRET_KEY", "")
+PAYMONGO_WEBHOOK_SECRET = os.environ.get("PAYMONGO_WEBHOOK_SECRET", "")
+# Sandbox-only simulated payment completion for demos without PayMongo keys.
+# dev.py may enable it; prod.py refuses to boot with it on (fail closed).
+MOCK_PAYMENTS = False
+
+# --- Enhancement-tier APIs (§7 rule: never on the critical checkout path) ---
+SEMAPHORE_API_KEY = os.environ.get("SEMAPHORE_API_KEY", "")
+SEMAPHORE_SENDER_NAME = os.environ.get("SEMAPHORE_SENDER_NAME", "MetroDrip")
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+
+# FR-18: contact-form submissions are stored and emailed to staff; empty list
+# degrades to store-only, mirroring the low-stock alert pattern.
+CONTACT_ALERT_RECIPIENTS = [
+    address.strip()
+    for address in os.environ.get("CONTACT_ALERT_RECIPIENTS", "").split(",")
+    if address.strip()
+]
 
 # Customer is the registered-shopper auth model; guest orders keep this relation
 # NULL. This must be set before the first accounts migration because Django

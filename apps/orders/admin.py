@@ -7,6 +7,7 @@ OrderItem is shown inline on the order detail page.
 
 from django.contrib import admin
 
+from apps.core.admin import ExportCsvMixin
 from apps.orders.money import format_centavos
 
 from .models import Order, OrderItem
@@ -33,19 +34,28 @@ class OrderItemInline(admin.TabularInline):
         return False
 
 
-from apps.core.admin import ExportCsvMixin
-
 @admin.register(Order)
-class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
+class OrderAdmin(ExportCsvMixin, admin.ModelAdmin):
     list_display = (
-        "order_no", "customer", "status", "subtotal_display",
-        "shipping_fee_display", "total_display", "created_at",
+        "order_no",
+        "customer",
+        "status",
+        "subtotal_display",
+        "shipping_fee_display",
+        "total_display",
+        "created_at",
     )
     list_filter = ("status", "created_at")
     search_fields = ("order_no", "customer__email")
     readonly_fields = (
-        "order_no", "customer", "status", "subtotal_display",
-        "shipping_fee_display", "total_display", "shipping_address", "created_at",
+        "order_no",
+        "customer",
+        "status",
+        "subtotal_display",
+        "shipping_fee_display",
+        "total_display",
+        "shipping_address",
+        "created_at",
     )
     inlines = [OrderItemInline]
     ordering = ("-created_at",)
@@ -67,29 +77,40 @@ class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
 
     def get_urls(self):
         from django.urls import path
+
         urls = super().get_urls()
         custom_urls = [
-            path("sales-report/", self.admin_site.admin_view(self.sales_report_view), name="orders_order_sales_report"),
-            path("<path:object_id>/invoice/", self.admin_site.admin_view(self.invoice_view), name="orders_order_invoice"),
+            path(
+                "sales-report/",
+                self.admin_site.admin_view(self.sales_report_view),
+                name="orders_order_sales_report",
+            ),
+            path(
+                "<path:object_id>/invoice/",
+                self.admin_site.admin_view(self.invoice_view),
+                name="orders_order_invoice",
+            ),
         ]
         return custom_urls + urls
 
     def sales_report_view(self, request):
+        from django.db.models import Count, Sum
         from django.shortcuts import render
-        from django.db.models import Sum, Count
+
         from apps.orders.models import Order
-        
-        # Aggregate data
-        metrics = Order.objects.filter(status__in=["completed", "shipped", "packed", "processing"]).aggregate(
-            total_revenue=Sum("total"),
-            total_orders=Count("id")
-        )
-        
+
+        # Revenue counts every order whose payment was confirmed and not
+        # reversed — i.e. paid and all later fulfillment states. (The previous
+        # list used status names that don't exist in OrderStatus.)
+        metrics = Order.objects.filter(
+            status__in=["paid", "packed", "shipped", "delivered"]
+        ).aggregate(total_revenue=Sum("total"), total_orders=Count("id"))
+
         total_revenue_display = format_centavos(metrics["total_revenue"] or 0)
-        
+
         # Pending vs completed counts
         status_counts = Order.objects.values("status").annotate(count=Count("id"))
-        
+
         context = {
             **self.admin_site.each_context(request),
             "title": "Sales & Analytics Report",
@@ -101,23 +122,32 @@ class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
 
     def invoice_view(self, request, object_id):
         from django.shortcuts import get_object_or_404, render
+
         from .models import Order
+
         order = get_object_or_404(Order, pk=object_id)
         return render(request, "admin/orders/order/invoice.html", {"order": order})
 
     def has_delete_permission(self, request, obj=None):
         return False
 
-    actions = ["mark_as_packed", "mark_as_shipped", "mark_as_cancelled", "mark_as_refunded", "export_as_csv"]
+    actions = [
+        "mark_as_packed",
+        "mark_as_shipped",
+        "mark_as_cancelled",
+        "mark_as_refunded",
+        "export_as_csv",
+    ]
 
     @admin.action(description="Transition selected to PACKED (books J&T shipment)")
     def mark_as_packed(self, request, queryset):
-        from apps.orders.models import OrderStatus, IllegalTransition
-        from apps.shipping.models import Shipment
-        from apps.shipping.jnt import book_shipment
-        from django.contrib.admin.models import LogEntry, CHANGE
+        from django.contrib.admin.models import CHANGE, LogEntry
         from django.contrib.contenttypes.models import ContentType
-        
+
+        from apps.orders.models import IllegalTransition, OrderStatus
+        from apps.shipping.jnt import book_shipment
+        from apps.shipping.models import Shipment
+
         success, failed = 0, 0
         for order in queryset:
             try:
@@ -125,7 +155,7 @@ class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
                 # E-2: Create/Book shipment
                 shipment, _ = Shipment.objects.get_or_create(order=order)
                 book_shipment(shipment)
-                
+
                 # F-2: Audit log
                 LogEntry.objects.log_action(
                     user_id=request.user.id,
@@ -133,9 +163,9 @@ class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
                     object_id=order.pk,
                     object_repr=str(order),
                     action_flag=CHANGE,
-                    change_message="Transitioned to PACKED and booked shipment."
+                    change_message="Transitioned to PACKED and booked shipment.",
                 )
-                
+
                 success += 1
             except IllegalTransition as e:
                 self.message_user(request, str(e), level="ERROR")
@@ -144,12 +174,13 @@ class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
 
     @admin.action(description="Transition selected to SHIPPED (triggers notifications)")
     def mark_as_shipped(self, request, queryset):
-        from apps.orders.models import OrderStatus, IllegalTransition
-        from apps.shipping.models import ShipmentStatus
-        from apps.notifications.sms import send_sms
-        from django.contrib.admin.models import LogEntry, CHANGE
+        from django.contrib.admin.models import CHANGE, LogEntry
         from django.contrib.contenttypes.models import ContentType
-        
+
+        from apps.notifications.sms import send_sms
+        from apps.orders.models import IllegalTransition, OrderStatus
+        from apps.shipping.models import ShipmentStatus
+
         success, failed = 0, 0
         for order in queryset:
             try:
@@ -158,13 +189,15 @@ class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
                 if hasattr(order, "shipment"):
                     order.shipment.status = ShipmentStatus.IN_TRANSIT
                     order.shipment.save(update_fields=["status"])
-                    
+
                 # E-3: Notifications
                 phone = order.shipping_address.get("phone")
                 if phone:
                     tracking = order.shipment.waybill_no if hasattr(order, "shipment") else ""
-                    send_sms(phone, f"MetroDrip: Order {order.order_no} is SHIPPED! Tracking: {tracking}")
-                    
+                    send_sms(
+                        phone, f"MetroDrip: Order {order.order_no} is SHIPPED! Tracking: {tracking}"
+                    )
+
                 # F-2: Audit log
                 LogEntry.objects.log_action(
                     user_id=request.user.id,
@@ -172,9 +205,9 @@ class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
                     object_id=order.pk,
                     object_repr=str(order),
                     action_flag=CHANGE,
-                    change_message="Transitioned to SHIPPED and sent SMS."
+                    change_message="Transitioned to SHIPPED and sent SMS.",
                 )
-                    
+
                 success += 1
             except IllegalTransition as e:
                 self.message_user(request, str(e), level="ERROR")
@@ -183,17 +216,18 @@ class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
 
     @admin.action(description="Transition selected to CANCELLED (releases reservation)")
     def mark_as_cancelled(self, request, queryset):
-        from apps.orders.models import OrderStatus, IllegalTransition
-        from apps.inventory.services import release_reservation
         from apps.inventory.models import Reservation
-        
+        from apps.inventory.services import release_reservation
+        from apps.orders.models import IllegalTransition, OrderStatus
+
         success, failed = 0, 0
         for order in queryset:
             try:
                 order.transition_to(OrderStatus.CANCELLED)
-                # Free active reservations for this order. We'd usually look it up via session or order
-                for res in Reservation.objects.filter(order=order):
-                    release_reservation(res.id)
+                # Cancelling a pending order returns its holds (ADR-A-011);
+                # only active holds need releasing and release is idempotent.
+                for res in Reservation.objects.filter(order=order, status="active"):
+                    release_reservation(res.pk)
                 success += 1
             except IllegalTransition as e:
                 self.message_user(request, str(e), level="ERROR")
@@ -202,10 +236,10 @@ class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
 
     @admin.action(description="Transition selected to REFUNDED (restores stock)")
     def mark_as_refunded(self, request, queryset):
-        from apps.orders.models import OrderStatus, IllegalTransition
-        from apps.inventory.services import adjust_stock
         from apps.inventory.models import MovementReason
-        
+        from apps.inventory.services import adjust_stock
+        from apps.orders.models import IllegalTransition, OrderStatus
+
         success, failed = 0, 0
         for order in queryset:
             try:
@@ -216,7 +250,7 @@ class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
                         variant_id=item.variant_id,
                         delta=item.qty,
                         reason=MovementReason.RETURN,
-                        ref_order=order
+                        ref_order=order,
                     )
                 success += 1
             except IllegalTransition as e:

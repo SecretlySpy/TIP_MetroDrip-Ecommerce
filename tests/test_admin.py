@@ -4,8 +4,9 @@ Verifies that all model admin registrations load without errors and that
 the variant-matrix generator creates the correct number of variants.
 """
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 from django.contrib.admin.sites import AdminSite
 from django.test import RequestFactory
 
@@ -91,7 +92,9 @@ class TestAdminRegistrations:
 class TestVariantMatrixGenerator:
     """Test the admin action that generates all Size × Color × Fit variants."""
 
-    def test_generates_full_matrix_for_one_color(self, mock_message_user, product, request_factory, admin_site):
+    def test_generates_full_matrix_for_one_color(
+        self, mock_message_user, product, request_factory, admin_site
+    ):
         """With one existing color, generates sizes × 1 × fits = 18 variants."""
         # Create one variant to establish a color.
         ProductVariant.objects.create(
@@ -102,6 +105,7 @@ class TestVariantMatrixGenerator:
         request = request_factory.post("/admin/")
         # Django admin actions need the user attribute.
         from apps.accounts.models import Customer
+
         request.user = Customer.objects.create_superuser(
             email="admin-matrix@test.local", password="testpass123", name="Admin"
         )
@@ -113,7 +117,9 @@ class TestVariantMatrixGenerator:
         total = product.variants.count()
         assert total == 18  # 6 × 1 × 3
 
-    def test_generates_full_matrix_for_two_colors(self, mock_message_user, product, request_factory, admin_site):
+    def test_generates_full_matrix_for_two_colors(
+        self, mock_message_user, product, request_factory, admin_site
+    ):
         """With two existing colors, generates sizes × 2 × fits = 36 variants."""
         ProductVariant.objects.create(
             product=product, sku="MD-SEED-002", size=Size.M, color="Black", fit=Fit.REGULAR
@@ -125,6 +131,7 @@ class TestVariantMatrixGenerator:
         model_admin = ProductAdmin(Product, admin_site)
         request = request_factory.post("/admin/")
         from apps.accounts.models import Customer
+
         request.user = Customer.objects.create_superuser(
             email="admin-matrix2@test.local", password="testpass123", name="Admin"
         )
@@ -134,7 +141,9 @@ class TestVariantMatrixGenerator:
         total = product.variants.count()
         assert total == 36  # 6 × 2 × 3
 
-    def test_idempotent_matrix_generation(self, mock_message_user, product, request_factory, admin_site):
+    def test_idempotent_matrix_generation(
+        self, mock_message_user, product, request_factory, admin_site
+    ):
         """Running the generator twice doesn't create duplicate variants."""
         ProductVariant.objects.create(
             product=product, sku="MD-SEED-004", size=Size.M, color="Red", fit=Fit.REGULAR
@@ -143,6 +152,7 @@ class TestVariantMatrixGenerator:
         model_admin = ProductAdmin(Product, admin_site)
         request = request_factory.post("/admin/")
         from apps.accounts.models import Customer
+
         request.user = Customer.objects.create_superuser(
             email="admin-idem@test.local", password="testpass123", name="Admin"
         )
@@ -156,11 +166,14 @@ class TestVariantMatrixGenerator:
 
         assert first_count == second_count
 
-    def test_generates_default_color_when_no_variants(self, mock_message_user, product, request_factory, admin_site):
+    def test_generates_default_color_when_no_variants(
+        self, mock_message_user, product, request_factory, admin_site
+    ):
         """A product with no existing variants gets a 'Default' color matrix."""
         model_admin = ProductAdmin(Product, admin_site)
         request = request_factory.post("/admin/")
         from apps.accounts.models import Customer
+
         request.user = Customer.objects.create_superuser(
             email="admin-default@test.local", password="testpass123", name="Admin"
         )

@@ -29,8 +29,11 @@ class StockRecordInline(admin.StackedInline):
 @admin.register(StockRecord)
 class StockRecordAdmin(admin.ModelAdmin):
     list_display = (
-        "variant", "qty_on_hand", "qty_reserved",
-        "available_display", "low_stock_threshold",
+        "variant",
+        "qty_on_hand",
+        "qty_reserved",
+        "available_display",
+        "low_stock_threshold",
     )
     list_filter = ("low_stock_threshold",)
     search_fields = ("variant__sku",)
@@ -67,14 +70,26 @@ class ReservationAdmin(admin.ModelAdmin):
     """Operational view of checkout holds — read-only."""
 
     list_display = (
-        "id", "variant", "qty", "status",
-        "session_key_short", "expires_at", "created_at", "ended_at",
+        "id",
+        "variant",
+        "qty",
+        "status",
+        "session_key_short",
+        "expires_at",
+        "created_at",
+        "ended_at",
     )
     list_filter = ("status",)
     search_fields = ("variant__sku", "session_key")
     readonly_fields = (
-        "variant", "qty", "status", "session_key",
-        "order", "expires_at", "created_at", "ended_at",
+        "variant",
+        "qty",
+        "status",
+        "session_key",
+        "order",
+        "expires_at",
+        "created_at",
+        "ended_at",
     )
 
     @admin.display(description="Session")

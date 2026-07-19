@@ -2,7 +2,7 @@
 
 from .base import *  # noqa: F403
 
-DEBUG = False
+DEBUG = True
 
 # Fallback key is fine here: dev.py must never be used in production (prod.py
 # hard-requires a real key from the environment instead).
@@ -12,3 +12,7 @@ ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 # Emails print to the runserver console until a real provider is wired in (FR-11).
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# Without PayMongo sandbox keys the demo checkout completes through the mocked
+# payment path; with keys configured, dev uses the real sandbox end-to-end.
+MOCK_PAYMENTS = not PAYMONGO_SECRET_KEY  # noqa: F405
