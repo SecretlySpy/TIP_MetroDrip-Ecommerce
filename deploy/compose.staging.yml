@@ -91,6 +91,40 @@ services:
       start_period: 45s
     stop_grace_period: 30s
 
+  scheduler:
+    # Exactly ONE scheduler process per environment (ADR-A-014/ADR-B-003): it
+    # runs the reservation TTL sweep and the low-stock scan. It reuses the app
+    # image but bypasses the entrypoint — the app container alone owns
+    # collectstatic/migrate/seed, so the scheduler can never race a migration.
+    image: metrodrip-staging:local
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    entrypoint: []
+    command: ["python", "manage.py", "run_scheduler"]
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.staging
+      DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in deploy/.env.staging}"
+      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS in deploy/.env.staging}"
+      DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:?Set DJANGO_CSRF_TRUSTED_ORIGINS in deploy/.env.staging}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:?Set MYSQL_DATABASE in deploy/.env.staging}"
+      MYSQL_USER: "${MYSQL_USER:?Set MYSQL_USER in deploy/.env.staging}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in deploy/.env.staging}"
+      MYSQL_HOST: db
+      MYSQL_PORT: "3306"
+      STAGING_HOST: "${STAGING_HOST:?Set STAGING_HOST in deploy/.env.staging}"
+    depends_on:
+      # Waiting on the healthy app guarantees migrations have already applied.
+      app:
+        condition: service_healthy
+    networks:
+      - database
+    stop_grace_period: 30s
+
   caddy:
     # Caddy obtains and renews public TLS certificates automatically once DNS
     # points at this host and inbound TCP ports 80/443 are reachable.

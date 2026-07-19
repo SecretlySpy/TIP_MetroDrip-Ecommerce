@@ -1,6 +1,6 @@
 # MetroDrip Architecture Decision Register
 
-- **Scope:** Tasks A-1 through A-4
+- **Scope:** Tasks A-1 through A-4 and Epic B (B-1 through B-4)
 - **Status:** Accepted
 - **Authority:** Extends the locked decisions in `MetroDrip_AI_Handover.md` section 11.
 - **Change rule:** Update this register when an implementation intentionally changes one of these contracts.
@@ -56,10 +56,10 @@
 
 ## ADR-A-008 — Inventory concurrency red contract
 
-- **Status:** Accepted until Epic B-1; remove the marker when B-1 is implemented.
-- **Decision:** Commit the two-buyers/one-unit concurrency test as `pytest.mark.xfail(strict=True)` while the atomic inventory service does not exist.
+- **Status:** Fulfilled by Epic B-1 — the marker is removed and the gate runs live.
+- **Decision:** The two-buyers/one-unit concurrency test was committed as `pytest.mark.xfail(strict=True)` while the atomic inventory service did not exist; B-1 implemented `reserve_stock` with `transaction.atomic()` + `select_for_update()`, removed the marker, and the same test now passes normally.
 - **Rationale:** The repository instructions require post-change QA to remain green, while the handover requires the failing concurrency contract to exist before implementation.
-- **Consequences:** The test must run against real MySQL/InnoDB and assert exactly one successful buyer. A normal failure is an expected red contract; an unexpected pass is a strict XPASS and therefore fails QA. B-1 must implement `transaction.atomic()` plus `select_for_update()`, remove the xfail marker, and make the same test pass normally.
+- **Consequences:** The gate runs on real MySQL/InnoDB on every push and asserts exactly one successful buyer. The M2 release gate (20 parallel buyers, 10 units, exactly 10 successes and 0 oversells) runs alongside it in `tests/test_inventory.py`.
 
 ## ADR-A-009 — Annual order number allocation
 
@@ -149,4 +149,30 @@
 - **Operations:** All service logs rotate at three files of 10 MiB. Database and Caddy state use named volumes. Database dumps, environment files, and SQL files are excluded from Git and Docker build contexts. Backup commands create a mode-0700 directory under a restrictive umask and keep the root password out of the `mysqldump` argument list. The runbook verifies forced container recreation rather than a process-only restart.
 - **Continuous verification:** CI checks migration drift and forward/reverse/forward execution, validates shell/Compose/Caddy/Dockerfile contracts, builds the staging image, verifies UID/GID/mode/write boundaries, and runs an ephemeral localhost HTTPS stack through seed, admin/static, forced-recreation, and exact persistence checks before removing its volumes.
 - **Scaling consequence:** Do not scale the app container or Gunicorn worker count while migrations and future APScheduler jobs run in-process. Horizontal scaling requires a separate release migration job and dedicated scheduler process.
-- **Gate consequence:** Local disposable HTTPS validation proves deployability but does not satisfy “staging live.” Epic B remains blocked by the strict build order until a real hostname, DNS record, trusted certificate, and public smoke checks prove the M1 staging gate.
+- **Gate consequence:** Local disposable HTTPS validation proves deployability but does not satisfy “staging live.” The public M1 evidence (real hostname, DNS record, trusted certificate, public smoke checks) requires operator-held host/DNS access and remains an open operator action; Epic B implementation proceeded because it has no technical dependency on the public host, only on the schema and QA gates, and deferring it would idle the only workstream available to this repository.
+
+## ADR-B-001 — Reservation lifecycle and locking discipline
+
+- **Status:** Accepted
+- **Decision:** A `Reservation` row represents one checkout hold: `active → committed | released | expired`; the three non-active states are terminal.
+- **Semantics:**
+  - Reservations mutate only `qty_reserved`; they never change `qty_on_hand` and therefore never write `StockMovement` rows. Only committing a reservation (payment confirmed) decrements both counters and appends the single `sale` movement in the same transaction.
+  - `release_reservation` is idempotent for already-ended holds because the shopper-abandon path and the TTL sweep race legitimately; releasing a `committed` hold raises.
+  - An `active` hold past `expires_at` is still committable: only the sweep expires holds, so a payment that lands before the sweep is honored rather than oversold or refunded.
+  - `reserve_stock` raises `StockRecord.DoesNotExist` for untracked SKUs — an unstocked variant must never be silently sellable.
+- **Locking:** Every mutation runs inside `transaction.atomic()` with `select_for_update()`. Global lock order is Reservation before StockRecord wherever both are needed; `reserve_stock` locks only the StockRecord. One global order makes lock-cycle deadlocks impossible. The TTL sweep collects candidate IDs without locks, then re-validates each row under its own per-row transaction so a poisoned row cannot roll back the rest of the sweep and a racing commit/release always wins or loses cleanly.
+- **Consequences:** `apps/inventory/services.py` is the only writer of stock counters and movements. Epic D must call `commit_reservation` from the webhook handler and treat `InvalidReservationState` as "re-reserve or refund".
+
+## ADR-B-002 — Stock adjustment boundary
+
+- **Status:** Accepted
+- **Decision:** `adjust_stock` accepts only `restock`, `return`, and `adjustment` reasons; `sale` is rejected because sales exist only as committed reservations (single ledger writer per reason).
+- **Semantics:** Restock/return must be positive; adjustment must be nonzero; any change that would leave `qty_on_hand` below `qty_reserved` is rejected because it would strand promised holds and violate `chk_reserved_lte_on_hand`.
+- **Consequences:** Epic E-4 refunds restore stock through `adjust_stock(reason="return", ref_order=...)`, giving the return movement its order reference for free.
+
+## ADR-B-003 — In-process job schedule
+
+- **Status:** Accepted
+- **Decision:** One APScheduler process (the `run_scheduler` management command) runs two jobs: the reservation sweep every 60 seconds and the low-stock scan every 60 minutes, both with `coalesce=True` and `max_instances=1`.
+- **Rationale:** A 15-minute TTL plus a 60-second sweep bounds abandoned-checkout stock restoration at ~16 minutes, exactly the M3 gate ceiling. Hourly low-stock scans match a single-warehouse restock cadence without alert spam.
+- **Consequences:** Exactly one scheduler instance may run per environment (ADR-A-014). Jobs call `close_old_connections()` around their work because no request cycle recycles MySQL connections for them. Low-stock alerting degrades to a log line when `LOW_STOCK_ALERT_RECIPIENTS` is empty — the email leg is an enhancement around the scan, never a dependency.

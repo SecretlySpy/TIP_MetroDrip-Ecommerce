@@ -41,6 +41,59 @@ class StockRecord(models.Model):
         return self.qty_on_hand - self.qty_reserved
 
 
+class ReservationStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    COMMITTED = "committed", "Committed"
+    RELEASED = "released", "Released"
+    EXPIRED = "expired", "Expired"
+
+
+class Reservation(models.Model):
+    """A 15-minute checkout hold on units of one SKU (FR-5).
+
+    Lifecycle: ACTIVE → COMMITTED (payment confirmed, becomes a sale movement)
+    | RELEASED (checkout abandoned/cancelled explicitly) | EXPIRED (TTL sweep).
+    The three non-active states are terminal. Reservations never change
+    qty_on_hand — only qty_reserved — so they never write StockMovement rows.
+    """
+
+    variant = models.ForeignKey(
+        "catalog.ProductVariant", on_delete=models.PROTECT, related_name="reservations"
+    )
+    qty = models.PositiveIntegerField()
+    status = models.CharField(
+        max_length=9, choices=ReservationStatus.choices, default=ReservationStatus.ACTIVE
+    )
+    # Correlates the hold with a checkout session before an Order exists (D-1).
+    session_key = models.CharField(max_length=64, blank=True, default="")
+    # Set when the hold converts into a sale; SET_NULL because a reservation is
+    # operational state, not audit evidence (StockMovement carries the audit).
+    order = models.ForeignKey(
+        "orders.Order",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reservations",
+    )
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    # When the row left ACTIVE, regardless of which terminal state it entered.
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            # The sweep's hot query: WHERE status = active AND expires_at <= now.
+            models.Index(fields=["status", "expires_at"], name="idx_res_status_expiry"),
+        ]
+        constraints = [
+            # A zero-unit hold is meaningless and would let bad input mask bugs.
+            models.CheckConstraint(condition=models.Q(qty__gte=1), name="chk_reservation_qty_min1"),
+        ]
+
+    def __str__(self):
+        return f"{self.variant_id} × {self.qty} ({self.status})"
+
+
 class MovementReason(models.TextChoices):
     SALE = "sale", "Sale"
     RESTOCK = "restock", "Restock"

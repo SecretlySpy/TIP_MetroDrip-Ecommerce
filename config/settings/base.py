@@ -133,6 +133,23 @@ CURRENCY_MINOR_UNITS = 2
 # accident. Only staging.py can opt in through an explicit environment flag.
 STAGING_SEED_PREVIEW_ENABLED = False
 
+# --- Inventory reservations (FR-5) and low-stock alerts (FR-9) ---
+# Checkout holds stock for 15 minutes; the sweep job releases abandoned holds so
+# an abandoned cart restores availability within the M3 gate's 16-minute bound.
+RESERVATION_TTL_MINUTES = 15
+RESERVATION_SWEEP_INTERVAL_SECONDS = 60
+LOW_STOCK_SCAN_INTERVAL_MINUTES = 60
+# Empty recipient list disables the email leg of low-stock alerts without
+# breaking the scan itself (the dashboard flag in FR-8/F epics reads the scan).
+LOW_STOCK_ALERT_RECIPIENTS = [
+    address.strip()
+    for address in os.environ.get("LOW_STOCK_ALERT_RECIPIENTS", "").split(",")
+    if address.strip()
+]
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DJANGO_DEFAULT_FROM_EMAIL", "MetroDrip <no-reply@metrodrip.example>"
+)
+
 # Customer is the registered-shopper auth model; guest orders keep this relation
 # NULL. This must be set before the first accounts migration because Django
 # cannot safely swap the user model after tables and foreign keys exist.

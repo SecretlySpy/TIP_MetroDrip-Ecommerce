@@ -36,7 +36,7 @@
 | HTTP server | Gunicorn 26 | Staging runs one non-root worker with four threads. |
 | Reverse proxy | Caddy 2 | Sole public ingress; automatic HTTPS, compression, response headers, and proxy logging. |
 | Static assets | WhiteNoise 6 | Serves hashed collected admin/site assets; never product media. |
-| Jobs | APScheduler | Dependency installed; no jobs or scheduler startup exists. |
+| Jobs | APScheduler | Two configured jobs (reservation sweep every 60 s, low-stock scan every 60 min) run only inside the single `run_scheduler` management-command process. |
 | Frontend | Django Templates | Temporary staging seed template exists; commerce templates, HTMX, and Alpine.js are absent. |
 | Tests | pytest and pytest-django | Tests execute against real MySQL rather than SQLite. |
 | Lint and format | Ruff | Lint and formatting checks pass. |
@@ -57,8 +57,11 @@
 | Catalog | Data layer implemented | Categories, products, and Size × Color × Fit variants persist through Django ORM. |
 | Effective pricing | Implemented | Variant override wins; otherwise the product base price is returned. |
 | Money validation and arithmetic | Implemented | Strict integer-only validation, overflow guards, exact multiplication/sums, and configured peso formatting exist. |
-| Inventory counters | Schema-ready | Availability is on-hand minus reserved; database prevents reserved exceeding on-hand. |
-| Stock audit | Partially implemented | Movement rows validate direction and reject normal public ORM mutation/deletion paths. |
+| Inventory counters | Implemented | Availability is on-hand minus reserved; all mutations run through locked `apps/inventory/services.py` operations; database prevents reserved exceeding on-hand. |
+| Stock reservations (FR-5) | Implemented | 15-minute TTL holds with active/committed/released/expired lifecycle; both no-oversell concurrency gates (2-buyer and M2 20-buyer) pass on real InnoDB locks. |
+| Stock audit | Implemented | Every `qty_on_hand` change writes exactly one movement in the same transaction; movement rows validate direction and reject normal public ORM mutation/deletion paths. |
+| Low-stock scan (FR-9) | Partially implemented | Availability-based scan plus staff email alert exist behind the scheduler; the admin dashboard flag arrives with Epic C/F admin work. |
+| Background jobs | Implemented | Reservation sweep and low-stock scan run in one opt-in scheduler process; no job runs inside web workers. |
 | Orders | Core data layer implemented | Order totals, unique order lines, snapshots, numbering, and guarded state transitions exist. |
 | Payments | Schema-ready | One payment per order and one globally unique non-null provider reference are supported. |
 | Shipping | Schema-ready | One shipment per order with J&T default and tracking fields is supported. |
@@ -173,8 +176,8 @@ Internet TCP 80 / TCP+UDP 443
 - **Purpose:** Represent physical stock, reservations, and audit evidence.
 - **Inputs:** `qty_on_hand`, `qty_reserved`, movement delta, movement reason, optional order.
 - **Outputs:** `available = qty_on_hand - qty_reserved` and append-only application-level ledger rows.
-- **Dependencies:** MySQL checks, protected foreign keys, and ORM mutation guards.
-- **Behavior:** Current schema prevents negative availability and invalid movement signs. Operational reserve/release/sale services are not implemented.
+- **Dependencies:** MySQL checks, protected foreign keys, ORM mutation guards, and `apps/inventory/services.py` row locks.
+- **Behavior:** `reserve_stock` places an `active` 15-minute hold that raises `qty_reserved` only. Terminal hold outcomes: `committed` (payment; both counters fall and one `sale` movement is appended), `released` (explicit abandon; idempotent), `expired` (TTL sweep). `adjust_stock` applies non-sale physical changes with their movement in one transaction. The schema prevents negative availability and invalid movement signs.
 
 ### Guest Identity Flow
 
@@ -666,10 +669,10 @@ Internet TCP 80 / TCP+UDP 443
 ## Domain Module: `apps/inventory/models.py`
 
 - **Purpose:** Define single-warehouse counters and immutable application-level stock audit rows.
-- **Inputs:** Variant, physical quantity, reserved quantity, threshold, movement delta/reason, optional order.
-- **Outputs:** StockRecord and StockMovement rows.
+- **Inputs:** Variant, physical quantity, reserved quantity, threshold, reservation quantity/TTL, movement delta/reason, optional order.
+- **Outputs:** StockRecord, Reservation, and StockMovement rows.
 - **Dependencies:** Catalog variants, orders, MySQL checks, and Django ORM guards.
-- **Behavior:** A-2 supports initial seed balances; operational mutation services begin in B-1.
+- **Behavior:** Defines the counters, the checkout-hold entity, and the append-only ledger; every operational mutation goes through `apps/inventory/services.py` (ADR-B-001).
 
 ### Class: `StockRecord(models.Model)`
 
@@ -694,6 +697,30 @@ Internet TCP 80 / TCP+UDP 443
 - **Outputs:** Integer difference.
 - **Dependencies:** Database constraint prevents a persisted negative result.
 - **Behavior:** No database write.
+
+### Class: `ReservationStatus(models.TextChoices)`
+
+- **Purpose:** Define the checkout-hold lifecycle states.
+- **Inputs:** Reservation creation and service transitions.
+- **Outputs:** `active`, `committed`, `released`, and `expired`.
+- **Dependencies:** Django TextChoices.
+- **Behavior:** `active` is the only non-terminal state; services enforce the legal exits.
+
+### Class: `Reservation(models.Model)`
+
+- **Purpose:** Persist one 15-minute checkout hold on units of one SKU (FR-5).
+- **Inputs:** Variant, quantity of at least one, optional session key, expiry timestamp, optional order.
+- **Outputs:** One hold row with status, creation, expiry, and end timestamps.
+- **Dependencies:** `catalog.ProductVariant` (protected), `orders.Order` (optional, set-null), `chk_reservation_qty_min1`, and the `idx_res_status_expiry` sweep index.
+- **Behavior:** Holds change `qty_reserved` only and never write movements. The order reference is set when a hold commits into a sale; deleting that order later nulls the reference because the movement ledger, not the reservation, is the audit record.
+
+#### Function: `Reservation.__str__(self)`
+
+- **Purpose:** Return readable hold text.
+- **Inputs:** Reservation instance.
+- **Outputs:** Variant ID, quantity, and status.
+- **Dependencies:** Stored fields.
+- **Behavior:** No side effects.
 
 ### Class: `MovementReason(models.TextChoices)`
 
@@ -1056,6 +1083,126 @@ Internet TCP 80 / TCP+UDP 443
 - **Dependencies:** `OrderNumberSequence`, timezone, atomic transaction, and row locking.
 - **Behavior:** Rejects Boolean despite `bool` being an `int` subclass; locks or creates the annual row; checks exhaustion; increments and persists atomically.
 
+## Service Module: `apps/inventory/services.py`
+
+- **Purpose:** Provide the only code path allowed to mutate stock counters or append movements (Hard Invariants 1 and 4).
+- **Inputs:** Variant IDs, quantities, movement reasons, reservations, orders, and clock values.
+- **Outputs:** Reservation lifecycle transitions, counter updates, movement rows, low-stock querysets, and domain exceptions.
+- **Dependencies:** `transaction.atomic()`, `select_for_update()`, InnoDB row locks, `RESERVATION_TTL_MINUTES`, and the inventory models.
+- **Behavior:** Global lock order is Reservation before StockRecord wherever both are locked (ADR-B-001); every mutation holds the relevant row locks for its whole transaction.
+
+### Class: `InsufficientStock(Exception)`
+
+- **Purpose:** Signal the expected business rejection when requested units exceed availability.
+- **Inputs:** Raised by `reserve_stock`.
+- **Outputs:** Exception with variant, requested, and available detail.
+- **Dependencies:** None.
+- **Behavior:** The checkout flow treats this as "show sold-out", never as a server error.
+
+### Class: `InvalidReservationState(Exception)`
+
+- **Purpose:** Reject actions a hold's current lifecycle state does not permit.
+- **Inputs:** Raised by release/commit paths and counter-corruption guards.
+- **Outputs:** Exception with reservation and state detail.
+- **Dependencies:** None.
+- **Behavior:** Epic D must respond to a commit-time instance by re-reserving or refunding.
+
+### Class: `InvalidStockAdjustment(Exception)`
+
+- **Purpose:** Reject adjustments that would corrupt counters or forge sales.
+- **Inputs:** Raised by `adjust_stock` validation.
+- **Outputs:** Exception with the violated rule.
+- **Dependencies:** None.
+- **Behavior:** Covers zero/non-integer deltas, negative restock/return, the `sale` reason, and drops below reserved.
+
+### Function: `reserve_stock(*, variant_id, qty, session_key="")`
+
+- **Purpose:** Place one 15-minute hold (B-1/B-2, FR-5).
+- **Inputs:** Variant ID, integer quantity of at least one (Booleans rejected), optional session key.
+- **Outputs:** New `active` Reservation; raises `InsufficientStock`, `ValueError`, or `StockRecord.DoesNotExist`.
+- **Dependencies:** StockRecord row lock and `RESERVATION_TTL_MINUTES`.
+- **Behavior:** Checks availability and raises `qty_reserved` under one lock; creates the hold inside the same transaction; writes no movement. Untracked SKUs fail loudly instead of selling.
+
+### Function: `release_reservation(reservation_id)`
+
+- **Purpose:** Return an abandoned or cancelled hold's units to availability (B-2).
+- **Inputs:** Reservation primary key.
+- **Outputs:** The terminal Reservation; raises `InvalidReservationState` for committed holds.
+- **Dependencies:** Reservation and StockRecord row locks, in that order.
+- **Behavior:** Idempotent for already-released/expired holds because the abandon path and the sweep race legitimately; decrements `qty_reserved` exactly once; writes no movement.
+
+### Function: `commit_reservation(*, reservation_id, order)`
+
+- **Purpose:** Convert an `active` hold into a sale when payment is confirmed (D-3 hook).
+- **Inputs:** Reservation primary key and the paid Order.
+- **Outputs:** The `committed` Reservation; raises `InvalidReservationState` otherwise.
+- **Dependencies:** Reservation then StockRecord row locks; `StockMovement` append.
+- **Behavior:** Decrements both counters and appends the single negative `sale` movement referencing the order in one transaction. An `active` hold past its expiry is still honored — only the sweep expires holds.
+
+### Function: `adjust_stock(*, variant_id, delta, reason, ref_order=None)`
+
+- **Purpose:** Apply a non-sale physical stock change with its audit row (B-1/B-3, ADR-B-002).
+- **Inputs:** Variant ID, nonzero integer delta, `restock`/`return`/`adjustment` reason, optional order reference.
+- **Outputs:** Updated StockRecord; raises `InvalidStockAdjustment` on any rule violation.
+- **Dependencies:** StockRecord row lock and movement sign constraints.
+- **Behavior:** Rejects the `sale` reason (single ledger writer per reason), negative restock/return, and any result below `qty_reserved`; counter change and movement append share one transaction.
+
+### Function: `release_expired_reservations(now=None)`
+
+- **Purpose:** Expire every overdue `active` hold (B-2 TTL sweep).
+- **Inputs:** Optional clock override.
+- **Outputs:** Count of holds expired.
+- **Dependencies:** `idx_res_status_expiry`, per-row transactions, Reservation then StockRecord locks.
+- **Behavior:** Reads candidates without locks, then re-validates each under its own lock so racing commits/releases win cleanly and one failing row cannot roll back the sweep; failures are logged and retried next cycle.
+
+### Function: `scan_low_stock()`
+
+- **Purpose:** Flag SKUs whose availability is at or below their threshold (B-4, FR-9).
+- **Inputs:** None.
+- **Outputs:** StockRecord queryset annotated with `available_units`, ordered by SKU.
+- **Dependencies:** F-expression arithmetic; `variant__product` select-related.
+- **Behavior:** Pure read on availability (not shelf count); delivery concerns live in `apps/notifications`.
+
+## Service Module: `apps/notifications/services.py`
+
+- **Purpose:** Deliver notifications without leaking transport concerns into domain apps.
+- **Inputs:** Iterables of flagged stock records and notification settings.
+- **Outputs:** Sent email count.
+- **Dependencies:** Django mail, `LOW_STOCK_ALERT_RECIPIENTS`, `DEFAULT_FROM_EMAIL`.
+- **Behavior:** Epic B ships only the low-stock leg; FR-11 email and FR-12 SMS arrive in Epics D/E behind this boundary.
+
+### Function: `send_low_stock_alert(records)`
+
+- **Purpose:** Email the flagged SKU list to configured staff (FR-9).
+- **Inputs:** Iterable of StockRecords with related variants.
+- **Outputs:** Integer count of SKUs reported, `0` when nothing was sent.
+- **Dependencies:** `send_mail` and settings.
+- **Behavior:** Degrades to a log line when no recipients are configured — alerting is an enhancement around the scan, never a dependency.
+
+## Job Module: `jobs/scheduler.py`
+
+- **Purpose:** Wire the in-process APScheduler jobs (ADR-B-003).
+- **Inputs:** Settings cadences and the Django service layer.
+- **Outputs:** A configured, unstarted scheduler plus two job callables.
+- **Dependencies:** APScheduler, `zoneinfo`, `close_old_connections`, inventory and notification services.
+- **Behavior:** `sweep_expired_reservations` and `run_low_stock_scan` recycle database connections around their work; `build_scheduler` registers both with `coalesce=True` and `max_instances=1` in the Asia/Manila timezone. Exactly one process may run these jobs (ADR-A-014).
+
+### Function: `build_scheduler(scheduler_class=BackgroundScheduler)`
+
+- **Purpose:** Assemble the configured scheduler without starting it.
+- **Inputs:** Optional scheduler class (the management command passes `BlockingScheduler`).
+- **Outputs:** Scheduler with `reservation-sweep` (60 s) and `low-stock-scan` (60 min) jobs.
+- **Dependencies:** `RESERVATION_SWEEP_INTERVAL_SECONDS` and `LOW_STOCK_SCAN_INTERVAL_MINUTES`.
+- **Behavior:** The 15-minute TTL plus 60-second sweep bounds abandoned-checkout stock restoration at ~16 minutes (M3 gate).
+
+## Command Module: `apps/inventory/management/commands/run_scheduler.py`
+
+- **Purpose:** Run the single scheduler process for an environment.
+- **Inputs:** No arguments.
+- **Outputs:** Foreground blocking job loop and startup/stop messages.
+- **Dependencies:** `jobs.build_scheduler` and APScheduler's blocking scheduler.
+- **Behavior:** Blocks until interrupted; exits visibly if the scheduler stops so supervisors restart it.
+
 ## Domain Module: `apps/payments/models.py`
 
 - **Purpose:** Define one provider-facing payment record per order.
@@ -1248,6 +1395,14 @@ Internet TCP 80 / TCP+UDP 443
 - **Dependencies:** `catalog.0001` and `orders.0001`.
 - **Behavior:** Protects historical references and enforces one stock row per variant.
 
+### Module: `apps/inventory/migrations/0002_reservation.py`
+
+- **Purpose:** Create the checkout-hold table for Epic B-2.
+- **Inputs:** Inventory, catalog, and orders initial migrations.
+- **Outputs:** Reservation table with the minimum-quantity check and the status/expiry sweep index.
+- **Dependencies:** `inventory.0001`, `catalog.0001`, and `orders.0001`.
+- **Behavior:** Protects the variant reference, set-nulls the optional order reference, and reverses cleanly.
+
 ### Module: `apps/payments/migrations/0001_initial.py`
 
 - **Purpose:** Create payment persistence.
@@ -1287,6 +1442,8 @@ Internet TCP 80 / TCP+UDP 443
 | StockRecord | ProductVariant | one-to-one | Counter cascades with removable variant. |
 | StockMovement | ProductVariant | many-to-one | Variant is protected. |
 | StockMovement | Order | optional many-to-one | Referenced order is protected. |
+| Reservation | ProductVariant | many-to-one | Variant with hold history is protected. |
+| Reservation | Order | optional many-to-one | Order deletion nulls the operational reference; the movement keeps the audit. |
 | Order | Customer | optional many-to-one | Customer deletion sets order customer null. |
 | OrderItem | Order | many-to-one | Item cascades with order. |
 | OrderItem | ProductVariant | many-to-one | Sold variant is protected. |
@@ -1310,7 +1467,7 @@ Internet TCP 80 / TCP+UDP 443
 |---|---|
 | Catalog | Unique category name/slug, product slug, variant SKU, and variant axis tuple; nonnegative prices. |
 | Accounts | Unique email and unique customer/product wishlist tuple. |
-| Inventory | One stock row per variant; reserved not above on-hand; nonnegative counters; movement sign matches reason. |
+| Inventory | One stock row per variant; reserved not above on-hand; nonnegative counters; movement sign matches reason; reservation quantity at least one. |
 | Orders | Unique order number; total reconciliation; quantity at least one; unique order/variant line; four-digit year; sequence at most 99,999. |
 | Payments | One payment per order; globally unique non-null provider reference; nonnegative amount. |
 | Reviews | Rating from 1 through 5; unique customer/product review tuple. |
@@ -1350,11 +1507,11 @@ Internet TCP 80 / TCP+UDP 443
 
 ## Test Module: `tests/test_inventory.py`
 
-- **Purpose:** Preserve the mandatory no-oversell red contract before B-1.
-- **Inputs:** Two worker threads, two MySQL connections, one variant with one available unit.
-- **Outputs:** One strict expected failure.
-- **Dependencies:** Future `apps.inventory.services.reserve_stock` and `InsufficientStock`.
-- **Behavior:** Marked `xfail(strict=True, raises=ImportError)`. B-1 must implement the API, remove the marker, and produce exactly one reservation and one insufficient-stock result.
+- **Purpose:** Prove the Epic B inventory core: no-oversell concurrency, reservation lifecycle, audit coupling, and low-stock behavior.
+- **Inputs:** Real MySQL connections (up to 20 concurrent buyer threads), stocked variant fixtures, clock manipulation via queryset updates, and settings overrides.
+- **Outputs:** 20 passing cases including both release gates.
+- **Dependencies:** `apps.inventory.services`, `apps.notifications.services`, `jobs.scheduler`, and order-number allocation.
+- **Behavior:** The former strict-XFAIL red contract now passes live (2 buyers/1 unit → exactly one success). The M2 gate runs 20 parallel buyers against 10 units and requires exactly 10 successes with zero oversell and zero movements. Further cases pin TTL bounds, strict quantity typing, no-trace failures, release idempotency, commit audit coupling, past-expiry commit honor, sweep selectivity, adjustment rules, availability-based scanning, alert email content, recipient-less degradation, and scheduler job registration.
 
 ## Test Module: `tests/test_health.py`
 
@@ -1492,10 +1649,10 @@ Internet TCP 80 / TCP+UDP 443
 
 | Hard invariant | Current coverage | Remaining gap |
 |---|---|---|
-| No overselling | Database availability check and strict red concurrency contract. | No reserve/release/consume service or reservation TTL model; B-1 contract is not active-pass yet. |
+| No overselling | Locked reserve/release/commit services, reservation TTL model with sweep job, database availability check, and both live concurrency gates (2-buyer and M2 20-buyer). | Checkout (D-1) and webhook (D-3) flows must call these services exclusively; raw SQL remains outside code guards. |
 | Integer centavos | MySQL unsigned-INT fields, strict type validation, pre-write overflow checks, exact arithmetic, configured formatting, and 70 A-3 tests. | Later checkout/reporting code must use these helpers consistently. |
 | Webhook payment truth | Payment schema and unique provider reference only. | No signature verification, endpoint, replay log, or webhook-only Paid transition. |
-| Append-only stock audit | Movement instance/queryset/bulk/conflict mutation guards and protected FKs. | StockRecord can still be directly mutated; raw SQL can bypass ORM guards; B-1 service is absent. |
+| Append-only stock audit | Movement instance/queryset/bulk/conflict mutation guards, protected FKs, and services that couple every counter change to its movement in one transaction. | StockRecord direct ORM mutation outside the services module remains technically possible; raw SQL can bypass ORM guards. |
 | Enforced order state machine | Locked transition API and public ordinary ORM bypass guards. | Transition side effects and webhook-only Pending-to-Paid authority are absent; privileged raw SQL remains outside code guards. |
 | InnoDB and utf8mb4 | First migration configures/verifies defaults; settings/server reinforce; metadata tests pass. | Production migration principal must retain required ALTER permission. |
 | Card data never reaches server | No card-handling code exists. | Hosted PayMongo integration remains unimplemented. |
@@ -1508,10 +1665,9 @@ Internet TCP 80 / TCP+UDP 443
 - **Dependencies:** Future epics.
 - **Behavior:** Each listed capability is absent unless stated otherwise.
 
-- A-4 public staging evidence is absent: no selected host, DNS record, trusted public certificate, external URL, or authoritative public smoke result exists. Local deployment artifacts are complete.
-- B-1 inventory mutation service, active concurrency pass, restock/adjustment service, and sale consumption are absent.
-- B-2 reservation entity, 15-minute expiry, and release job are absent.
-- Low-stock scheduler and email alerts are absent.
+- A-4 public staging evidence is absent: no selected host, DNS record, trusted public certificate, external URL, or authoritative public smoke result exists. Local deployment artifacts are complete. This is an operator action (host/DNS/spend authority), not a code gap.
+- The low-stock admin dashboard flag (FR-9's visual leg) is absent; scan and email exist.
+- The staging Compose stack runs exactly one `scheduler` service (entrypoint bypassed; the app container owns migrations); development still requires running `manage.py run_scheduler` manually when TTL expiry behavior is being exercised.
 - Catalog admin registration, CRUD customization, and variant-matrix generator are absent.
 - Storefront listing, filters, search, product detail, variant picker, and cart are absent.
 - Checkout, zone fees, address autocomplete, payment initiation, and payment webhooks are absent.
@@ -1523,12 +1679,11 @@ Internet TCP 80 / TCP+UDP 443
 - Catalog caching, CDN/object storage configuration, production email provider, external log aggregation, uptime alerting, and application monitoring are absent. Bounded container-captured console logging and staging configuration are implemented.
 - CI does not currently enforce coverage thresholds, dependency/security scanning, immutable image digests, or public endpoint monitoring. It does run system/deploy checks, drift and reversal validation, deployment syntax/config/build checks, a live forced-recreation HTTPS stack, and the full MySQL suite.
 - `Payment.status`, `Shipment.status`, and `Review.status` currently permit direct ORM mutation.
-- The strict 2-buyer/1-unit test is a precursor; the M2 release gate still requires 20 parallel buyers for 10 units with exactly 10 successes.
 
 ## Next Strict Build Step
 
 - **Purpose:** Identify the next task without expanding scope.
-- **Inputs:** Handover dependency order, completed local A-4 implementation, and M1 gate evidence.
+- **Inputs:** Handover dependency order, completed Epic B, and open M1 public-host evidence.
 - **Outputs:** Task sequence for continuation.
-- **Dependencies:** A Linux staging host, recurring-spend authority, DNS control, SSH/Docker access, and a public HTTPS smoke pass.
-- **Behavior:** Deploy the existing A-4 stack publicly and prove M1 first. Only then implement B-1 atomic inventory operations, remove the strict XFAIL marker, and make the existing race contract pass normally.
+- **Dependencies:** Epic C needs only the existing schema and admin site; the parallel operator action needs a Linux host, DNS control, and spend authority.
+- **Behavior:** Implement Epic C (C-1 admin CRUD with the variant-matrix generator, then C-2 listing/filters/search, C-3 product detail with variant picker, C-4 cart). In parallel, the operator deploys the existing A-4 stack (which now includes the scheduler service) publicly to close the M1 gate.
