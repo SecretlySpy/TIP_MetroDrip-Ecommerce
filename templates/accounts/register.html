@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Register | MetroDrip{% endblock %}
+{% block content %}
+<div class="container mx-auto px-4 py-12 max-w-md">
+    <h1 class="font-display text-4xl uppercase tracking-tighter mb-8 border-b-4 border-ink pb-4">Register</h1>
+    
+    {% if error %}
+    <div class="bg-danger text-white p-4 mb-4 font-mono text-sm">{{ error }}</div>
+    {% endif %}
+    
+    <form method="POST" class="space-y-4">
+        {% csrf_token %}
+        <div>
+            <label class="block font-mono text-sm uppercase text-muted mb-1">Name</label>
+            <input type="text" name="name" required class="w-full border-2 border-ink p-3 focus:outline-none focus:ring-2 focus:ring-volt">
+        </div>
+        <div>
+            <label class="block font-mono text-sm uppercase text-muted mb-1">Email</label>
+            <input type="email" name="email" required class="w-full border-2 border-ink p-3 focus:outline-none focus:ring-2 focus:ring-volt">
+        </div>
+        <div>
+            <label class="block font-mono text-sm uppercase text-muted mb-1">Password</label>
+            <input type="password" name="password" required class="w-full border-2 border-ink p-3 focus:outline-none focus:ring-2 focus:ring-volt">
+        </div>
+        <div>
+            <label class="block font-mono text-sm uppercase text-muted mb-1">Phone (Optional)</label>
+            <input type="text" name="phone" class="w-full border-2 border-ink p-3 focus:outline-none focus:ring-2 focus:ring-volt">
+        </div>
+        
+        <button type="submit" class="w-full bg-ink text-volt font-display text-2xl uppercase tracking-wider py-4 hover:bg-volt hover:text-ink transition-colors border-2 border-transparent hover:border-ink">
+            Create Account
+        </button>
+    </form>
+    
+    <p class="mt-4 font-mono text-sm text-center">
+        Already have an account? <a href="{% url 'accounts:login' %}" class="text-volt bg-ink px-1">Login here</a>
+    </p>
+</div>
+{% endblock %}

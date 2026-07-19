@@ -2,7 +2,7 @@
 
 from .base import *  # noqa: F403
 
-DEBUG = True
+DEBUG = False
 
 # Fallback key is fine here: dev.py must never be used in production (prod.py
 # hard-requires a real key from the environment instead).

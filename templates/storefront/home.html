@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load static money %}
+
+{% block title %}Streetwear from Metro Manila{% endblock %}
+{% block nav_home %}navbar__link--active{% endblock %}
+{% block meta_description %}MetroDrip — Metro Manila streetwear. Shop tees, hoodies, cargo pants, overshirts, and outerwear.{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  {# --- Homepage Banners --- #}
+  {% if banners %}
+    <div class="banners">
+      {% for banner in banners %}
+        <a href="{{ banner.link_url|default:'#' }}" class="banner__link">
+          <img src="{{ banner.image.url }}" alt="{{ banner.title }}" class="banner__img">
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {# --- Hero Section --- #}
+  <section class="hero">
+    <h1 class="hero__title">
+      Urban Style<br>
+      <span class="hero__accent">Redefined</span>
+    </h1>
+    <p class="hero__subtitle">Metro Manila Streetwear — Designed for the City</p>
+    <a href="{% url 'storefront:shop' %}" class="btn btn--primary btn--lg">
+      Shop Now
+    </a>
+  </section>
+
+  {# --- Barcode Strip Motif --- #}
+  <div class="barcode-strip" aria-hidden="true"></div>
+
+  {# --- Featured Products --- #}
+  <section class="section">
+    <div class="section__header">
+      <h2>New Arrivals</h2>
+      <a href="{% url 'storefront:shop' %}?sort=newest" class="section__link">View All →</a>
+    </div>
+    <div class="product-grid">
+      {% for product in featured_products %}
+        {% include "storefront/_product_card.html" with product=product %}
+      {% empty %}
+        <p class="text-muted">No products available yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# --- Barcode Strip Motif --- #}
+  <div class="barcode-strip" aria-hidden="true"></div>
+
+  {# --- Brand Statement --- #}
+  <section class="hero">
+    <h2>Built for the <span class="hero__accent">Streets</span></h2>
+    <p class="hero__subtitle">
+      Every piece is designed in Metro Manila — from concept to cut.
+      We don't follow trends, we set them.
+    </p>
+    <a href="{% url 'storefront:shop' %}" class="btn btn--secondary">
+      Explore Collection
+    </a>
+  </section>
+
+</div>
+{% endblock %}

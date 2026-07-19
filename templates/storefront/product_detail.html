@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% load static money %}
+
+{% block title %}{{ product.name }}{% endblock %}
+{% block meta_description %}{{ product.description|truncatewords:30 }}{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  {# Breadcrumb #}
+  <div style="padding: var(--space-lg) 0 0;">
+    <span class="text-mono text-muted" style="font-size: 0.75rem;">
+      <a href="{% url 'storefront:shop' %}" style="color: var(--color-muted);">Shop</a>
+      <span style="margin: 0 4px;">/</span>
+      <a href="{% url 'storefront:shop' %}?category={{ product.category.slug }}" style="color: var(--color-muted);">{{ product.category.name }}</a>
+      <span style="margin: 0 4px;">/</span>
+      {{ product.name }}
+    </span>
+  </div>
+
+  {# --- Product Detail Grid --- #}
+  <div class="product-detail" x-data="variantPicker()" x-init="init()">
+
+    {# Gallery #}
+    <div class="product-detail__gallery">
+      <div class="product-detail__main-image">
+        {% if product.images %}
+          <img src="{{ product.images.0 }}" alt="{{ product.name }}">
+        {% else %}
+          <span class="card__image--placeholder" style="font-size: 2rem;">
+            {{ product.name|truncatewords:2 }}
+          </span>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Product Info #}
+    <div class="product-detail__info">
+      <div class="product-detail__category">{{ product.category.name }}</div>
+      <h1 class="product-detail__name">{{ product.name }}</h1>
+
+      {# Price display — updates when variant is selected #}
+      <div class="text-price text-price--lg" x-text="selectedPrice || '{{ product.base_price|peso }}'"></div>
+
+      {# SKU tag — shown when a specific variant is selected #}
+      <div class="mt-sm" x-show="selectedSku" x-transition>
+        <span class="sku-tag" x-text="selectedSku"></span>
+      </div>
+
+      {# Stock indicator #}
+      <div class="stock-indicator mt-sm" x-show="selectedVariant" x-transition>
+        <template x-if="selectedAvailable > 5">
+          <span class="stock-indicator__dot stock-indicator__dot--in-stock"></span>
+        </template>
+        <template x-if="selectedAvailable > 0 && selectedAvailable <= 5">
+          <span class="stock-indicator__dot stock-indicator__dot--low"></span>
+        </template>
+        <template x-if="selectedAvailable === 0">
+          <span class="stock-indicator__dot stock-indicator__dot--out"></span>
+        </template>
+        <span x-text="selectedAvailable > 0 ? selectedAvailable + ' in stock' : 'Out of stock'"
+              :style="selectedAvailable === 0 ? 'color: var(--color-danger)' : ''"></span>
+      </div>
+
+      {# Description #}
+      {% if product.description %}
+        <p class="product-detail__description mt-lg">{{ product.description }}</p>
+      {% endif %}
+
+      {# --- Variant Picker --- #}
+      <div class="variant-picker">
+
+        {# Size axis #}
+        <div class="variant-picker__axis">
+          <div class="variant-picker__label">Size</div>
+          <div class="variant-picker__options">
+            {% for size in sizes %}
+              <button class="variant-btn"
+                      :class="{ 'variant-btn--selected': selectedSize === '{{ size }}' }"
+                      :disabled="!isSizeAvailable('{{ size }}')"
+                      @click="selectSize('{{ size }}')">
+                {{ size }}
+              </button>
+            {% endfor %}
+          </div>
+        </div>
+
+        {# Color axis #}
+        <div class="variant-picker__axis">
+          <div class="variant-picker__label">Color</div>
+          <div class="variant-picker__options">
+            {% for color in colors %}
+              <button class="variant-btn"
+                      :class="{ 'variant-btn--selected': selectedColor === '{{ color }}' }"
+                      :disabled="!isColorAvailable('{{ color }}')"
+                      @click="selectColor('{{ color }}')">
+                {{ color }}
+              </button>
+            {% endfor %}
+          </div>
+        </div>
+
+        {# Fit axis #}
+        <div class="variant-picker__axis">
+          <div class="variant-picker__label">Fit</div>
+          <div class="variant-picker__options">
+            {% for fit in fits %}
+              <button class="variant-btn"
+                      :class="{ 'variant-btn--selected': selectedFit === '{{ fit }}' }"
+                      :disabled="!isFitAvailable('{{ fit }}')"
+                      @click="selectFit('{{ fit }}')">
+                {{ fit|title }}
+              </button>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      {# --- Quantity & Add to Cart --- #}
+      <div style="display: flex; align-items: center; gap: var(--space-md); margin-top: var(--space-lg);">
+        <div class="qty-adjuster">
+          <button class="qty-adjuster__btn" @click="qty > 1 && qty--" :disabled="qty <= 1">−</button>
+          <input class="qty-adjuster__value" type="text" x-model="qty" readonly>
+          <button class="qty-adjuster__btn" @click="qty < selectedAvailable && qty++" :disabled="qty >= selectedAvailable">+</button>
+        </div>
+        <button class="btn btn--primary btn--lg"
+                :disabled="!canAddToCart"
+                @click="addToCart()">
+          <span x-show="!addedFeedback">Add to Cart</span>
+          <span x-show="addedFeedback" x-transition>✓ Added!</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  {# --- Barcode Strip --- #}
+  <div class="barcode-strip" aria-hidden="true"></div>
+
+  {# --- Reviews Section --- #}
+  <section class="section">
+    <h2>Reviews</h2>
+
+    {% if product.review_count %}
+      <div class="rating-summary">
+        <div class="rating-summary__score">{{ product.review_avg|floatformat:1 }}</div>
+        <div>
+          <div class="review__stars">
+            {% for i in "12345" %}{% if forloop.counter <= product.review_avg|floatformat:0|add:"0" %}★{% else %}☆{% endif %}{% endfor %}
+          </div>
+          <div class="rating-summary__details">{{ product.review_count }} review{{ product.review_count|pluralize }}</div>
+        </div>
+      </div>
+
+      {% for review in product.approved_reviews %}
+        <div class="review">
+          <div class="review__header">
+            <span class="review__author">{{ review.customer.name }}</span>
+            <span class="review__stars">
+              {% for i in "12345" %}{% if forloop.counter <= review.rating %}★{% else %}☆{% endif %}{% endfor %}
+            </span>
+            <span class="review__date">{{ review.created_at|date:"M d, Y" }}</span>
+          </div>
+          {% if review.body %}
+            <p class="review__body">{{ review.body }}</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="text-muted mt-md">No reviews yet. Be the first to review this product!</p>
+    {% endif %}
+  </section>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  /**
+   * Alpine.js variant picker component (C-3).
+   *
+   * Three-axis cascading selection: choosing one axis narrows the options for
+   * the other two based on which combinations actually exist. Out-of-stock
+   * variants are disabled (greyed + strikethrough per §14).
+   */
+  function variantPicker() {
+    return {
+      variants: {{ variants_json|safe }},
+      selectedSize: null,
+      selectedColor: null,
+      selectedFit: null,
+      selectedVariant: null,
+      selectedPrice: null,
+      selectedSku: null,
+      selectedAvailable: 0,
+      qty: 1,
+      addedFeedback: false,
+
+      init() {
+        // Noop — user selects axes interactively.
+      },
+
+      /** Check if a size has any matching variant given current color/fit. */
+      isSizeAvailable(size) {
+        return this.variants.some(v =>
+          v.size === size &&
+          (!this.selectedColor || v.color === this.selectedColor) &&
+          (!this.selectedFit || v.fit === this.selectedFit)
+        );
+      },
+
+      /** Check if a color has any matching variant given current size/fit. */
+      isColorAvailable(color) {
+        return this.variants.some(v =>
+          v.color === color &&
+          (!this.selectedSize || v.size === this.selectedSize) &&
+          (!this.selectedFit || v.fit === this.selectedFit)
+        );
+      },
+
+      /** Check if a fit has any matching variant given current size/color. */
+      isFitAvailable(fit) {
+        return this.variants.some(v =>
+          v.fit === fit &&
+          (!this.selectedSize || v.size === this.selectedSize) &&
+          (!this.selectedColor || v.color === this.selectedColor)
+        );
+      },
+
+      selectSize(size) {
+        this.selectedSize = this.selectedSize === size ? null : size;
+        this.resolveVariant();
+      },
+
+      selectColor(color) {
+        this.selectedColor = this.selectedColor === color ? null : color;
+        this.resolveVariant();
+      },
+
+      selectFit(fit) {
+        this.selectedFit = this.selectedFit === fit ? null : fit;
+        this.resolveVariant();
+      },
+
+      /** Find the exact variant when all three axes are selected. */
+      resolveVariant() {
+        this.addedFeedback = false;
+        if (this.selectedSize && this.selectedColor && this.selectedFit) {
+          const match = this.variants.find(v =>
+            v.size === this.selectedSize &&
+            v.color === this.selectedColor &&
+            v.fit === this.selectedFit
+          );
+          if (match) {
+            this.selectedVariant = match;
+            this.selectedPrice = match.price_display;
+            this.selectedSku = match.sku;
+            this.selectedAvailable = match.available;
+            this.qty = Math.min(this.qty, Math.max(1, match.available));
+            return;
+          }
+        }
+        // Incomplete selection or no match — reset variant-specific display.
+        this.selectedVariant = null;
+        this.selectedPrice = null;
+        this.selectedSku = null;
+        this.selectedAvailable = 0;
+        this.qty = 1;
+      },
+
+      get canAddToCart() {
+        return this.selectedVariant && this.selectedAvailable > 0 && this.qty >= 1;
+      },
+
+      addToCart() {
+        if (!this.canAddToCart) return;
+
+        const v = this.selectedVariant;
+        let cart = [];
+        try {
+          cart = JSON.parse(localStorage.getItem('metrodrip_cart') || '[]');
+        } catch { cart = []; }
+
+        // Merge with existing line if same variant.
+        const existing = cart.find(item => item.variantId === v.id);
+        if (existing) {
+          existing.qty += this.qty;
+        } else {
+          cart.push({
+            variantId: v.id,
+            sku: v.sku,
+            productName: v.product_name,
+            size: v.size,
+            color: v.color,
+            fit: v.fit,
+            price: v.price,
+            priceDisplay: v.price_display,
+            qty: this.qty,
+          });
+        }
+
+        localStorage.setItem('metrodrip_cart', JSON.stringify(cart));
+        window.dispatchEvent(new CustomEvent('cart-updated'));
+
+        // Visual feedback.
+        this.addedFeedback = true;
+        setTimeout(() => { this.addedFeedback = false; }, 2000);
+      },
+    };
+  }
+</script>
+{% endblock %}

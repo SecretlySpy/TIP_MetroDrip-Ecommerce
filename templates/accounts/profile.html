@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load money %}
+{% block title %}Profile | MetroDrip{% endblock %}
+{% block content %}
+<div class="container mx-auto px-4 py-12">
+    <div class="flex justify-between items-end mb-8 border-b-4 border-ink pb-4">
+        <h1 class="font-display text-4xl uppercase tracking-tighter">My Account</h1>
+        <form method="POST" action="{% url 'accounts:logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="bg-ink text-volt px-4 py-2 font-display uppercase tracking-wider text-sm hover:bg-danger hover:text-white transition-colors">
+                Logout
+            </button>
+        </form>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- Profile Info -->
+        <div>
+            <h2 class="font-display text-2xl uppercase tracking-tighter mb-4">Profile</h2>
+            <div class="bg-surface border-2 border-ink p-6 font-mono text-sm">
+                <p class="mb-2"><strong class="uppercase text-muted block text-xs">Name</strong> {{ request.user.name }}</p>
+                <p class="mb-2"><strong class="uppercase text-muted block text-xs mt-2">Email</strong> {{ request.user.email }}</p>
+                <p class="mb-2"><strong class="uppercase text-muted block text-xs mt-2">Phone</strong> {{ request.user.phone|default:"-" }}</p>
+            </div>
+        </div>
+
+        <!-- Recent Orders -->
+        <div class="md:col-span-2">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="font-display text-2xl uppercase tracking-tighter">Recent Orders</h2>
+                <a href="{% url 'accounts:order-history' %}" class="text-volt bg-ink px-2 py-1 font-mono text-xs uppercase">View All</a>
+            </div>
+            
+            {% if recent_orders %}
+                <div class="space-y-4">
+                    {% for order in recent_orders %}
+                        <div class="border-2 border-ink p-4 flex justify-between items-center bg-white">
+                            <div>
+                                <p class="font-bold font-mono">#{{ order.order_no }}</p>
+                                <p class="text-muted text-xs font-mono mt-1">{{ order.created_at|date:"M d, Y" }}</p>
+                            </div>
+                            <div class="text-right">
+                                <span class="inline-block bg-volt text-ink border border-ink px-2 py-1 font-mono text-xs uppercase mb-1">
+                                    {{ order.get_status_display }}
+                                </span>
+                                <p class="font-mono text-sm">{{ order.total|centavos_to_peso }}</p>
+                            </div>
+                            <a href="{% url 'storefront:order-status' order.token %}" class="ml-4 p-2 bg-ink text-volt font-mono text-xs uppercase hover:bg-volt hover:text-ink border-2 border-transparent hover:border-ink transition-colors">
+                                View
+                            </a>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="font-mono text-sm text-muted">No recent orders found.</p>
+            {% endif %}
+            
+            <!-- Claim Guest Order -->
+            <div class="mt-8 border-t-2 border-ink pt-8">
+                <h3 class="font-display text-xl uppercase tracking-tighter mb-4">Claim Guest Order</h3>
+                <form method="POST" action="{% url 'accounts:claim-guest-order' %}" class="flex gap-4">
+                    {% csrf_token %}
+                    <input type="text" name="order_no" placeholder="Order Number" required class="flex-1 border-2 border-ink p-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-volt">
+                    <button type="submit" class="bg-ink text-volt font-display px-4 py-2 uppercase hover:bg-volt hover:text-ink transition-colors border-2 border-transparent hover:border-ink">
+                        Claim
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

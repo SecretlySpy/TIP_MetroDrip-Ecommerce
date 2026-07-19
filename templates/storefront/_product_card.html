@@ -1,0 +1,16 @@
+{% load money %}
+{# Reusable product card partial — used on homepage, shop listing, etc. #}
+<a href="{% url 'storefront:product-detail' slug=product.slug %}" class="card fade-in" id="product-{{ product.id }}">
+  <div class="card__image {% if not product.images %}card__image--placeholder{% endif %}">
+    {% if product.images %}
+      <img src="{{ product.images.0 }}" alt="{{ product.name }}" loading="lazy">
+    {% else %}
+      <span>{{ product.name|truncatewords:2 }}</span>
+    {% endif %}
+  </div>
+  <div class="card__body">
+    <div class="card__category">{{ product.category.name }}</div>
+    <div class="card__title">{{ product.name }}</div>
+    <div class="card__price">{{ product.base_price|peso }}</div>
+  </div>
+</a>

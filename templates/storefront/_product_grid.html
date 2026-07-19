@@ -1,0 +1,40 @@
+{# HTMX-swappable product grid fragment — returned on paginated requests. #}
+{% load money %}
+<div id="product-results">
+  <div class="product-grid">
+    {% for product in page %}
+      {% include "storefront/_product_card.html" with product=product %}
+    {% empty %}
+      <div class="empty-state" style="grid-column: 1 / -1;">
+        <div class="empty-state__icon">🔍</div>
+        <p class="empty-state__text">No products match your filters.</p>
+        <a href="{% url 'storefront:shop' %}" class="btn btn--secondary btn--sm">Clear Filters</a>
+      </div>
+    {% endfor %}
+  </div>
+
+  {# Pagination #}
+  {% if page.paginator.num_pages > 1 %}
+  <nav class="pagination" aria-label="Product pages">
+    {% if page.has_previous %}
+      <a href="?page={{ page.previous_page_number }}" class="pagination__link">&laquo;</a>
+    {% else %}
+      <span class="pagination__link pagination__link--disabled">&laquo;</span>
+    {% endif %}
+
+    {% for num in page.paginator.page_range %}
+      {% if num == page.number %}
+        <span class="pagination__link pagination__link--active">{{ num }}</span>
+      {% elif num > page.number|add:"-3" and num < page.number|add:"3" %}
+        <a href="?page={{ num }}" class="pagination__link">{{ num }}</a>
+      {% endif %}
+    {% endfor %}
+
+    {% if page.has_next %}
+      <a href="?page={{ page.next_page_number }}" class="pagination__link">&raquo;</a>
+    {% else %}
+      <span class="pagination__link pagination__link--disabled">&raquo;</span>
+    {% endif %}
+  </nav>
+  {% endif %}
+</div>

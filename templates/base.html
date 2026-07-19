@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}MetroDrip{% endblock %} — MetroDrip Streetwear</title>
+  <meta name="description" content="{% block meta_description %}Metro Manila streetwear — shop tees, hoodies, pants, and outerwear. Free shipping on select orders.{% endblock %}">
+
+  {# Google Fonts: Anton (display), Inter (body), IBM Plex Mono (prices/SKUs) per §14 #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  {# Design system CSS #}
+  {% load static %}
+  <link rel="stylesheet" href="{% static 'css/storefront.css' %}">
+
+  {% block extra_css %}{% endblock %}
+</head>
+<body x-data="{ mobileNav: false }" x-cloak>
+
+  {# --- Navbar --- #}
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+    <div class="navbar__inner">
+      <a href="{% url 'storefront:home' %}" class="navbar__brand">
+        Metro<span>Drip</span>
+      </a>
+
+      {# Mobile toggle #}
+      <button class="navbar__toggle" @click="mobileNav = !mobileNav" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
+      <ul class="navbar__links" :class="{ 'navbar__links--open': mobileNav }">
+        <li><a href="{% url 'storefront:home' %}" class="navbar__link {% block nav_home %}{% endblock %}">Home</a></li>
+        <li><a href="{% url 'storefront:shop' %}" class="navbar__link {% block nav_shop %}{% endblock %}">Shop</a></li>
+        <li>
+          <a href="{% url 'storefront:cart' %}" class="navbar__link navbar__cart" x-data="cartBadge()" x-init="init()">
+            {# Cart icon (inline SVG for zero-dependency) #}
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <path d="M16 10a4 4 0 01-8 0"/>
+            </svg>
+            <span class="navbar__cart-badge" x-show="count > 0" x-text="count" x-transition></span>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  {# --- Main Content --- #}
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  {# --- Footer --- #}
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__inner">
+        <div class="footer__brand">Metro<span>Drip</span></div>
+        <ul class="footer__links">
+          <li><a href="{% url 'storefront:shop' %}" class="footer__link">Shop</a></li>
+          <li><a href="/pages/about/" class="footer__link">About</a></li>
+          <li><a href="/pages/contact/" class="footer__link">Contact</a></li>
+          <li><a href="/pages/privacy/" class="footer__link">Privacy</a></li>
+        </ul>
+        <p class="footer__copy">&copy; {% now "Y" %} MetroDrip. All rights reserved. Metro Manila, Philippines.</p>
+      </div>
+    </div>
+  </footer>
+
+  {# HTMX + Alpine.js per §2 tech stack #}
+  <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+
+  {# Cart badge component — reads localStorage to show item count #}
+  <script>
+    /**
+     * Alpine.js component for the navbar cart count badge.
+     * Listens for custom 'cart-updated' events dispatched by the cart module.
+     */
+    function cartBadge() {
+      return {
+        count: 0,
+        init() {
+          this.refresh();
+          // Listen for cart updates from the cart.js module.
+          window.addEventListener('cart-updated', () => this.refresh());
+        },
+        refresh() {
+          try {
+            const cart = JSON.parse(localStorage.getItem('metrodrip_cart') || '[]');
+            this.count = cart.reduce((sum, item) => sum + (item.qty || 0), 0);
+          } catch {
+            this.count = 0;
+          }
+        }
+      };
+    }
+  </script>
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

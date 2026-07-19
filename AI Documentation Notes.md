@@ -37,7 +37,7 @@
 | Reverse proxy | Caddy 2 | Sole public ingress; automatic HTTPS, compression, response headers, and proxy logging. |
 | Static assets | WhiteNoise 6 | Serves hashed collected admin/site assets; never product media. |
 | Jobs | APScheduler | Two configured jobs (reservation sweep every 60 s, low-stock scan every 60 min) run only inside the single `run_scheduler` management-command process. |
-| Frontend | Django Templates | Temporary staging seed template exists; commerce templates, HTMX, and Alpine.js are absent. |
+| Frontend | Django Templates | Storefront templates, flatpages (About/Contact/Privacy), and base layouts exist. HTMX and Alpine.js are absent. |
 | Tests | pytest and pytest-django | Tests execute against real MySQL rather than SQLite. |
 | Lint and format | Ruff | Lint and formatting checks pass. |
 | CI | GitHub Actions | Runs Ruff, format, migration drift/reversal, pytest/MySQL, warning-level deployment checks, shell/Compose/Caddy/Docker validation, image ownership checks, and a disposable HTTPS persistence smoke. |
@@ -67,11 +67,11 @@
 | Shipping | Schema-ready | One shipment per order with J&T default and tracking fields is supported. |
 | Wishlist | Schema-ready | One product bookmark per customer is enforced. |
 | Reviews | Schema-ready | Rating and moderation storage exists; verified-purchase validation is absent. |
-| Demo data | Implemented | Idempotent command creates 5 products and a complete 180-variant inventory matrix. |
+| Demo data | Implemented | Idempotent command creates 5 products. Additional seed scripts generate full product lines, variants, flatpages, and stock. |
 | Operational health | Implemented | Database-independent liveness and `SELECT 1` readiness endpoints return narrow JSON contracts. |
 | Staging runtime | Locally implemented; public gate pending | Hardened Caddy/Gunicorn/MySQL Compose stack passes local HTTPS and forced-recreation smoke; no real DNS/host/certificate evidence exists. |
 | Seed browser | Implemented for staging only | Feature-gated GET page renders active seeded products, peso prices, and variant totals; all methods return 404 while disabled, while enabled non-GET methods return 405. |
-| Storefront and checkout | Not implemented | No commerce listing/detail/cart/reservation/checkout flow exists; the temporary staging page is not the storefront. |
+| Storefront and checkout | Partially implemented | Storefront homepage, shop listing, and flatpages exist. WhiteNoise serves static assets in local development. Cart/checkout flows pending. |
 | External APIs | Not implemented | No PayMongo, J&T, Semaphore, Google Maps, email-provider, CDN, or object-storage adapter exists. |
 
 ## System Architecture
@@ -1687,3 +1687,29 @@ Internet TCP 80 / TCP+UDP 443
 - **Outputs:** Task sequence for continuation.
 - **Dependencies:** Epic C needs only the existing schema and admin site; the parallel operator action needs a Linux host, DNS control, and spend authority.
 - **Behavior:** Implement Epic C (C-1 admin CRUD with the variant-matrix generator, then C-2 listing/filters/search, C-3 product detail with variant picker, C-4 cart). In parallel, the operator deploys the existing A-4 stack (which now includes the scheduler service) publicly to close the M1 gate.
+
+## Infrastructure and Operations
+
+### `config.settings.base` (WhiteNoise Integration)
+
+- **Purpose:** Serve static assets (CSS, JS, images) during local development and staging when `DEBUG = False`.
+- **Inputs:** `STATIC_URL`, `STATIC_ROOT`, `STATICFILES_STORAGE`, and `INSTALLED_APPS` (specifically `whitenoise.runserver_nostatic`).
+- **Outputs:** HTTP responses for static files via `WhiteNoiseMiddleware`.
+- **Dependencies:** `whitenoise` package.
+- **Behavior:** Bypasses Django's default `runserver` static file interception to allow WhiteNoise to serve collected static files securely and efficiently.
+
+### `seed_data.py`
+
+- **Purpose:** Provide an idempotent baseline script to generate initial categories, products, flatpages (About, Contact, Privacy), and stock inventory for the storefront.
+- **Inputs:** Django ORM environment loaded via `config.settings.dev`.
+- **Outputs:** Database rows for 2 Categories, 3 Products, corresponding Variants, StockRecords, and 3 FlatPages mapped to `Site` ID 1.
+- **Dependencies:** `apps.catalog`, `apps.inventory`, `django.contrib.flatpages`, `django.contrib.sites`.
+- **Behavior:** Checks for existence via `get_or_create`. Generates variants across standard sizes and colors, injecting dummy `qty_on_hand` (50) for testing.
+
+### `seed_more.py`
+
+- **Purpose:** Expand the staging catalog with additional categories and streetwear products.
+- **Inputs:** Django ORM environment loaded via `config.settings.dev`.
+- **Outputs:** Database rows for 3 additional Categories (Outerwear, Headwear, Accessories), 4 Products (Asphalt Puffer, Drip Logo Beanie, Tactical Bag, Acid Wash Hoodie), corresponding Variants, and StockRecords.
+- **Dependencies:** `apps.catalog`, `apps.inventory`.
+- **Behavior:** Checks for existence via `get_or_create`. Generates variants mapped to newly created categories, injecting dummy `qty_on_hand` (30) for testing.

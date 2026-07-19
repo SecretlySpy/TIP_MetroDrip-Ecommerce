@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% load static money %}
+
+{% block title %}Shop{% endblock %}
+{% block nav_shop %}navbar__link--active{% endblock %}
+{% block meta_description %}Browse MetroDrip streetwear — filter by category, size, color, and fit. Free shipping on select orders.{% endblock %}
+
+{% block content %}
+<div class="container">
+  <section class="section">
+    <h1>Shop</h1>
+
+    {# --- Search Bar --- #}
+    <form class="search-bar" method="get" action="{% url 'storefront:shop' %}">
+      <input type="text"
+             name="q"
+             class="search-bar__input"
+             placeholder="Search products, SKUs…"
+             value="{{ search }}"
+             aria-label="Search products">
+      {# Preserve active filters in the search form #}
+      {% if filters.category %}<input type="hidden" name="category" value="{{ filters.category }}">{% endif %}
+      {% if filters.size %}<input type="hidden" name="size" value="{{ filters.size }}">{% endif %}
+      {% if filters.color %}<input type="hidden" name="color" value="{{ filters.color }}">{% endif %}
+      {% if filters.fit %}<input type="hidden" name="fit" value="{{ filters.fit }}">{% endif %}
+      {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+      <button type="submit" class="search-bar__btn">Search</button>
+    </form>
+
+    <div class="shop-layout">
+      {# --- Filter Sidebar --- #}
+      <aside>
+        {# Mobile filter toggle #}
+        <button class="btn btn--secondary btn--sm btn--block filter-toggle"
+                x-data="{ open: false }"
+                @click="open = !open; document.querySelector('.filter-panel').classList.toggle('filter-panel--open')">
+          Filters
+        </button>
+
+        <div class="filter-panel">
+          {# Category filter #}
+          <div class="filter-group">
+            <div class="filter-group__title">Category</div>
+            <div class="filter-group__options">
+              <a href="{% url 'storefront:shop' %}{% if search %}?q={{ search }}{% endif %}"
+                 class="filter-chip {% if not filters.category %}filter-chip--active{% endif %}">
+                All
+              </a>
+              {% for cat in categories %}
+                <a href="?category={{ cat.slug }}{% if search %}&q={{ search }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}"
+                   class="filter-chip {% if filters.category == cat.slug %}filter-chip--active{% endif %}">
+                  {{ cat.name }} ({{ cat.product_count }})
+                </a>
+              {% endfor %}
+            </div>
+          </div>
+
+          {# Size filter #}
+          <div class="filter-group">
+            <div class="filter-group__title">Size</div>
+            <div class="filter-group__options">
+              <a href="?{% if filters.category %}category={{ filters.category }}&{% endif %}{% if search %}q={{ search }}&{% endif %}{% if sort %}sort={{ sort }}{% endif %}"
+                 class="filter-chip {% if not filters.size %}filter-chip--active{% endif %}">
+                All
+              </a>
+              {% for value, label in sizes %}
+                <a href="?size={{ value }}{% if filters.category %}&category={{ filters.category }}{% endif %}{% if search %}&q={{ search }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}"
+                   class="filter-chip {% if filters.size == value %}filter-chip--active{% endif %}">
+                  {{ value }}
+                </a>
+              {% endfor %}
+            </div>
+          </div>
+
+          {# Fit filter #}
+          <div class="filter-group">
+            <div class="filter-group__title">Fit</div>
+            <div class="filter-group__options">
+              <a href="?{% if filters.category %}category={{ filters.category }}&{% endif %}{% if filters.size %}size={{ filters.size }}&{% endif %}{% if search %}q={{ search }}&{% endif %}{% if sort %}sort={{ sort }}{% endif %}"
+                 class="filter-chip {% if not filters.fit %}filter-chip--active{% endif %}">
+                All
+              </a>
+              {% for value, label in fits %}
+                <a href="?fit={{ value }}{% if filters.category %}&category={{ filters.category }}{% endif %}{% if filters.size %}&size={{ filters.size }}{% endif %}{% if search %}&q={{ search }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}"
+                   class="filter-chip {% if filters.fit == value %}filter-chip--active{% endif %}">
+                  {{ label }}
+                </a>
+              {% endfor %}
+            </div>
+          </div>
+
+          {# Color filter #}
+          <div class="filter-group">
+            <div class="filter-group__title">Color</div>
+            <div class="filter-group__options">
+              <a href="?{% if filters.category %}category={{ filters.category }}&{% endif %}{% if filters.size %}size={{ filters.size }}&{% endif %}{% if filters.fit %}fit={{ filters.fit }}&{% endif %}{% if search %}q={{ search }}&{% endif %}{% if sort %}sort={{ sort }}{% endif %}"
+                 class="filter-chip {% if not filters.color %}filter-chip--active{% endif %}">
+                All
+              </a>
+              {% for color in colors %}
+                <a href="?color={{ color }}{% if filters.category %}&category={{ filters.category }}{% endif %}{% if filters.size %}&size={{ filters.size }}{% endif %}{% if filters.fit %}&fit={{ filters.fit }}{% endif %}{% if search %}&q={{ search }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}"
+                   class="filter-chip {% if filters.color == color %}filter-chip--active{% endif %}">
+                  {{ color }}
+                </a>
+              {% endfor %}
+            </div>
+          </div>
+
+          {# Clear all filters #}
+          {% if active_filters %}
+          <a href="{% url 'storefront:shop' %}" class="btn btn--secondary btn--sm btn--block mt-md">
+            Clear All Filters
+          </a>
+          {% endif %}
+        </div>
+      </aside>
+
+      {# --- Product Grid --- #}
+      <div>
+        <div class="shop-header">
+          <span class="shop-header__count">
+            {{ page.paginator.count }} product{{ page.paginator.count|pluralize }}
+          </span>
+          <form method="get" action="{% url 'storefront:shop' %}" style="display:inline">
+            {# Preserve filters when changing sort #}
+            {% if filters.category %}<input type="hidden" name="category" value="{{ filters.category }}">{% endif %}
+            {% if filters.size %}<input type="hidden" name="size" value="{{ filters.size }}">{% endif %}
+            {% if filters.color %}<input type="hidden" name="color" value="{{ filters.color }}">{% endif %}
+            {% if filters.fit %}<input type="hidden" name="fit" value="{{ filters.fit }}">{% endif %}
+            {% if search %}<input type="hidden" name="q" value="{{ search }}">{% endif %}
+            <select name="sort" class="sort-select" onchange="this.form.submit()">
+              <option value="newest" {% if sort == "newest" %}selected{% endif %}>Newest</option>
+              <option value="price_asc" {% if sort == "price_asc" %}selected{% endif %}>Price: Low → High</option>
+              <option value="price_desc" {% if sort == "price_desc" %}selected{% endif %}>Price: High → Low</option>
+              <option value="name_asc" {% if sort == "name_asc" %}selected{% endif %}>Name: A → Z</option>
+              <option value="name_desc" {% if sort == "name_desc" %}selected{% endif %}>Name: Z → A</option>
+              <option value="popularity" {% if sort == "popularity" %}selected{% endif %}>Popularity</option>
+            </select>
+          </form>
+        </div>
+
+        {% include "storefront/_product_grid.html" %}
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -30,12 +30,15 @@ DEBUG = False  # never default-on; dev.py opts in explicitly
 ALLOWED_HOSTS: list[str] = []
 
 INSTALLED_APPS = [
+    "whitenoise.runserver_nostatic",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sites",
+    "django.contrib.flatpages",
     # MetroDrip apps (handover §8) — strict build order, one domain per app.
     "apps.catalog",
     "apps.inventory",
@@ -51,6 +54,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -155,3 +159,4 @@ DEFAULT_FROM_EMAIL = os.environ.get(
 # cannot safely swap the user model after tables and foreign keys exist.
 AUTH_USER_MODEL = "accounts.Customer"
 LOGIN_URL = "/accounts/login/"
+SITE_ID = 1

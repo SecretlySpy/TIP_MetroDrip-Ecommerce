@@ -12,3 +12,10 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # Captured in django.core.mail.outbox for assertions instead of printing.
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# Use DummyCache to prevent @cache_page from leaking state across tests.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+    }
+}
