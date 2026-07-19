@@ -69,9 +69,35 @@ class OrderAdmin(admin.ModelAdmin, ExportCsvMixin):
         from django.urls import path
         urls = super().get_urls()
         custom_urls = [
+            path("sales-report/", self.admin_site.admin_view(self.sales_report_view), name="orders_order_sales_report"),
             path("<path:object_id>/invoice/", self.admin_site.admin_view(self.invoice_view), name="orders_order_invoice"),
         ]
         return custom_urls + urls
+
+    def sales_report_view(self, request):
+        from django.shortcuts import render
+        from django.db.models import Sum, Count
+        from apps.orders.models import Order
+        
+        # Aggregate data
+        metrics = Order.objects.filter(status__in=["completed", "shipped", "packed", "processing"]).aggregate(
+            total_revenue=Sum("total"),
+            total_orders=Count("id")
+        )
+        
+        total_revenue_display = format_centavos(metrics["total_revenue"] or 0)
+        
+        # Pending vs completed counts
+        status_counts = Order.objects.values("status").annotate(count=Count("id"))
+        
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Sales & Analytics Report",
+            "total_revenue": total_revenue_display,
+            "total_orders": metrics["total_orders"] or 0,
+            "status_counts": status_counts,
+        }
+        return render(request, "admin/orders/order/sales_report.html", context)
 
     def invoice_view(self, request, object_id):
         from django.shortcuts import get_object_or_404, render

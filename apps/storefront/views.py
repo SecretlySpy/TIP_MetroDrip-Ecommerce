@@ -156,12 +156,18 @@ def product_detail(request, slug):
     colors = sorted(set(v["color"] for v in variants_data))
     fits = sorted(set(v["fit"] for v in variants_data))
 
+    is_wishlisted = False
+    if request.user.is_authenticated:
+        from apps.accounts.models import WishlistItem
+        is_wishlisted = WishlistItem.objects.filter(customer=request.user, product=product).exists()
+
     return render(request, "storefront/product_detail.html", {
         "product": product,
         "variants_json": json.dumps(variants_data),
         "sizes": sizes,
         "colors": colors,
         "fits": fits,
+        "is_wishlisted": is_wishlisted,
     })
 
 
@@ -373,3 +379,21 @@ def staging_seed_preview(request):
             "total_variants": total_variants,
         },
     )
+
+# ---------------------------------------------------------------------------
+# C-6: Contact Page
+# ---------------------------------------------------------------------------
+
+def contact_page(request):
+    """Render and process the contact form."""
+    if request.method == "POST":
+        from apps.cms.models import ContactMessage
+        name = request.POST.get("name")
+        email = request.POST.get("email")
+        message = request.POST.get("message")
+        
+        if name and email and message:
+            ContactMessage.objects.create(name=name, email=email, message=message)
+            return render(request, "storefront/contact.html", {"success": True})
+            
+    return render(request, "storefront/contact.html")

@@ -19,4 +19,5 @@ urlpatterns = [
     path("order/<str:token>/", views.order_status, name="order-status"),
     path("cart/", views.cart_page, name="cart"),
     path("api/cart/availability/", views.cart_availability, name="cart-availability"),
+    path("contact/", views.contact_page, name="contact"),
 ]

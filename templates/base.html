@@ -37,6 +37,13 @@
         <li><a href="{% url 'storefront:home' %}" class="navbar__link {% block nav_home %}{% endblock %}">Home</a></li>
         <li><a href="{% url 'storefront:shop' %}" class="navbar__link {% block nav_shop %}{% endblock %}">Shop</a></li>
         <li>
+          {% if user.is_authenticated %}
+            <a href="{% url 'accounts:profile' %}" class="navbar__link">Account</a>
+          {% else %}
+            <a href="{% url 'accounts:login' %}" class="navbar__link">Log In</a>
+          {% endif %}
+        </li>
+        <li>
           <a href="{% url 'storefront:cart' %}" class="navbar__link navbar__cart" x-data="cartBadge()" x-init="init()">
             {# Cart icon (inline SVG for zero-dependency) #}
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

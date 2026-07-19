@@ -57,7 +57,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(configure_mysql_defaults, migrations.RunPython.noop),
+        # migrations.RunPython(configure_mysql_defaults, migrations.RunPython.noop),
         migrations.CreateModel(
             name='Category',
             fields=[

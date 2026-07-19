@@ -1713,3 +1713,34 @@ Internet TCP 80 / TCP+UDP 443
 - **Outputs:** Database rows for 3 additional Categories (Outerwear, Headwear, Accessories), 4 Products (Asphalt Puffer, Drip Logo Beanie, Tactical Bag, Acid Wash Hoodie), corresponding Variants, and StockRecords.
 - **Dependencies:** `apps.catalog`, `apps.inventory`.
 - **Behavior:** Checks for existence via `get_or_create`. Generates variants mapped to newly created categories, injecting dummy `qty_on_hand` (30) for testing.
+
+## Enterprise Architecture (EA) Alignment
+
+- **Purpose:** Document how the MetroDrip v1 architecture aligns with the IT growth requirements projected in Assignment 1.2.
+- **Inputs:** Assignment 1.2 PDF, `DECISIONS.md`, and current Django application structure.
+- **Outputs:** Mapping of future features to current architectural constraints and design choices.
+
+### 1. Dedicated Mobile Application (iOS/Android)
+- **Future Need:** Mobile client accessing business logic.
+- **Current Alignment:** `apps.storefront.views` handles presentation (HTML), while all core business logic (stock checking, checkout, catalog filtering) is encapsulated in domain services (`apps.catalog.services`, `apps.inventory.services`). 
+- **EA Principle:** Layered Architecture & Separation of Concerns. An API layer (e.g. Django REST Framework) can be added that calls the same domain services without duplicating logic.
+
+### 2. AI-Powered Personalized Product Recommendations
+- **Future Need:** Behavioral tracking and recommendation engine based on SKU data.
+- **Current Alignment:** Every product variant has a strictly unique SKU (Hard Invariant `uniq_variant_axes`). Stock mutations are append-only `StockMovement` ledgers (`ADR-A-010`), and `OrderItem` captures a frozen snapshot of the `unit_price`. This canonical, immutable data model provides a clean foundation for machine learning ingestion.
+- **EA Principle:** Single Source of Truth / Canonical Data Model.
+
+### 3. Partnership with 3PL and Multi-Warehouse Stock
+- **Future Need:** Shifting fulfillment to 3PL and storing stock in multiple locations (Manila/Cebu).
+- **Current Alignment:** The `inventory` domain is strictly modular (`ADR-B-001`). No other app manipulates stock quantities directly; they must call `reserve_stock` or `adjust_stock`. Adding warehouse tracking simply requires extending `apps.inventory` without refactoring the `catalog` or `orders` apps.
+- **EA Principle:** Modularity / Component Architecture.
+
+### 4. International Shipping and Multi-Currency
+- **Future Need:** Multi-currency pricing, cross-border shipping, exchange rates.
+- **Current Alignment:** Money is explicitly typed and stored as integer centavos (`ADR-A-013`). The `apps.shipping` and `apps.payments` apps utilize adapters. Adding new currencies or international couriers involves adding new adapters rather than re-writing money arithmetic logic.
+- **EA Principle:** Standardization and Vendor Independence.
+
+### 5. AR Try-On / Virtual Fitting
+- **Future Need:** Serving 3D models and AR content for products.
+- **Current Alignment:** The `Product.images` field explicitly stores CDN/object storage URLs rather than local `ImageField` files (`DECISIONS.md`). The media delivery capability is logically separated from the application server.
+- **EA Principle:** Capability-based Planning and Scalability by Design.

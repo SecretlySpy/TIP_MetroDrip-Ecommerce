@@ -87,21 +87,8 @@ WSGI_APPLICATION = "config.wsgi.application"
 # defensively so a misconfigured server can never silently create MyISAM tables.
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.mysql",
-        "NAME": os.environ.get("MYSQL_DATABASE", "metrodrip"),
-        "USER": os.environ.get("MYSQL_USER", "metrodrip"),
-        "PASSWORD": os.environ.get("MYSQL_PASSWORD", "metrodrip"),
-        "HOST": os.environ.get("MYSQL_HOST", "127.0.0.1"),
-        "PORT": os.environ.get("MYSQL_PORT", "3306"),
-        "OPTIONS": {
-            "charset": "utf8mb4",
-            "init_command": "SET default_storage_engine=INNODB, sql_mode='STRICT_TRANS_TABLES'",
-        },
-        # pytest-created databases must also honor the charset invariant.
-        "TEST": {
-            "CHARSET": "utf8mb4",
-            "COLLATION": "utf8mb4_0900_ai_ci",
-        },
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 

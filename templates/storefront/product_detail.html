@@ -129,6 +129,11 @@
           <span x-show="!addedFeedback">Add to Cart</span>
           <span x-show="addedFeedback" x-transition>✓ Added!</span>
         </button>
+        {% if user.is_authenticated %}
+        <button class="btn btn--lg" @click="toggleWishlist" style="background: transparent; border: 1px solid var(--border-color); padding: 0 1rem; color: var(--text-color); height: 100%; display: flex; align-items: center;" aria-label="Toggle Wishlist">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :style="wishlisted ? 'fill: currentColor; color: #ef4444; border-color: #ef4444;' : ''"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+        </button>
+        {% endif %}
       </div>
 
     </div>
@@ -195,6 +200,7 @@
       selectedAvailable: 0,
       qty: 1,
       addedFeedback: false,
+      wishlisted: {{ is_wishlisted|yesno:"true,false" }},
 
       init() {
         // Noop — user selects axes interactively.
@@ -306,6 +312,26 @@
         this.addedFeedback = true;
         setTimeout(() => { this.addedFeedback = false; }, 2000);
       },
+
+      async toggleWishlist() {
+        const csrfToken = document.cookie.split('; ').find(row => row.startsWith('csrftoken='))?.split('=')[1] || '';
+        try {
+            const response = await fetch('{% url "accounts:toggle-wishlist" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ product_id: {{ product.id }} })
+            });
+            if (response.ok) {
+                const data = await response.json();
+                this.wishlisted = data.added;
+            }
+        } catch (e) {
+            console.error('Wishlist toggle failed:', e);
+        }
+      }
     };
   }
 </script>
