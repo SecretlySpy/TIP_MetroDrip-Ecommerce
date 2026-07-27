@@ -10,6 +10,7 @@ import pytest
 from django.test import Client
 
 from apps.catalog.models import Category, Fit, Product, ProductVariant, Size
+from apps.cms.models import HomepageBanner
 from apps.inventory.models import StockRecord
 
 pytestmark = pytest.mark.django_db
@@ -113,6 +114,37 @@ class TestHomepage:
     def test_homepage_shows_featured_products(self, client, product, variant):
         response = client.get("/")
         assert product.name.encode() in response.content
+
+    def test_homepage_renders_active_banner_fields(self, client):
+        """An active banner must render its stored remote image URL, link, and title."""
+        banner = HomepageBanner.objects.create(
+            title="Rainy Season Drop",
+            image_url="https://cdn.example.test/banners/rainy-season.webp",
+            link_url="/shop/?category=outerwear",
+            is_active=True,
+        )
+
+        response = client.get("/")
+        content = response.content.decode()
+
+        # These assertions guard the URLField contract that previously rendered an empty src.
+        assert f'src="{banner.image_url}"' in content
+        assert f'href="{banner.link_url}"' in content
+        assert f'alt="{banner.title}"' in content
+
+    def test_homepage_omits_inactive_banners(self, client):
+        """Inactive campaign content must not leak into the public homepage."""
+        banner = HomepageBanner.objects.create(
+            title="Archived Campaign",
+            image_url="https://cdn.example.test/banners/archived.webp",
+            link_url="/shop/",
+            is_active=False,
+        )
+
+        response = client.get("/")
+
+        # The queryset-level active flag is the CMS publication boundary.
+        assert banner.title.encode() not in response.content
 
 
 # ---------------------------------------------------------------------------

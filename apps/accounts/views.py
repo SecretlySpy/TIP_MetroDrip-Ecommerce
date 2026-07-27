@@ -152,6 +152,7 @@ def toggle_wishlist(request):
     try:
         product_id = json.loads(request.body).get("product_id")
         product = Product.objects.get(pk=product_id)
+    # Malformed JSON and unknown product identifiers share one non-enumerating response.
     except json.JSONDecodeError, TypeError, ValueError, Product.DoesNotExist:
         return JsonResponse({"error": "Unknown product."}, status=400)
 

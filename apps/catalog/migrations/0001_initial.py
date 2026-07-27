@@ -57,7 +57,8 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # migrations.RunPython(configure_mysql_defaults, migrations.RunPython.noop),
+        # Fresh databases must receive the locked defaults before domain tables exist.
+        migrations.RunPython(configure_mysql_defaults, migrations.RunPython.noop),
         migrations.CreateModel(
             name='Category',
             fields=[

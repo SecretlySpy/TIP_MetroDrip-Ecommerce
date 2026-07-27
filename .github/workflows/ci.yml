@@ -38,6 +38,9 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      # Compilation catches parser/runtime-version drift before lint rules run.
+      - name: Compile Python sources
+        run: python -m compileall -q apps config jobs tests manage.py
       - name: Lint (ruff)
         run: ruff check .
       - name: Format contract (ruff)

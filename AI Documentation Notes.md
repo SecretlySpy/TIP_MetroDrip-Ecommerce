@@ -1,1824 +1,1591 @@
-# AI Documentation Notes
-
-## Document Metadata
-
-- **Purpose:** Provide a machine-readable technical reference for the implemented MetroDrip codebase.
-- **Inputs:** Repository source, migrations, settings, tests, `MetroDrip_AI_Handover.md`, and `DECISIONS.md`.
-- **Outputs:** Current architecture, callable contracts, data model, control flow, dependency map, QA evidence, and implementation gaps.
-- **Dependencies:** Post-change QA must pass before this document is regenerated.
-- **Behavior:** Describes implemented behavior literally; planned behavior is labeled as not implemented.
-- **Analysis Date:** 2026-07-19.
-- **Implementation Stage:** Epic A (scaffold, schema, money, staging artifacts) and Epic B (inventory core) are complete. The Epic C/D/G storefront-commerce layer (listing, detail, cart, checkout with reservations, PayMongo adapter + signature-verified webhook, tokenized order pages, accounts, wishlist, reviews, contact form, CMS-lite) is implemented and passed a dedicated QA/hardening pass on 2026-07-19 that also repaired a temporary SQLite settings regression (Hard Invariant 6). The M1 public-host/DNS/trusted-certificate gate remains an operator action.
-- **QA Gate:** Passed with 273 tests on real MySQL 8 (both no-oversell concurrency gates live), clean ruff lint + format, Django system check, and zero migration drift.
-
-## Repository Scope
-
-- **Purpose:** Define the current deployable system boundary.
-- **Inputs:** Django project, 10 first-party app packages, MySQL schema, Docker development and staging services, deployment runbook, and CI workflow.
-- **Outputs:** One server-rendered Django monolith backed by one MySQL 8 database; provider-neutral staging image and Compose topology.
-- **Dependencies:** Python 3.14, Django 5.2, MySQL 8, PyMySQL, Gunicorn, WhiteNoise, Caddy, Docker Compose, and environment configuration.
-- **Behavior:** Active route groups: the public storefront (`/`, `/shop/`, `/shop/<slug>/`, `/cart/`, `/checkout/`, tokenized `/checkout/success/<token>/` and `/order/<token>/`, `/contact/`, `/api/cart/availability/`), accounts (`/accounts/...`), reviews (`/reviews/...`), flatpages (`/pages/...`), the signature-verified PayMongo webhook (`/api/webhooks/paymongo/`), `/admin/` (with invoice and sales-report views), health probes, and the staging-gated seed preview.
-
-### Technology Stack
-
-- **Purpose:** Enumerate implemented runtime and QA technologies.
-- **Inputs:** Requirements, container images, settings, and verified installed versions.
-- **Outputs:** Dependency and current-behavior matrix.
-- **Dependencies:** Python, pip, Docker, and MySQL.
-- **Behavior:** Distinguishes installed behavior from planned integrations.
-
-| Layer | Implemented dependency | Current behavior |
-|---|---|---|
-| Language | Python 3.14 | Local virtual environment uses Python 3.14.4. |
-| Framework | Django 5.2 | Installed version during QA was 5.2.16. |
-| Database | MySQL 8 | Docker QA server uses MySQL 8.4.10, InnoDB, and `utf8mb4_0900_ai_ci`. |
-| Driver | PyMySQL | Installed as the `MySQLdb` compatibility module before Django initializes. |
-| HTTP server | Gunicorn 26 | Staging runs one non-root worker with four threads. |
-| Reverse proxy | Caddy 2 | Sole public ingress; automatic HTTPS, compression, response headers, and proxy logging. |
-| Static assets | WhiteNoise 6 | Serves hashed collected admin/site assets; never product media. |
-| Jobs | APScheduler | Two configured jobs (reservation sweep every 60 s, low-stock scan every 60 min) run only inside the single `run_scheduler` management-command process. |
-| Frontend | Django Templates | Storefront templates, flatpages (About/Contact/Privacy), and base layouts exist. HTMX and Alpine.js are absent. |
-| Tests | pytest and pytest-django | Tests execute against real MySQL rather than SQLite. |
-| Lint and format | Ruff | Lint and formatting checks pass. |
-| CI | GitHub Actions | Runs Ruff, format, migration drift/reversal, pytest/MySQL, warning-level deployment checks, shell/Compose/Caddy/Docker validation, image ownership checks, and a disposable HTTPS persistence smoke. |
-
-### Implemented Capability Matrix
-
-- **Purpose:** Summarize delivered feature boundaries.
-- **Inputs:** Current source, migrations, tests, and deployment evidence.
-- **Outputs:** Capability and implementation-status matrix.
-- **Dependencies:** All implemented modules and deployment artifacts.
-- **Behavior:** Labels partial and absent behavior explicitly.
-
-| Capability | Status | Literal behavior |
-|---|---|---|
-| Project scaffold | Implemented | Split settings, 10 app packages, Docker MySQL, pytest, Ruff, and CI exist. |
-| Customer identity | Implemented | Email-login registration, login (validated `next` redirect), logout, profile view/update, and automatic + manual guest-order claiming by matching email. |
-| Catalog | Data layer implemented | Categories, products, and Size × Color × Fit variants persist through Django ORM. |
-| Effective pricing | Implemented | Variant override wins; otherwise the product base price is returned. |
-| Money validation and arithmetic | Implemented | Strict integer-only validation, overflow guards, exact multiplication/sums, and configured peso formatting exist. |
-| Inventory counters | Implemented | Availability is on-hand minus reserved; all mutations run through locked `apps/inventory/services.py` operations; database prevents reserved exceeding on-hand. |
-| Stock reservations (FR-5) | Implemented | 15-minute TTL holds with active/committed/released/expired lifecycle; both no-oversell concurrency gates (2-buyer and M2 20-buyer) pass on real InnoDB locks. |
-| Stock audit | Implemented | Every `qty_on_hand` change writes exactly one movement in the same transaction; movement rows validate direction and reject normal public ORM mutation/deletion paths. |
-| Low-stock scan (FR-9) | Partially implemented | Availability-based scan plus staff email alert exist behind the scheduler; the admin dashboard flag arrives with Epic C/F admin work. |
-| Background jobs | Implemented | Reservation sweep and low-stock scan run in one opt-in scheduler process; no job runs inside web workers. |
-| Orders | Implemented | Checkout creates orders atomically with correct totals at INSERT, snapshot pricing (variant override honored), order-linked reservations, and the guarded state machine; admin actions drive fulfillment transitions. |
-| Payments | Implemented (sandbox pending real keys) | PayMongo checkout-session adapter, HMAC-verified idempotent webhook (fail-closed without a secret), shared `confirm_order_paid()` service, and a dev-only MOCK_PAYMENTS completion gate that production refuses to boot with. |
-| Shipping | Implemented (courier API pending) | Zone flat-rate table (NCR/Luzon/VisMin seeded), J&T adapter stub with manual waybill fallback, shipment status driven by admin actions. |
-| Wishlist | Implemented | JSON toggle endpoint plus product-detail heart and profile grid; one bookmark per customer/product. |
-| Reviews | Implemented | Verified-purchase submission (delivered + owned + in-order product), always re-enters moderation on edit, approved-only public rendering with average rating. |
-| Demo data | Implemented | Idempotent command creates 5 products. Additional seed scripts generate full product lines, variants, flatpages, and stock. |
-| Operational health | Implemented | Database-independent liveness and `SELECT 1` readiness endpoints return narrow JSON contracts. |
-| Staging runtime | Locally implemented; public gate pending | Hardened Caddy/Gunicorn/MySQL Compose stack passes local HTTPS and forced-recreation smoke; no real DNS/host/certificate evidence exists. |
-| Seed browser | Implemented for staging only | Feature-gated GET page renders active seeded products, peso prices, and variant totals; all methods return 404 while disabled, while enabled non-GET methods return 405. |
-| Storefront and checkout | Implemented | Homepage with banners, filtered/sorted/searched listing with HTMX partial swaps, three-axis variant picker with stock states, localStorage cart with server availability check, JSON checkout with reservations, and tokenized success/status pages — all in the §14 design system. |
-| External APIs | Partially implemented | PayMongo (sessions + webhook), Semaphore SMS (graceful degradation), Google Places autocomplete (manual zone fallback), and console/locmem email exist; production email provider, courier API credentials, CDN, and object storage remain pending. |
-
-## System Architecture
-
-- **Purpose:** Describe runtime composition, dependency direction, and domain boundaries.
-- **Inputs:** Django settings, URL configuration, installed apps, models, and services.
-- **Outputs:** Loaded Django application and relational domain graph.
-- **Dependencies:** MySQL availability, environment values, and all applied migrations.
-- **Behavior:** Django loads all domain apps into one process; business persistence uses the Django ORM and one database.
-
-### Application Dependency Graph
-
-```text
-catalog.0001
-├── accounts.0001 (also depends on auth.0012)
-│   └── orders.0001 (via AUTH_USER_MODEL and catalog)
-│       ├── inventory.0001
-│       ├── payments.0001
-│       ├── shipping.0001
-│       └── reviews.0001
-└── reviews.0001 also depends directly on catalog and accounts
-```
-
-- **Purpose:** Preserve foreign-key creation and reverse-migration order.
-- **Inputs:** Migration dependency declarations.
-- **Outputs:** Catalog first; dependent commerce tables after accounts and orders.
-- **Dependencies:** Django migration executor.
-- **Behavior:** Reversal removes leaf apps before orders, accounts, and catalog.
-
-### Development Runtime Boot Flow
-
-- **Purpose:** Initialize Django consistently across management, ASGI, and WSGI entrypoints.
-- **Inputs:** Process environment, optional repository `.env`, and command-line arguments.
-- **Outputs:** Configured Django application.
-- **Dependencies:** PyMySQL, python-dotenv, Django settings loader, reachable MySQL.
-- **Behavior:** PyMySQL installs as `MySQLdb`; base settings load `.env`; entrypoints default to development settings only when `DJANGO_SETTINGS_MODULE` is unset.
-
-### Staging Deployment Topology
-
-```text
-Internet TCP 80 / TCP+UDP 443
-              │
-          Caddy 2
-              │ edge network
-    Gunicorn/Django (UID 10001)
-              │ internal database network
-          MySQL 8.4
-              │
-       persistent dbdata volume
-```
-
-- **Purpose:** Provide the smallest provider-neutral HTTPS staging topology within the launch infrastructure budget.
-- **Inputs:** Linux host, Docker Compose, DNS hostname, ports 80/443, deployment environment, repository revision.
-- **Outputs:** Caddy ingress, one Gunicorn/Django process container, one private MySQL service, and persistent `dbdata`, `caddy_data`, and `caddy_config` named volumes.
-- **Dependencies:** `Dockerfile`, `deploy/compose.staging.yml`, `deploy/Caddyfile`, `deploy/entrypoint.sh`, staging settings.
-- **Behavior:** MySQL becomes healthy first; the app validates settings, collects static files, migrates, optionally seeds, and becomes ready; Caddy starts after app readiness and terminates HTTPS. Only Caddy publishes host ports.
-
-### Staging Request Flow
-
-- **Purpose:** Define ingress, health, static, and preview control flow.
-- **Inputs:** Public HTTPS request forwarded by Caddy with original Host and HTTPS proxy metadata.
-- **Outputs:** JSON health response, WhiteNoise static response, staging preview HTML, admin response, or 404/405.
-- **Dependencies:** SecurityMiddleware, WhiteNoise, Gunicorn, Django URL resolver, optional MySQL query.
-- **Behavior:** `Client → Caddy → Gunicorn/Django`; liveness stops before database access; readiness executes `SELECT 1`; static files stop in WhiteNoise; seed preview checks its feature gate before method disclosure and then queries active products.
-
-### Staging Startup Flow
-
-- **Purpose:** Prepare an immutable application image before it serves traffic.
-- **Inputs:** Exact `STAGING_SEED_DEMO` flag, validated Django/MySQL/host environment, final Gunicorn command.
-- **Outputs:** Collected static assets, current schema, optional deterministic seed, running Gunicorn master.
-- **Dependencies:** `deploy/entrypoint.sh`, management commands, MySQL readiness.
-- **Behavior:** Invalid seed flags exit 64 before mutation. Valid startup runs `collectstatic`, `migrate`, optional idempotent `seed_demo`, then `exec`s Gunicorn. One app replica is an explicit operational constraint.
-
-### Order Number Flow
-
-- **Purpose:** Allocate collision-free public order identifiers.
-- **Inputs:** Optional four-digit year.
-- **Outputs:** `MD-YYYY-NNNNN` string.
-- **Dependencies:** `OrderNumberSequence`, `transaction.atomic()`, and `select_for_update()`.
-- **Behavior:** Uses the Asia/Manila local year by default, locks or creates its annual sequence, increments atomically, and raises after 99,999.
-
-### Order State Flow
-
-| Current status | Permitted next status |
-|---|---|
-| `pending` | `paid`, `cancelled` |
-| `paid` | `packed`, `refunded` |
-| `packed` | `shipped`, `refunded` |
-| `shipped` | `delivered`, `refunded` |
-| `delivered` | `refunded` |
-| `cancelled` | none |
-| `refunded` | none |
-
-- **Purpose:** Enforce Hard Invariant 5 in application code.
-- **Inputs:** Persisted order and requested target status.
-- **Outputs:** One legal persisted transition or `IllegalTransition`.
-- **Dependencies:** MySQL row locks and the `ALLOWED_TRANSITIONS` mapping.
-- **Behavior:** Reloads and locks authoritative state before validation; ordinary save, queryset, bulk, explicit-PK, stale, and conflict-upsert bypasses are guarded.
-
-### Inventory State Flow
-
-- **Purpose:** Represent physical stock, reservations, and audit evidence.
-- **Inputs:** `qty_on_hand`, `qty_reserved`, movement delta, movement reason, optional order.
-- **Outputs:** `available = qty_on_hand - qty_reserved` and append-only application-level ledger rows.
-- **Dependencies:** MySQL checks, protected foreign keys, ORM mutation guards, and `apps/inventory/services.py` row locks.
-- **Behavior:** `reserve_stock` places an `active` 15-minute hold that raises `qty_reserved` only. Terminal hold outcomes: `committed` (payment; both counters fall and one `sale` movement is appended), `released` (explicit abandon; idempotent), `expired` (TTL sweep). `adjust_stock` applies non-sale physical changes with their movement in one transaction. The schema prevents negative availability and invalid movement signs.
-
-### Guest Identity Flow
-
-- **Purpose:** Keep guest checkout independent from registered authentication identities.
-- **Inputs:** Nullable `Order.customer` and checkout `shipping_address` snapshot.
-- **Outputs:** Guest order when `customer_id is None`.
-- **Dependencies:** Custom `accounts.Customer` user model and `SET_NULL` deletion policy.
-- **Behavior:** Guest checkout creates no Customer row; future claim-by-email logic must read the order snapshot.
-
-## Configuration Modules
-
-- **Purpose:** Group runtime configuration entrypoints and settings.
-- **Inputs:** Process environment and Django startup.
-- **Outputs:** Development, test, production, and staging configuration.
-- **Dependencies:** Django settings loader.
-- **Behavior:** Child sections define each module and callable contract.
-
-### Module: `manage.py`
-
-- **Purpose:** Execute Django management commands.
-- **Inputs:** `sys.argv` and optional `DJANGO_SETTINGS_MODULE` environment value.
-- **Outputs:** Django command output; function returns `None` implicitly.
-- **Dependencies:** `os`, `sys`, and `django.core.management.execute_from_command_line`.
-- **Behavior:** Defaults settings to `config.settings.dev` and raises a contextual import error when Django is unavailable.
-
-#### Function: `main()`
-
-- **Purpose:** Initialize settings and dispatch the requested management command.
-- **Inputs:** No explicit parameters; reads process state.
-- **Outputs:** `None`.
-- **Dependencies:** Django management command registry.
-- **Behavior:** Mutates the process environment only when the settings variable is absent, then executes `sys.argv`.
-
-### Module: `config/settings/base.py`
-
-- **Purpose:** Define settings shared by development, test, and production.
-- **Inputs:** Environment variables and repository `.env`.
-- **Outputs:** Django settings for apps, middleware, templates, MySQL, auth, timezone, and static files.
-- **Dependencies:** `pymysql`, `python-dotenv`, `pathlib`, and MySQL 8.
-- **Behavior:** Registers 10 MetroDrip apps; selects MySQL; requests `utf8mb4`; pins session InnoDB and strict transactional SQL mode; sets `AUTH_USER_MODEL = "accounts.Customer"`; uses Asia/Manila display timezone with UTC storage; defines PHP, ₱, and two minor units; sets absolute `/static/`; keeps the staging preview disabled by default.
-
-### Module: `config/settings/dev.py`
-
-- **Purpose:** Provide safe local-development overrides.
-- **Inputs:** Shared settings and optional secret environment value.
-- **Outputs:** Debug-enabled settings with localhost hosts and console email.
-- **Dependencies:** `config.settings.base`.
-- **Behavior:** Uses a development-only fallback secret; never supplies production security behavior.
-
-### Module: `config/settings/test.py`
-
-- **Purpose:** Provide deterministic integration-test overrides.
-- **Inputs:** Development settings and MySQL environment values.
-- **Outputs:** MySQL test configuration with MD5 password hashing and in-memory email.
-- **Dependencies:** Real MySQL row-lock behavior.
-- **Behavior:** Does not replace MySQL with SQLite.
-
-### Module: `config/settings/prod.py`
-
-- **Purpose:** Provide fail-fast production security, database, static-asset, and logging settings.
-- **Inputs:** Required Django secret, host/origin allowlists, and all application MySQL connection values.
-- **Outputs:** Validated settings, HTTPS redirect, secure cookies, proxy SSL handling, 30-day HSTS, WhiteNoise manifest storage, container-captured console logging, and 60-second persistent database connections.
-- **Dependencies:** `config.settings.base`, `ipaddress`, `re`, `urllib.parse`, Django, WhiteNoise, and a correctly configured reverse proxy.
-- **Behavior:** Import rejects missing/weak/example secrets, missing/weak/example application DB passwords, empty lists, wildcard/non-DNS hosts, malformed ports, and non-origin/non-HTTPS CSRF values. HSTS preload remains intentionally disabled during pre-launch bake-in.
-
-#### Constant: `_HOST_LABEL_PATTERN`
-
-- **Purpose:** Define the allowed ASCII syntax for one DNS label.
-- **Inputs:** Candidate lower-cased hostname label.
-- **Outputs:** Full-match result for a 1-to-63-character letter/digit/hyphen label.
-- **Dependencies:** Python `re`.
-- **Behavior:** Disallows leading/trailing hyphens, underscores, wildcard characters, URL delimiters, and oversized labels.
-
-#### Function: `_required_environment(name)`
-
-- **Purpose:** Read one mandatory deployment value.
-- **Inputs:** Environment-variable name.
-- **Outputs:** Stripped non-empty string.
-- **Dependencies:** `os.environ`.
-- **Behavior:** Raises `ImproperlyConfigured` for missing, empty, or whitespace-only values.
-
-#### Function: `_required_csv_environment(name)`
-
-- **Purpose:** Parse a required comma-separated setting.
-- **Inputs:** Environment-variable name.
-- **Outputs:** List of stripped non-empty values.
-- **Dependencies:** `_required_environment()`.
-- **Behavior:** Removes empty members and rejects separator-only input.
-
-#### Function: `_normalize_deployment_hostname(hostname)`
-
-- **Purpose:** Canonicalize one trusted deployment hostname.
-- **Inputs:** Candidate hostname string.
-- **Outputs:** Lower-cased public DNS name, `localhost`, or `127.0.0.1`.
-- **Dependencies:** `_HOST_LABEL_PATTERN`, `ipaddress.ip_address()`.
-- **Behavior:** Rejects wildcard/URL syntax, public IP literals, single-label internal names, invalid DNS labels, names over 253 characters, and numeric-only top-level labels.
-
-#### Function: `_required_hostnames_environment(name)`
-
-- **Purpose:** Parse a required Django host allowlist without catch-all patterns.
-- **Inputs:** Environment-variable name containing comma-separated hostnames.
-- **Outputs:** Canonical literal hostname list.
-- **Dependencies:** `_required_csv_environment()`, `_normalize_deployment_hostname()`.
-- **Behavior:** Raises `ImproperlyConfigured` when any member is a wildcard, URL, unsupported IP, or invalid DNS hostname.
-
-#### Function: `_required_hostname_environment(name)`
-
-- **Purpose:** Read one mandatory literal deployment hostname.
-- **Inputs:** Environment-variable name.
-- **Outputs:** Canonical hostname.
-- **Dependencies:** `_required_environment()`, `_normalize_deployment_hostname()`.
-- **Behavior:** Converts hostname-validation failures into a setting-specific `ImproperlyConfigured` exception.
-
-#### Function: `_required_https_origins_environment(name)`
-
-- **Purpose:** Validate Django CSRF trusted origins.
-- **Inputs:** Environment-variable name containing comma-separated URLs.
-- **Outputs:** HTTPS origin list.
-- **Dependencies:** `_required_csv_environment()`, `_normalize_deployment_hostname()`, `urllib.parse.urlsplit()`.
-- **Behavior:** Rejects non-HTTPS schemes, wildcard/non-DNS hosts, public IP literals, mismatched netloc syntax, credentials, paths other than `/`, queries, fragments, invalid ports, empty ports, and port zero.
-
-#### Function: `_required_port_environment(name)`
-
-- **Purpose:** Validate a TCP port while preserving Django's string format.
-- **Inputs:** Environment-variable name.
-- **Outputs:** ASCII-decimal string in `1..65535`.
-- **Dependencies:** `_required_environment()`.
-- **Behavior:** Rejects signs, decimals, Unicode digits, zero, and overflow.
-
-#### Function: `_required_secret_environment(name)`
-
-- **Purpose:** Prevent weak or example Django signing keys from booting deployment settings.
-- **Inputs:** Environment-variable name.
-- **Outputs:** Secret string with at least 50 characters and at least five distinct characters.
-- **Dependencies:** `_required_environment()`.
-- **Behavior:** Rejects low length/diversity and `django-insecure-` or `replace-with-` prefixes without logging the value.
-
-#### Function: `_required_password_environment(name)`
-
-- **Purpose:** Validate the application MySQL password boundary.
-- **Inputs:** Environment-variable name.
-- **Outputs:** Password with at least 16 characters and at least five distinct characters.
-- **Dependencies:** `_required_environment()`.
-- **Behavior:** Rejects short, low-diversity, or `replace-with-` values without logging the value.
-
-### Module: `config/settings/staging.py`
-
-- **Purpose:** Reuse production security and add provider-neutral staging controls.
-- **Inputs:** Every production variable plus `STAGING_HOST`, preview flag, and local-insecure flag.
-- **Outputs:** Production-derived staging settings with one narrowly silenced pre-launch system check.
-- **Dependencies:** `config.settings.prod`, `urllib.parse.urlsplit()`.
-- **Behavior:** Requires a literal proxy hostname that appears exactly in allowed hosts and matches a CSRF-origin hostname. Preview defaults off. Insecure HTTP can disable redirect/secure cookies only for `localhost` or `127.0.0.1`. Only `security.W021` is silenced while HSTS preload remains deliberately deferred; warning-level checks fail for every other deploy warning.
-
-#### Function: `_environment_flag(name, *, default=False)`
-
-- **Purpose:** Parse staging flags without truthy-string ambiguity.
-- **Inputs:** Environment-variable name and Boolean default.
-- **Outputs:** Boolean.
-- **Dependencies:** `os.environ`.
-- **Behavior:** Accepts only exact `0` or `1`; missing values use the default; every other value raises `ImproperlyConfigured`.
-
-### Module: `config/views.py`
-
-- **Purpose:** Expose container/process operational probes.
-- **Inputs:** GET requests.
-- **Outputs:** Narrow JSON health contracts.
-- **Dependencies:** Django HTTP responses, database connection, logging, method decorators.
-- **Behavior:** Non-GET methods return 405 and never query MySQL.
-
-#### Function: `liveness(request)`
-
-- **Purpose:** Prove the Django process can route requests without coupling process health to MySQL.
-- **Inputs:** GET request.
-- **Outputs:** HTTP 200 `{"status":"ok"}`.
-- **Dependencies:** `JsonResponse`, `require_GET`.
-- **Behavior:** Performs no database access.
-
-#### Function: `readiness(request)`
-
-- **Purpose:** Prove the process can execute a minimal database query.
-- **Inputs:** GET request.
-- **Outputs:** HTTP 200 `{"status":"ok"}` or HTTP 503 `{"status":"unavailable"}`.
-- **Dependencies:** Django database connection, `DatabaseError`, logger.
-- **Behavior:** Executes `SELECT 1` and fetches its row. Database errors are logged server-side while the response hides driver credentials/topology.
-
-### Module: `config/urls.py`
-
-- **Purpose:** Define the root URL table.
-- **Inputs:** Incoming request path.
-- **Outputs:** Health, staging preview, and Django Admin resolution.
-- **Dependencies:** `config.views`, `apps.storefront.views`, `django.contrib.admin`.
-- **Behavior:** Maps `/healthz/live/`, `/healthz/ready/`, `/staging/seed/`, and `/admin/`. No commerce/account/webhook URL modules are included.
-
-### Module: `config/asgi.py`
-
-- **Purpose:** Expose an ASGI application object.
-- **Inputs:** Optional preselected settings module.
-- **Outputs:** Module variable `application`.
-- **Dependencies:** `get_asgi_application()`.
-- **Behavior:** Defaults to development settings and initializes Django during import.
-
-### Module: `config/wsgi.py`
-
-- **Purpose:** Expose a WSGI application object.
-- **Inputs:** Optional preselected settings module.
-- **Outputs:** Module variable `application`.
-- **Dependencies:** `get_wsgi_application()`.
-- **Behavior:** Defaults to development settings and initializes Django during import.
-
-## Deployment Artifacts
-
-- **Purpose:** Group the provider-neutral staging build and operations contract.
-- **Inputs:** Repository revision and deployment environment.
-- **Outputs:** Image, Compose topology, ingress, dependency, ignore, CI, and runbook artifacts.
-- **Dependencies:** Docker, Caddy, Gunicorn, MySQL, Git, and pip.
-- **Behavior:** Child sections describe artifact side effects, trust boundaries, and validation.
-
-### Artifact: `requirements.txt`
-
-- **Purpose:** Declare compatible Python runtime and QA dependencies.
-- **Inputs:** Python 3.14 package installation.
-- **Outputs:** Django, MySQL driver, scheduler, environment loader, Gunicorn, WhiteNoise, pytest, and Ruff installations.
-- **Dependencies:** pip and configured package indexes.
-- **Behavior:** Uses compatible-release ranges; A-4 adds Gunicorn and WhiteNoise rather than an exact-version lockfile.
-
-### Artifact: `README.md`
-
-- **Purpose:** Provide the repository entrypoint for developers and operators.
-- **Inputs:** Local Python/Docker prerequisites and the current implementation stage.
-- **Outputs:** Development bootstrap, QA commands, canonical planning/ADR/documentation links, and staging-runbook pointer.
-- **Dependencies:** `.env.example`, `docker-compose.yml`, `deploy/README.md`, and the Python toolchain.
-- **Behavior:** Keeps local development separate from staging operations and states literally that public M1 proof remains required before Epic B.
-
-### Artifact: `.gitignore`
-
-- **Purpose:** Prevent local credentials, generated content, database backups, and tooling state from entering Git.
-- **Inputs:** Repository filesystem paths.
-- **Outputs:** Ignored runtime/generated files while named `.example` contracts remain trackable.
-- **Dependencies:** Git ignore semantics.
-- **Behavior:** Ignores `.env*`, `deploy/.env.staging`, `backups/`, media/static output, caches, coverage, and editor state; explicitly re-includes sanitized example files.
-
-### Artifact: `Dockerfile`
-
-- **Purpose:** Build the Linux staging application image.
-- **Inputs:** Python 3.14 slim base, filtered repository context, `APP_UID`/`APP_GID` defaulting to 10001.
-- **Outputs:** Image exposing internal port 8000 with staging entrypoint and Gunicorn command.
-- **Dependencies:** `requirements.txt`, `deploy/entrypoint.sh`.
-- **Behavior:** Installs dependencies, creates fixed non-root identity, keeps source root-owned, grants only `staticfiles` to UID/GID 10001, and configures one Gunicorn worker/four threads/60-second timeout with access/error logging on standard streams.
-
-### Artifact: `.dockerignore`
-
-- **Purpose:** Minimize and declassify the Docker build context.
-- **Inputs:** Repository paths.
-- **Outputs:** Filtered build context.
-- **Dependencies:** Docker ignore semantics.
-- **Behavior:** Excludes Git/tool state, virtualenvs, bytecode, real environment files, generated media/static, database backups, all SQL files, tests, local Docker files, coverage, and Markdown; retains sanitized examples.
-
-### Artifact: `.gitattributes`
-
-- **Purpose:** Preserve Linux-compatible deployment line endings from Windows checkouts.
-- **Inputs:** Git path normalization.
-- **Outputs:** LF endings for shell, Dockerfile, Caddyfile, and YAML artifacts.
-- **Dependencies:** Git.
-- **Behavior:** Applies `text eol=lf` to the deployment file families.
-
-### Artifact: `deploy/entrypoint.sh`
-
-- **Purpose:** Validate and prepare the app container before accepting traffic.
-- **Inputs:** Exact `STAGING_SEED_DEMO` value and final container command.
-- **Outputs:** Static manifest, migrated schema, optional seed, Gunicorn process.
-- **Dependencies:** Django management commands.
-- **Behavior:** `set -eu`; invalid seed flag exits 64 before mutation; valid flow collects static, migrates, optionally seeds, and uses `exec` for signal-correct Gunicorn shutdown.
-
-### Artifact: `deploy/compose.staging.yml`
-
-- **Purpose:** Compose the single-host staging system.
-- **Inputs:** Sanitized deployment environment values.
-- **Outputs:** MySQL, app, and Caddy services; edge/internal networks; DB/certificate volumes.
-- **Dependencies:** Docker Compose, Dockerfile, Caddyfile.
-- **Behavior:** MySQL publishes no port and becomes healthy first. App exposes only 8000 internally, uses `init: true`, has a 30-second stop grace period, drops all Linux capabilities, enables no-new-privileges, and checks readiness with production-like Host/HTTPS headers. Caddy waits for app health and alone publishes HTTP/HTTPS. Every service rotates JSON logs at three 10 MiB files.
-
-### Artifact: `deploy/Caddyfile`
-
-- **Purpose:** Terminate TLS and proxy public traffic.
-- **Inputs:** Staging hostname and ACME email.
-- **Outputs:** Automatic HTTPS site, HTTP redirect, compressed proxy responses, stdout access logs.
-- **Dependencies:** Caddy automatic HTTPS and healthy app service.
-- **Behavior:** Disables admin API, removes Server header, applies 30-day HSTS/nosniff/DENY/referrer headers, enables zstd/gzip, and forwards original Host plus proxy scheme metadata.
-
-### Artifact: `deploy/.env.staging.example`
-
-- **Purpose:** Declare the staging environment contract without real credentials.
-- **Inputs:** Operator copy/edit.
-- **Outputs:** Template for ignored `deploy/.env.staging`.
-- **Dependencies:** Compose interpolation and Django validation.
-- **Behavior:** Contains placeholders that intentionally fail application startup until replaced; documents distinct secrets, hostname agreement, ports, and exact seed/preview/local flags.
-
-### Artifact: `deploy/README.md`
-
-- **Purpose:** Provide provider-neutral staging operations.
-- **Inputs:** Linux host, DNS, firewall, SSH, Docker, repository checkout.
-- **Outputs:** Deploy, smoke, forced-recreation, logs, backup, rollback, and shutdown procedures.
-- **Dependencies:** Deployment artifacts and operator authority.
-- **Behavior:** Requires a 1-vCPU/2-GB/persistent-SSD host; enforces literal host syntax; forbids volume deletion in normal operations; documents one-app/one-worker constraint and bounded logs; validates persistence with forced recreation; creates operator-only backup files without placing the root password in the `mysqldump` argument list.
-
-### Artifact: `.github/workflows/ci.yml`
-
-- **Purpose:** Retain code and deployment contract verification on push and pull request.
-- **Inputs:** Repository revision and MySQL 8.4 CI service.
-- **Outputs:** QA and deployment-contract job results.
-- **Dependencies:** GitHub Actions, Python 3.14, Docker/Compose.
-- **Behavior:** QA runs Ruff lint/format, Django checks, warning-level staging checks, migration drift/reversal, and pytest on MySQL. Deployment job checks shell/Compose/Caddy/Dockerfile syntax, builds the image, verifies UID/GID/mode/write boundaries, starts an ephemeral HTTPS stack, validates seed/admin/static endpoints, force-recreates containers, proves exact row persistence, and always removes CI volumes.
-
-## App Registration Modules
-
-- **Purpose:** Enumerate first-party Django app registrations.
-- **Inputs:** Django app discovery.
-- **Outputs:** Ten `AppConfig` registrations.
-- **Dependencies:** Django `AppConfig`.
-- **Behavior:** The table distinguishes implemented domains from registration-only shells.
-
-| Module | Purpose | Inputs | Outputs | Dependencies | Behavior |
-|---|---|---|---|---|---|
-| `apps/accounts/apps.py` | Register accounts domain. | Django app loading. | `AccountsConfig`. | `AppConfig`. | Name is `apps.accounts`; uses `BigAutoField`. |
-| `apps/catalog/apps.py` | Register catalog domain. | Django app loading. | `CatalogConfig`. | `AppConfig`. | Name is `apps.catalog`; uses `BigAutoField`. |
-| `apps/inventory/apps.py` | Register inventory domain. | Django app loading. | `InventoryConfig`. | `AppConfig`. | Name is `apps.inventory`; uses `BigAutoField`. |
-| `apps/orders/apps.py` | Register orders domain. | Django app loading. | `OrdersConfig`. | `AppConfig`. | Name is `apps.orders`; uses `BigAutoField`. |
-| `apps/payments/apps.py` | Register payments domain. | Django app loading. | `PaymentsConfig`. | `AppConfig`. | Name is `apps.payments`; uses `BigAutoField`. |
-| `apps/shipping/apps.py` | Register shipping domain. | Django app loading. | `ShippingConfig`. | `AppConfig`. | Name is `apps.shipping`; uses `BigAutoField`. |
-| `apps/reviews/apps.py` | Register reviews domain. | Django app loading. | `ReviewsConfig`. | `AppConfig`. | Name is `apps.reviews`; uses `BigAutoField`. |
-| `apps/notifications/apps.py` | Register notification shell. | Django app loading. | `NotificationsConfig`. | `AppConfig`. | Contains no notification behavior. |
-| `apps/cms/apps.py` | Register CMS shell. | Django app loading. | `CmsConfig`. | `AppConfig`. | Contains no CMS behavior. |
-| `apps/storefront/apps.py` | Register storefront domain. | Django app loading. | `StorefrontConfig`. | `AppConfig`. | App includes the staging-only seed preview; `AppConfig` itself only registers metadata. |
-
-## Domain Module: `apps/accounts/models.py`
-
-- **Purpose:** Define registered customers and wishlists.
-- **Inputs:** Authentication credentials, profile data, saved-address JSON, and product bookmarks.
-- **Outputs:** Customer and WishlistItem ORM rows.
-- **Dependencies:** Django auth base classes, `catalog.Product`, and timezone utilities.
-- **Behavior:** Uses email as username; guest orders are represented outside this module by a nullable order customer.
-
-### Class: `CustomerManager(BaseUserManager)`
-
-- **Purpose:** Create email-authenticated customer and superuser rows.
-- **Inputs:** Email, optional password, and extra model fields.
-- **Outputs:** Persisted `Customer`.
-- **Dependencies:** Django password hashing and manager database alias.
-- **Behavior:** Normalizes email and stores either a password hash or Django unusable-password marker.
-
-#### Function: `CustomerManager._create(self, email, password, **extra_fields)`
-
-- **Purpose:** Implement shared customer persistence.
-- **Inputs:** Required truthy email; password may be `None`; arbitrary valid Customer fields.
-- **Outputs:** Saved `Customer` instance.
-- **Dependencies:** `normalize_email()`, `set_password()`, `set_unusable_password()`.
-- **Behavior:** Raises `ValueError` for missing email and writes using `self._db`.
-
-#### Function: `CustomerManager.create_user(self, email, password=None, **extra_fields)`
-
-- **Purpose:** Create a non-staff, non-superuser account by default.
-- **Inputs:** Email, optional password, optional field overrides.
-- **Outputs:** Saved `Customer`.
-- **Dependencies:** `CustomerManager._create()`.
-- **Behavior:** Defaults privilege flags to false without overriding explicit caller values.
-
-#### Function: `CustomerManager.create_superuser(self, email, password, **extra_fields)`
-
-- **Purpose:** Create an administrative customer identity.
-- **Inputs:** Email, non-empty password, optional field overrides.
-- **Outputs:** Saved privileged `Customer`.
-- **Dependencies:** `CustomerManager._create()`.
-- **Behavior:** Requires both privilege flags to be true and raises `ValueError` otherwise.
-
-### Class: `Customer(AbstractBaseUser, PermissionsMixin)`
-
-- **Purpose:** Represent one registered shopper and Django authentication identity.
-- **Inputs:** `email`, `name`, optional `phone`, address-list JSON, active/staff flags.
-- **Outputs:** Auth-compatible customer row and reverse account relationships.
-- **Dependencies:** Django auth group/permission tables.
-- **Behavior:** `USERNAME_FIELD` is `email`; `REQUIRED_FIELDS` contains `name`; email is unique.
-- **Fields:** `email`, `name`, `phone`, `addresses`, `is_active`, `is_staff`, `date_joined`, plus inherited password/login/permission fields.
-
-#### Function: `Customer.__str__(self)`
-
-- **Purpose:** Provide readable identity text.
-- **Inputs:** Customer instance.
-- **Outputs:** Email string.
-- **Dependencies:** `email` field.
-- **Behavior:** No side effects.
-
-### Class: `WishlistItem(models.Model)`
-
-- **Purpose:** Store a product-level customer bookmark.
-- **Inputs:** Customer and Product foreign keys.
-- **Outputs:** Wishlist row with creation timestamp.
-- **Dependencies:** `Customer` and `catalog.Product`.
-- **Behavior:** Cascades with either owner and enforces unique `(customer, product)` through `uniq_wishlist_entry`.
-
-#### Function: `WishlistItem.__str__(self)`
-
-- **Purpose:** Provide readable wishlist text.
-- **Inputs:** Wishlist instance.
-- **Outputs:** Customer and product joined with a heart symbol.
-- **Dependencies:** Related model string methods.
-- **Behavior:** May load related objects; performs no write.
-
-## Domain Module: `apps/catalog/models.py`
-
-- **Purpose:** Define product classification and three-axis SKU variants.
-- **Inputs:** Category, product, price, image URL list, Size, Color, and Fit data.
-- **Outputs:** Catalog ORM rows and effective centavo pricing.
-- **Dependencies:** Django ORM.
-- **Behavior:** One product belongs to one protected category; one axis combination and one SKU may exist only once.
-
-### Class: `Category(models.Model)`
-
-- **Purpose:** Classify products.
-- **Inputs:** Unique `name` and unique `slug`.
-- **Outputs:** Category row and reverse `products` relation.
-- **Dependencies:** Products protect referenced categories from deletion.
-- **Behavior:** Orders rows alphabetically by name.
-
-#### Function: `Category.__str__(self)`
-
-- **Purpose:** Return display text.
-- **Inputs:** Category instance.
-- **Outputs:** Category name.
-- **Dependencies:** `name` field.
-- **Behavior:** No side effects.
-
-### Class: `Size(models.TextChoices)`
-
-- **Purpose:** Define supported apparel sizes.
-- **Inputs:** Model/form choice validation.
-- **Outputs:** Values `XS`, `S`, `M`, `L`, `XL`, and `XXL`.
-- **Dependencies:** Django TextChoices.
-- **Behavior:** Labels values from Extra Small through 2X Large.
-
-### Class: `Fit(models.TextChoices)`
-
-- **Purpose:** Define supported apparel fits.
-- **Inputs:** Model/form choice validation.
-- **Outputs:** `slim`, `regular`, and `oversized`.
-- **Dependencies:** Django TextChoices.
-- **Behavior:** Provides canonical stored strings and display labels.
-
-### Class: `Product(models.Model)`
-
-- **Purpose:** Store sellable product-level content and default price.
-- **Inputs:** Name, unique slug, description, category, integer-centavo base price, image URL JSON, active flag.
-- **Outputs:** Product row with reverse variants, wishes, and reviews.
-- **Dependencies:** `Category` and object-storage/CDN URL convention.
-- **Behavior:** Protects its category; orders newest products first; product deletion cascades only to removable variants.
-- **Fields:** `name`, `slug`, `description`, `category`, `base_price`, `images`, `is_active`, `created_at`.
-
-#### Function: `Product.__str__(self)`
-
-- **Purpose:** Return display text.
-- **Inputs:** Product instance.
-- **Outputs:** Product name.
-- **Dependencies:** `name` field.
-- **Behavior:** No side effects.
-
-### Class: `ProductVariant(models.Model)`
-
-- **Purpose:** Represent one Size × Color × Fit SKU.
-- **Inputs:** Product, unique SKU, size, color, fit, optional centavo price override.
-- **Outputs:** Variant row with reverse stock, movement, and order-line relations.
-- **Dependencies:** `Product`, `Size`, and `Fit`.
-- **Behavior:** Enforces `uniq_variant_axes` on `(product, size, color, fit)` and globally unique SKU.
-
-#### Function: `ProductVariant.__str__(self)`
-
-- **Purpose:** Return SKU display text.
-- **Inputs:** Variant instance.
-- **Outputs:** SKU string.
-- **Dependencies:** `sku` field.
-- **Behavior:** No side effects.
-
-#### Property: `ProductVariant.price(self)`
-
-- **Purpose:** Resolve effective unit price in centavos.
-- **Inputs:** Variant and related product.
-- **Outputs:** `price_override` when non-null; otherwise `product.base_price`.
-- **Dependencies:** Related product may require a database fetch.
-- **Behavior:** Performs no write and never uses floating-point arithmetic.
-
-## Domain Module: `apps/inventory/models.py`
-
-- **Purpose:** Define single-warehouse counters and immutable application-level stock audit rows.
-- **Inputs:** Variant, physical quantity, reserved quantity, threshold, reservation quantity/TTL, movement delta/reason, optional order.
-- **Outputs:** StockRecord, Reservation, and StockMovement rows.
-- **Dependencies:** Catalog variants, orders, MySQL checks, and Django ORM guards.
-- **Behavior:** Defines the counters, the checkout-hold entity, and the append-only ledger; every operational mutation goes through `apps/inventory/services.py` (ADR-B-001).
-
-### Class: `StockRecord(models.Model)`
-
-- **Purpose:** Store current stock counters for exactly one variant.
-- **Inputs:** Variant, nonnegative `qty_on_hand`, `qty_reserved`, and `low_stock_threshold`.
-- **Outputs:** One-to-one stock row.
-- **Dependencies:** `catalog.ProductVariant`.
-- **Behavior:** Cascades with a removable variant and enforces `qty_reserved <= qty_on_hand` through `chk_reserved_lte_on_hand`.
-
-#### Function: `StockRecord.__str__(self)`
-
-- **Purpose:** Return readable counter text.
-- **Inputs:** StockRecord instance.
-- **Outputs:** Variant ID, on-hand value, and reserved value.
-- **Dependencies:** Stored fields.
-- **Behavior:** No side effects.
-
-#### Property: `StockRecord.available(self)`
-
-- **Purpose:** Calculate sellable inventory.
-- **Inputs:** `qty_on_hand` and `qty_reserved`.
-- **Outputs:** Integer difference.
-- **Dependencies:** Database constraint prevents a persisted negative result.
-- **Behavior:** No database write.
-
-### Class: `ReservationStatus(models.TextChoices)`
-
-- **Purpose:** Define the checkout-hold lifecycle states.
-- **Inputs:** Reservation creation and service transitions.
-- **Outputs:** `active`, `committed`, `released`, and `expired`.
-- **Dependencies:** Django TextChoices.
-- **Behavior:** `active` is the only non-terminal state; services enforce the legal exits.
-
-### Class: `Reservation(models.Model)`
-
-- **Purpose:** Persist one 15-minute checkout hold on units of one SKU (FR-5).
-- **Inputs:** Variant, quantity of at least one, optional session key, expiry timestamp, optional order.
-- **Outputs:** One hold row with status, creation, expiry, and end timestamps.
-- **Dependencies:** `catalog.ProductVariant` (protected), `orders.Order` (optional, set-null), `chk_reservation_qty_min1`, and the `idx_res_status_expiry` sweep index.
-- **Behavior:** Holds change `qty_reserved` only and never write movements. The order reference is set when a hold commits into a sale; deleting that order later nulls the reference because the movement ledger, not the reservation, is the audit record.
-
-#### Function: `Reservation.__str__(self)`
-
-- **Purpose:** Return readable hold text.
-- **Inputs:** Reservation instance.
-- **Outputs:** Variant ID, quantity, and status.
-- **Dependencies:** Stored fields.
-- **Behavior:** No side effects.
-
-### Class: `MovementReason(models.TextChoices)`
-
-- **Purpose:** Define stock audit reasons.
-- **Inputs:** Movement creation and form validation.
-- **Outputs:** `sale`, `restock`, `adjustment`, and `return`.
-- **Dependencies:** Django TextChoices.
-- **Behavior:** Database sign constraint assigns allowed delta direction by reason.
-
-### Class: `AppendOnlyMovementQuerySet(models.QuerySet)`
-
-- **Purpose:** Prevent public queryset APIs from rewriting or deleting stock history.
-- **Inputs:** Queryset mutation calls.
-- **Outputs:** Read/create results or `TypeError`.
-- **Dependencies:** Django QuerySet.
-- **Behavior:** Read operations and plain inserts remain available; mutation and conflict-update APIs are rejected.
-
-#### Function: `AppendOnlyMovementQuerySet.update(self, **kwargs)`
-
-- **Purpose:** Reject row updates.
-- **Inputs:** Any proposed field values.
-- **Outputs:** No row count; raises `TypeError`.
-- **Dependencies:** None.
-- **Behavior:** Performs no SQL update.
-
-#### Function: `AppendOnlyMovementQuerySet.bulk_update(self, objs, fields, batch_size=None)`
-
-- **Purpose:** Reject bulk row updates.
-- **Inputs:** Objects, fields, optional batch size.
-- **Outputs:** Raises `TypeError`.
-- **Dependencies:** None.
-- **Behavior:** Performs no SQL update.
-
-#### Function: `AppendOnlyMovementQuerySet.delete(self)`
-
-- **Purpose:** Reject queryset deletion.
-- **Inputs:** Queryset selection.
-- **Outputs:** Raises `TypeError`.
-- **Dependencies:** None.
-- **Behavior:** Performs no SQL delete.
-
-#### Function: `AppendOnlyMovementQuerySet.bulk_create(self, objs, batch_size=None, ignore_conflicts=False, update_conflicts=False, update_fields=None, unique_fields=None)`
-
-- **Purpose:** Permit append-only bulk inserts while rejecting MySQL conflict rewrites.
-- **Inputs:** Django's complete public bulk-create argument set, including positional forms.
-- **Outputs:** Created object list or `TypeError`.
-- **Dependencies:** Django bulk insert implementation.
-- **Behavior:** Rejects `update_conflicts=True`; delegates plain inserts and optional ignore-conflicts inserts.
-
-### Class: `StockMovementManager`
-
-- **Purpose:** Expose the append-only queryset as the default movement manager.
-- **Inputs:** ORM manager operations.
-- **Outputs:** Querysets and created rows.
-- **Dependencies:** `AppendOnlyMovementQuerySet`.
-- **Behavior:** Declares no additional methods.
-
-### Class: `StockMovement(models.Model)`
-
-- **Purpose:** Persist one immutable quantity-on-hand audit event.
-- **Inputs:** Variant, signed delta, reason, optional referenced order.
-- **Outputs:** Timestamped movement row.
-- **Dependencies:** ProductVariant and optional Order use `PROTECT` deletion.
-- **Behavior:** Orders newest first; `chk_movement_reason_delta` requires sale negative, restock/return positive, and adjustment nonzero.
-
-#### Function: `StockMovement.__str__(self)`
-
-- **Purpose:** Return readable audit text.
-- **Inputs:** Movement instance.
-- **Outputs:** Variant ID, signed delta, and reason.
-- **Dependencies:** Stored fields.
-- **Behavior:** No side effects.
-
-#### Function: `StockMovement.save(self, *args, **kwargs)`
-
-- **Purpose:** Permit inserts and reject instance updates.
-- **Inputs:** Standard Django save arguments.
-- **Outputs:** `None` on insert or `TypeError` when `pk` is already set.
-- **Dependencies:** Django Model save.
-- **Behavior:** Writes one new row only.
-
-#### Function: `StockMovement.delete(self, *args, **kwargs)`
-
-- **Purpose:** Reject instance deletion.
-- **Inputs:** Standard Django delete arguments.
-- **Outputs:** Raises `TypeError`.
-- **Dependencies:** None.
-- **Behavior:** Performs no deletion.
-
-## Domain Module: `apps/orders/models.py`
-
-- **Purpose:** Define order records, lines, annual numbering state, and the guarded lifecycle.
-- **Inputs:** Customer or guest identity, shipping snapshot, integer-centavo totals, variant lines, and status targets.
-- **Outputs:** Order, OrderItem, and OrderNumberSequence rows.
-- **Dependencies:** Custom auth model, catalog variants, MySQL transactions, and row locks.
-- **Behavior:** New orders begin Pending; totals reconcile in the database; legal status edges are enforced in code.
-
-### Class: `OrderStatus(models.TextChoices)`
-
-- **Purpose:** Define stored order lifecycle states.
-- **Inputs:** Model fields and transition validation.
-- **Outputs:** `pending`, `paid`, `packed`, `shipped`, `delivered`, `cancelled`, `refunded`.
-- **Dependencies:** Django TextChoices.
-- **Behavior:** Terminal states are Cancelled and Refunded.
-
-### Constant: `ALLOWED_TRANSITIONS`
-
-- **Purpose:** Define every legal directed state edge.
-- **Inputs:** Current `OrderStatus`.
-- **Outputs:** Set of allowed target statuses.
-- **Dependencies:** `OrderStatus`.
-- **Behavior:** Paid orders exit through Refunded; only Pending may become Cancelled.
-
-### Constant: `MAX_ORDER_SEQUENCE = 99_999`
-
-- **Purpose:** Preserve exactly five sequence digits.
-- **Inputs:** Current annual counter.
-- **Outputs:** Exhaustion boundary.
-- **Dependencies:** Order-number service and database check.
-- **Behavior:** Allocation beyond the boundary is rejected.
-
-### Class: `IllegalTransition(Exception)`
-
-- **Purpose:** Identify invalid order state operations.
-- **Inputs:** Unknown, non-pending initial, direct, stale, bulk, conflict, or disallowed target operation.
-- **Outputs:** Raised exception.
-- **Dependencies:** Order model and queryset guards.
-- **Behavior:** Prevents the invalid write from being committed.
-
-### Class: `OrderQuerySet(models.QuerySet)`
-
-- **Purpose:** Guard public bulk ORM paths around the order state machine.
-- **Inputs:** Update, bulk-update, and bulk-create requests.
-- **Outputs:** Delegated non-status result or `IllegalTransition`.
-- **Dependencies:** Django QuerySet.
-- **Behavior:** Covers keyword and positional conflict-upsert arguments.
-
-#### Function: `OrderQuerySet.update(self, **kwargs)`
-
-- **Purpose:** Block queryset status assignment.
-- **Inputs:** Proposed update fields.
-- **Outputs:** Affected row count for non-status updates; otherwise `IllegalTransition`.
-- **Dependencies:** Django QuerySet update.
-- **Behavior:** No status SQL executes when `status` is present.
-
-#### Function: `OrderQuerySet.bulk_update(self, objs, fields, batch_size=None)`
-
-- **Purpose:** Block status in bulk updates.
-- **Inputs:** Objects, field names, optional batch size.
-- **Outputs:** Affected row count or `IllegalTransition`.
-- **Dependencies:** Django bulk update.
-- **Behavior:** Delegates only when `status` is absent.
-
-#### Function: `OrderQuerySet.bulk_create(self, objs, batch_size=None, ignore_conflicts=False, update_conflicts=False, update_fields=None, unique_fields=None)`
-
-- **Purpose:** Enforce Pending initial state and prevent conflict-based status rewrites.
-- **Inputs:** Django's complete public bulk-create arguments.
-- **Outputs:** Created object list or `IllegalTransition`.
-- **Dependencies:** `OrderStatus` and Django bulk insert.
-- **Behavior:** Materializes input, rejects unknown/non-Pending status, rejects conflict updates containing status, then delegates allowed inserts.
-
-### Class: `OrderManager`
-
-- **Purpose:** Expose `OrderQuerySet` protections through `Order.objects`.
-- **Inputs:** ORM manager calls.
-- **Outputs:** Protected querysets and rows.
-- **Dependencies:** `OrderQuerySet`.
-- **Behavior:** Declares no additional methods.
-
-### Class: `Order(models.Model)`
-
-- **Purpose:** Persist one guest or account-owned commercial order.
-- **Inputs:** Unique order number, optional customer, status, subtotal, shipping fee, total, and shipping-address JSON.
-- **Outputs:** Order row and reverse items, movement, payment, shipment, and review relations.
-- **Dependencies:** `AUTH_USER_MODEL` and MySQL check constraints.
-- **Behavior:** `customer=NULL` denotes guest; customer deletion sets null; `chk_order_total_reconciles` enforces `total = subtotal + shipping_fee`; newest orders sort first.
-- **Fields:** `order_no`, `customer`, `status`, `subtotal`, `shipping_fee`, `total`, `shipping_address`, `created_at`.
-
-#### Function: `Order.__str__(self)`
-
-- **Purpose:** Return public identifier text.
-- **Inputs:** Order instance.
-- **Outputs:** `order_no`.
-- **Dependencies:** Stored field.
-- **Behavior:** No side effects.
-
-#### Function: `Order.save(self, *args, **kwargs)`
-
-- **Purpose:** Persist non-state data while preventing ordinary direct status changes.
-- **Inputs:** Standard save arguments and current instance state.
-- **Outputs:** `None` or `IllegalTransition`.
-- **Dependencies:** MySQL transaction, row lock, and stored order row.
-- **Behavior:** Adding instances must be Pending even with explicit PKs. Explicit non-status field updates cannot write status. Full/status saves lock and compare the authoritative stored state before delegating.
-
-#### Function: `Order.transition_to(self, new_status)`
-
-- **Purpose:** Perform one legal, atomic state transition.
-- **Inputs:** Persisted Order and target enum/value.
-- **Outputs:** Same Order instance with synchronized status.
-- **Dependencies:** `ALLOWED_TRANSITIONS`, `transaction.atomic()`, and `select_for_update()`.
-- **Behavior:** Rejects unsaved/unknown/disallowed targets; locks the fresh row; writes only status through the parent save implementation.
-
-### Class: `OrderItem(models.Model)`
-
-- **Purpose:** Snapshot one purchased variant line.
-- **Inputs:** Order, protected variant, quantity, integer-centavo unit price.
-- **Outputs:** OrderItem row.
-- **Dependencies:** Order and ProductVariant.
-- **Behavior:** Cascades with order, protects variant, requires `qty >= 1`, and enforces one line per `(order, variant)`.
-
-#### Function: `OrderItem.__str__(self)`
-
-- **Purpose:** Return readable line text.
-- **Inputs:** OrderItem instance.
-- **Outputs:** Order ID, variant ID, and quantity.
-- **Dependencies:** Stored foreign-key IDs.
-- **Behavior:** No related fetch required.
-
-### Class: `OrderNumberSequence(models.Model)`
-
-- **Purpose:** Store one row-locked counter per business year.
-- **Inputs:** Four-digit unique year and counter from 0 through 99,999.
-- **Outputs:** Sequence row.
-- **Dependencies:** Order number service.
-- **Behavior:** Database constraints `chk_order_sequence_four_digit_year` and `chk_order_sequence_max_99999` enforce format boundaries.
-
-#### Function: `OrderNumberSequence.__str__(self)`
-
-- **Purpose:** Return readable sequence state.
-- **Inputs:** Sequence instance.
-- **Outputs:** Year and last value.
-- **Dependencies:** Stored fields.
-- **Behavior:** No side effects.
-
-## Utility Module: `apps/orders/money.py`
-
-- **Purpose:** Centralize integer-centavo validation, arithmetic, overflow handling, and configured currency formatting.
-- **Inputs:** Python values, quantities, iterables of amounts, and shared currency settings.
-- **Outputs:** Validated integers, exact totals, formatted currency strings, or `MoneyValueError`.
-- **Dependencies:** Django settings and the MySQL unsigned-INT storage boundary.
-- **Behavior:** Rejects floats, Decimal values, strings, Booleans, implicit coercion, negative ordinary amounts, and values above `4_294_967_295`.
-
-### Constant: `MAX_CENTAVOS = 4_294_967_295`
-
-- **Purpose:** Mirror the maximum value of MySQL `INT UNSIGNED`.
-- **Inputs:** Validation and arithmetic results.
-- **Outputs:** Shared overflow boundary.
-- **Dependencies:** Current money-field database type.
-- **Behavior:** Values with a larger absolute magnitude are rejected before persistence.
-
-### Class: `MoneyValueError(ValueError)`
-
-- **Purpose:** Identify violations of the money domain contract.
-- **Inputs:** Invalid monetary value, quantity, currency symbol, or configuration.
-- **Outputs:** Focused exception that remains catchable as `ValueError`.
-- **Dependencies:** Money utility callers.
-- **Behavior:** Prevents silent numeric coercion and overflow.
-
-### Function: `require_centavos(value, field_name="amount", *, allow_negative=False)`
-
-- **Purpose:** Validate and return one exact centavo integer.
-- **Inputs:** Candidate value, error-label field name, explicit signed-value opt-in.
-- **Outputs:** Unchanged integer or `MoneyValueError`.
-- **Dependencies:** `MAX_CENTAVOS`.
-- **Behavior:** Rejects Boolean and every non-integer type; rejects negative values unless explicitly allowed; always enforces the magnitude ceiling.
-
-### Function: `format_centavos(value, symbol=None)`
-
-- **Purpose:** Render a nonnegative centavo integer using configured major/minor units.
-- **Inputs:** Valid integer and optional string symbol override.
-- **Outputs:** Grouped string such as `₱1,234.56`.
-- **Dependencies:** `CURRENCY_SYMBOL` and `CURRENCY_MINOR_UNITS` settings.
-- **Behavior:** Performs integer `divmod` formatting without floats; rejects negative/invalid amounts and malformed currency configuration.
-
-### Function: `multiply_centavos(unit_price, quantity)`
-
-- **Purpose:** Calculate an exact order-line total.
-- **Inputs:** Nonnegative integer unit price and positive non-Boolean integer quantity.
-- **Outputs:** Valid centavo integer.
-- **Dependencies:** `require_centavos()`.
-- **Behavior:** Rejects quantity below one and results above the database ceiling.
-
-### Function: `sum_centavos(amounts)`
-
-- **Purpose:** Sum a materialized or streaming iterable of nonnegative amounts.
-- **Inputs:** Iterable of centavo integers.
-- **Outputs:** Exact integer total; empty iterable returns zero.
-- **Dependencies:** `require_centavos()`.
-- **Behavior:** Validates each indexed member and checks cumulative overflow after every addition.
-
-## Template Module: `apps/storefront/templatetags/money.py`
-
-- **Purpose:** Expose the shared money formatter to Django templates.
-- **Inputs:** Template context value.
-- **Outputs:** Formatted peso string or an empty string.
-- **Dependencies:** Django template library and `apps.orders.money.format_centavos`.
-- **Behavior:** Registers one public filter named `peso`.
-
-### Function: `peso(value)`
-
-- **Purpose:** Render a valid centavo integer without duplicating formatting logic.
-- **Inputs:** Template value.
-- **Outputs:** Result from `format_centavos()`; empty string for `MoneyValueError`.
-- **Dependencies:** Shared money utility.
-- **Behavior:** Domain functions remain strict while malformed presentation context fails closed instead of causing a page-level 500.
-
-## View Module: `apps/storefront/views.py`
-
-- **Purpose:** Provide temporary M1 seed visibility without implementing the Epic C storefront out of order.
-- **Inputs:** Request method, staging preview setting, active catalog state.
-- **Outputs:** Preview HTML, hidden-route 404, or enabled-route 405.
-- **Dependencies:** Product ORM, `Count`, Django settings and renderer.
-- **Behavior:** Contains no catalog mutation or public commerce behavior.
-
-### Function: `staging_seed_preview(request)`
-
-- **Purpose:** Render deterministic seed evidence through a read-only staging gate.
-- **Inputs:** HTTP request and `STAGING_SEED_PREVIEW_ENABLED`.
-- **Outputs:** `staging/seed_preview.html` with products/counts; 404 while disabled; 405 for non-GET only after enabled.
-- **Dependencies:** `Product`, related Category, variant reverse relation, shared `peso` filter.
-- **Behavior:** Filters active products, joins categories, annotates all variant counts, orders by name, materializes rows, and sums counts in memory. No authentication is required when explicitly enabled.
-
-## Template Module: `templates/staging/seed_preview.html`
-
-- **Purpose:** Render a responsive, dependency-free acceptance page for seeded products.
-- **Inputs:** `products`, `product_count`, `total_variants`.
-- **Outputs:** Auto-escaped HTML product cards and explicit empty state.
-- **Dependencies:** Django template engine and `peso` filter.
-- **Behavior:** Shows name, category, base price, and variant count; inline CSS makes no external network request.
-
-## Service Module: `apps/orders/services.py`
-
-- **Purpose:** Host order business operations outside views.
-- **Inputs:** Service arguments and ORM state.
-- **Outputs:** Order-domain results or explicit service errors.
-- **Dependencies:** Order models, timezone, and Django transactions.
-- **Behavior:** Only annual number allocation is implemented at A-2.
-
-### Class: `InvalidOrderYear(ValueError)`
-
-- **Purpose:** Signal malformed order-number year input.
-- **Inputs:** Boolean, non-integer, or integer outside 1000 through 9999.
-- **Outputs:** Raised exception.
-- **Dependencies:** `next_order_no()`.
-- **Behavior:** No database mutation occurs.
-
-### Class: `OrderNumberExhausted(RuntimeError)`
-
-- **Purpose:** Signal exhausted annual identifier space.
-- **Inputs:** Counter already at 99,999.
-- **Outputs:** Raised exception.
-- **Dependencies:** `next_order_no()`.
-- **Behavior:** Counter remains unchanged.
-
-### Function: `next_order_no(year=None)`
-
-- **Purpose:** Allocate a unique `MD-YYYY-NNNNN` number.
-- **Inputs:** Optional four-digit integer year; `None` selects current Asia/Manila year.
-- **Outputs:** Formatted string.
-- **Dependencies:** `OrderNumberSequence`, timezone, atomic transaction, and row locking.
-- **Behavior:** Rejects Boolean despite `bool` being an `int` subclass; locks or creates the annual row; checks exhaustion; increments and persists atomically.
-
-## Service Module: `apps/inventory/services.py`
-
-- **Purpose:** Provide the only code path allowed to mutate stock counters or append movements (Hard Invariants 1 and 4).
-- **Inputs:** Variant IDs, quantities, movement reasons, reservations, orders, and clock values.
-- **Outputs:** Reservation lifecycle transitions, counter updates, movement rows, low-stock querysets, and domain exceptions.
-- **Dependencies:** `transaction.atomic()`, `select_for_update()`, InnoDB row locks, `RESERVATION_TTL_MINUTES`, and the inventory models.
-- **Behavior:** Global lock order is Reservation before StockRecord wherever both are locked (ADR-B-001); every mutation holds the relevant row locks for its whole transaction.
-
-### Class: `InsufficientStock(Exception)`
-
-- **Purpose:** Signal the expected business rejection when requested units exceed availability.
-- **Inputs:** Raised by `reserve_stock`.
-- **Outputs:** Exception with variant, requested, and available detail.
-- **Dependencies:** None.
-- **Behavior:** The checkout flow treats this as "show sold-out", never as a server error.
-
-### Class: `InvalidReservationState(Exception)`
-
-- **Purpose:** Reject actions a hold's current lifecycle state does not permit.
-- **Inputs:** Raised by release/commit paths and counter-corruption guards.
-- **Outputs:** Exception with reservation and state detail.
-- **Dependencies:** None.
-- **Behavior:** Epic D must respond to a commit-time instance by re-reserving or refunding.
-
-### Class: `InvalidStockAdjustment(Exception)`
-
-- **Purpose:** Reject adjustments that would corrupt counters or forge sales.
-- **Inputs:** Raised by `adjust_stock` validation.
-- **Outputs:** Exception with the violated rule.
-- **Dependencies:** None.
-- **Behavior:** Covers zero/non-integer deltas, negative restock/return, the `sale` reason, and drops below reserved.
-
-### Function: `reserve_stock(*, variant_id, qty, session_key="")`
-
-- **Purpose:** Place one 15-minute hold (B-1/B-2, FR-5).
-- **Inputs:** Variant ID, integer quantity of at least one (Booleans rejected), optional session key.
-- **Outputs:** New `active` Reservation; raises `InsufficientStock`, `ValueError`, or `StockRecord.DoesNotExist`.
-- **Dependencies:** StockRecord row lock and `RESERVATION_TTL_MINUTES`.
-- **Behavior:** Checks availability and raises `qty_reserved` under one lock; creates the hold inside the same transaction; writes no movement. Untracked SKUs fail loudly instead of selling.
-
-### Function: `release_reservation(reservation_id)`
-
-- **Purpose:** Return an abandoned or cancelled hold's units to availability (B-2).
-- **Inputs:** Reservation primary key.
-- **Outputs:** The terminal Reservation; raises `InvalidReservationState` for committed holds.
-- **Dependencies:** Reservation and StockRecord row locks, in that order.
-- **Behavior:** Idempotent for already-released/expired holds because the abandon path and the sweep race legitimately; decrements `qty_reserved` exactly once; writes no movement.
-
-### Function: `commit_reservation(*, reservation_id, order)`
-
-- **Purpose:** Convert an `active` hold into a sale when payment is confirmed (D-3 hook).
-- **Inputs:** Reservation primary key and the paid Order.
-- **Outputs:** The `committed` Reservation; raises `InvalidReservationState` otherwise.
-- **Dependencies:** Reservation then StockRecord row locks; `StockMovement` append.
-- **Behavior:** Decrements both counters and appends the single negative `sale` movement referencing the order in one transaction. An `active` hold past its expiry is still honored — only the sweep expires holds.
-
-### Function: `adjust_stock(*, variant_id, delta, reason, ref_order=None)`
-
-- **Purpose:** Apply a non-sale physical stock change with its audit row (B-1/B-3, ADR-B-002).
-- **Inputs:** Variant ID, nonzero integer delta, `restock`/`return`/`adjustment` reason, optional order reference.
-- **Outputs:** Updated StockRecord; raises `InvalidStockAdjustment` on any rule violation.
-- **Dependencies:** StockRecord row lock and movement sign constraints.
-- **Behavior:** Rejects the `sale` reason (single ledger writer per reason), negative restock/return, and any result below `qty_reserved`; counter change and movement append share one transaction.
-
-### Function: `release_expired_reservations(now=None)`
-
-- **Purpose:** Expire every overdue `active` hold (B-2 TTL sweep).
-- **Inputs:** Optional clock override.
-- **Outputs:** Count of holds expired.
-- **Dependencies:** `idx_res_status_expiry`, per-row transactions, Reservation then StockRecord locks.
-- **Behavior:** Reads candidates without locks, then re-validates each under its own lock so racing commits/releases win cleanly and one failing row cannot roll back the sweep; failures are logged and retried next cycle.
-
-### Function: `scan_low_stock()`
-
-- **Purpose:** Flag SKUs whose availability is at or below their threshold (B-4, FR-9).
-- **Inputs:** None.
-- **Outputs:** StockRecord queryset annotated with `available_units`, ordered by SKU.
-- **Dependencies:** F-expression arithmetic; `variant__product` select-related.
-- **Behavior:** Pure read on availability (not shelf count); delivery concerns live in `apps/notifications`.
-
-## Service Module: `apps/notifications/services.py`
-
-- **Purpose:** Deliver notifications without leaking transport concerns into domain apps.
-- **Inputs:** Iterables of flagged stock records and notification settings.
-- **Outputs:** Sent email count.
-- **Dependencies:** Django mail, `LOW_STOCK_ALERT_RECIPIENTS`, `DEFAULT_FROM_EMAIL`.
-- **Behavior:** Epic B ships only the low-stock leg; FR-11 email and FR-12 SMS arrive in Epics D/E behind this boundary.
-
-### Function: `send_low_stock_alert(records)`
-
-- **Purpose:** Email the flagged SKU list to configured staff (FR-9).
-- **Inputs:** Iterable of StockRecords with related variants.
-- **Outputs:** Integer count of SKUs reported, `0` when nothing was sent.
-- **Dependencies:** `send_mail` and settings.
-- **Behavior:** Degrades to a log line when no recipients are configured — alerting is an enhancement around the scan, never a dependency.
-
-## Job Module: `jobs/scheduler.py`
-
-- **Purpose:** Wire the in-process APScheduler jobs (ADR-B-003).
-- **Inputs:** Settings cadences and the Django service layer.
-- **Outputs:** A configured, unstarted scheduler plus two job callables.
-- **Dependencies:** APScheduler, `zoneinfo`, `close_old_connections`, inventory and notification services.
-- **Behavior:** `sweep_expired_reservations` and `run_low_stock_scan` recycle database connections around their work; `build_scheduler` registers both with `coalesce=True` and `max_instances=1` in the Asia/Manila timezone. Exactly one process may run these jobs (ADR-A-014).
-
-### Function: `build_scheduler(scheduler_class=BackgroundScheduler)`
-
-- **Purpose:** Assemble the configured scheduler without starting it.
-- **Inputs:** Optional scheduler class (the management command passes `BlockingScheduler`).
-- **Outputs:** Scheduler with `reservation-sweep` (60 s) and `low-stock-scan` (60 min) jobs.
-- **Dependencies:** `RESERVATION_SWEEP_INTERVAL_SECONDS` and `LOW_STOCK_SCAN_INTERVAL_MINUTES`.
-- **Behavior:** The 15-minute TTL plus 60-second sweep bounds abandoned-checkout stock restoration at ~16 minutes (M3 gate).
-
-## Command Module: `apps/inventory/management/commands/run_scheduler.py`
-
-- **Purpose:** Run the single scheduler process for an environment.
-- **Inputs:** No arguments.
-- **Outputs:** Foreground blocking job loop and startup/stop messages.
-- **Dependencies:** `jobs.build_scheduler` and APScheduler's blocking scheduler.
-- **Behavior:** Blocks until interrupted; exits visibly if the scheduler stops so supervisors restart it.
-
-## Domain Module: `apps/payments/models.py`
-
-- **Purpose:** Define one provider-facing payment record per order.
-- **Inputs:** Order, optional PayMongo reference, method, status, integer-centavo amount, optional paid timestamp.
-- **Outputs:** Payment row.
-- **Dependencies:** Order model.
-- **Behavior:** Payment cascades with order; non-null `provider_ref` is globally unique; webhook truth enforcement is not implemented.
-
-### Class: `PaymentMethod(models.TextChoices)`
-
-- **Purpose:** Define accepted provider methods.
-- **Inputs:** Payment persistence/form validation.
-- **Outputs:** `card`, `gcash`, and `maya`.
-- **Dependencies:** Django TextChoices.
-- **Behavior:** Provides stored values and display labels.
-
-### Class: `PaymentStatus(models.TextChoices)`
-
-- **Purpose:** Define payment record states.
-- **Inputs:** Payment persistence/form validation.
-- **Outputs:** `pending`, `paid`, `failed`, and `refunded`.
-- **Dependencies:** Django TextChoices.
-- **Behavior:** Direct mutation is currently unrestricted.
-
-### Class: `Payment(models.Model)`
-
-- **Purpose:** Persist payment reconciliation state.
-- **Inputs:** One-to-one order, provider reference, method, status, amount, paid time.
-- **Outputs:** Payment row and `order.payment` reverse accessor.
-- **Dependencies:** Order.
-- **Behavior:** Allows multiple null provider references; rejects duplicate non-null references; amount is nonnegative MySQL unsigned INT.
-
-#### Function: `Payment.__str__(self)`
-
-- **Purpose:** Return payment summary text.
-- **Inputs:** Payment instance.
-- **Outputs:** Order ID, method, and status.
-- **Dependencies:** Stored fields.
-- **Behavior:** No side effects.
-
-## Domain Module: `apps/shipping/models.py`
-
-- **Purpose:** Define one fulfillment record per order.
-- **Inputs:** Order, courier, waybill, tracking URL, shipment status, booking time.
-- **Outputs:** Shipment row.
-- **Dependencies:** Order model.
-- **Behavior:** Defaults courier to `jnt`; adapter, booking, webhook, and polling behavior are not implemented.
-
-### Class: `ShipmentStatus(models.TextChoices)`
-
-- **Purpose:** Define shipment states.
-- **Inputs:** Shipment persistence/form validation.
-- **Outputs:** `pending`, `booked`, `in_transit`, `out_for_delivery`, `delivered`, `failed`.
-- **Dependencies:** Django TextChoices.
-- **Behavior:** Direct mutation is currently unrestricted.
-
-### Class: `Shipment(models.Model)`
-
-- **Purpose:** Persist courier and tracking state.
-- **Inputs:** One-to-one order and shipment fields.
-- **Outputs:** Shipment row and `order.shipment` reverse accessor.
-- **Dependencies:** Order.
-- **Behavior:** Cascades with order; blank waybill and tracking values are allowed before booking.
-
-#### Function: `Shipment.__str__(self)`
-
-- **Purpose:** Return shipment summary text.
-- **Inputs:** Shipment instance.
-- **Outputs:** Order ID, courier, and waybill or `(no waybill)`.
-- **Dependencies:** Stored fields.
-- **Behavior:** No side effects.
-
-## Domain Module: `apps/reviews/models.py`
-
-- **Purpose:** Store moderated ratings with an order evidence reference.
-- **Inputs:** Customer, product, order, 1-through-5 rating, body, moderation status.
-- **Outputs:** Review row.
-- **Dependencies:** Customer, Product, and protected Order.
-- **Behavior:** Enforces rating range and one review per `(customer, product)`; verified-purchase business validation is not implemented.
-
-### Class: `ReviewStatus(models.TextChoices)`
-
-- **Purpose:** Define moderation states.
-- **Inputs:** Review persistence/form validation.
-- **Outputs:** `pending`, `approved`, and `rejected`.
-- **Dependencies:** Django TextChoices.
-- **Behavior:** Direct mutation is currently unrestricted.
-
-### Class: `Review(models.Model)`
-
-- **Purpose:** Persist review content, rating, moderation, and proof reference.
-- **Inputs:** Customer, product, order, rating, body, status.
-- **Outputs:** Timestamped review row.
-- **Dependencies:** Accounts, catalog, and orders domains.
-- **Behavior:** Orders newest first; validators and `chk_review_rating_1_to_5` enforce 1 through 5; `uniq_customer_review` prevents duplicate product reviews by one customer.
-
-#### Function: `Review.__str__(self)`
-
-- **Purpose:** Return review summary text.
-- **Inputs:** Review instance.
-- **Outputs:** Product ID, star rating, customer ID, and status.
-- **Dependencies:** Stored fields.
-- **Behavior:** No side effects.
-
-## Command Module: `apps/catalog/management/commands/seed_demo.py`
-
-- **Purpose:** Create deterministic local demo catalog and inventory.
-- **Inputs:** `PRODUCT_SEEDS`, all Size values, all Fit values, and command invocation.
-- **Outputs:** 5 categories, 5 products, 180 variants, 180 initial stock rows, and 180 initial restock movements on an empty database.
-- **Dependencies:** Catalog models, inventory models, and one Django transaction.
-- **Behavior:** Stable natural keys make reruns idempotent for row counts and inventory history; catalog metadata is refreshed.
-
-### Constant: `PRODUCT_SEEDS`
-
-- **Purpose:** Define five stable product/category/color/price records.
-- **Inputs:** Seed command iteration.
-- **Outputs:** Metro Essential Tee, Skyline Pullover Hoodie, Transit Utility Cargo Pants, Platform Twill Overshirt, and Night Route Windbreaker definitions.
-- **Dependencies:** Integer-centavo pricing and deterministic slugs/codes.
-- **Behavior:** Each product defines two product-specific colors.
-
-### Constant: `FIT_SKU_CODES`
-
-- **Purpose:** Map Fit values to stable SKU tokens.
-- **Inputs:** `slim`, `regular`, or `oversized`.
-- **Outputs:** `SLM`, `REG`, or `OVR`.
-- **Dependencies:** Fit enum.
-- **Behavior:** Keeps generated SKUs under the 64-character database limit.
-
-### Class: `Command(BaseCommand)`
-
-- **Purpose:** Register the `seed_demo` management command.
-- **Inputs:** Django command discovery.
-- **Outputs:** Command help and `handle()` execution.
-- **Dependencies:** Django BaseCommand.
-- **Behavior:** Declares no custom arguments.
-
-#### Function: `Command.handle(self, *args, **options)`
-
-- **Purpose:** Seed the complete variant matrix atomically.
-- **Inputs:** Standard command arguments, currently unused.
-- **Outputs:** `None` and a success line containing created counters.
-- **Dependencies:** `update_or_create()`, `get_or_create()`, StockMovement creation, and `transaction.atomic()`.
-- **Behavior:** Creates 6 sizes × 2 colors × 3 fits = 36 variants per product. Existing stock is never reset. Exactly one +10 restock movement is added only with a newly created stock row. Reruns reset seeded product `images=[]` and `is_active=True` by design.
-
-## Migration Modules
-
-- **Purpose:** Group initial schema migrations and dependency order.
-- **Inputs:** Historical model states and schema editor.
-- **Outputs:** MySQL tables, constraints, relationships, and database defaults.
-- **Dependencies:** Django migration executor and MySQL 8.
-- **Behavior:** Catalog establishes database defaults before dependent schemas; the complete graph reverses and reapplies successfully.
-
-### Module: `apps/catalog/migrations/0001_initial.py`
-
-- **Purpose:** Bootstrap locked MySQL defaults and create Category, Product, and ProductVariant.
-- **Inputs:** Active schema editor connection and empty/new database.
-- **Outputs:** InnoDB/`utf8mb4_0900_ai_ci` defaults plus catalog tables and constraints.
-- **Dependencies:** MySQL 8, permission to alter the active database, and Django migration recorder.
-- **Behavior:** First planned project migration; reverse removes catalog schema but intentionally keeps the safer database defaults.
-
-#### Function: `configure_mysql_defaults(apps, schema_editor)`
-
-- **Purpose:** Enforce Hard Invariant 6 before domain tables are created.
-- **Inputs:** Historical app registry and active schema editor.
-- **Outputs:** Updated database defaults and normalized `django_migrations` table.
-- **Dependencies:** MySQL vendor, `ALTER DATABASE` privilege, information_schema, and InnoDB.
-- **Behavior:** Rejects non-MySQL backends; sets `utf8mb4_0900_ai_ci`; pins session InnoDB; converts the pre-created recorder table; verifies both defaults; raises `RuntimeError` on mismatch.
-
-### Module: `apps/accounts/migrations/0001_initial.py`
-
-- **Purpose:** Create the custom auth model and wishlist relation.
-- **Inputs:** Catalog migration, Django auth migration 0012, and model state.
-- **Outputs:** Customer, auth many-to-many join tables, and WishlistItem.
-- **Dependencies:** `catalog.0001` and `auth.0012`.
-- **Behavior:** Installs `CustomerManager` in migration state and unique wishlist constraint.
-
-### Module: `apps/orders/migrations/0001_initial.py`
-
-- **Purpose:** Create order, item, and annual sequence storage.
-- **Inputs:** Catalog and swappable Customer migrations.
-- **Outputs:** Orders tables plus total, quantity, uniqueness, year, and sequence constraints.
-- **Dependencies:** `catalog.0001` and `AUTH_USER_MODEL`.
-- **Behavior:** Establishes the schema used by payment, shipping, inventory, and review migrations.
-
-### Module: `apps/inventory/migrations/0001_initial.py`
-
-- **Purpose:** Create stock counters and audit movement tables.
-- **Inputs:** Catalog variants and optional order references.
-- **Outputs:** StockRecord and StockMovement tables with availability/sign constraints.
-- **Dependencies:** `catalog.0001` and `orders.0001`.
-- **Behavior:** Protects historical references and enforces one stock row per variant.
-
-### Module: `apps/inventory/migrations/0002_reservation.py`
-
-- **Purpose:** Create the checkout-hold table for Epic B-2.
-- **Inputs:** Inventory, catalog, and orders initial migrations.
-- **Outputs:** Reservation table with the minimum-quantity check and the status/expiry sweep index.
-- **Dependencies:** `inventory.0001`, `catalog.0001`, and `orders.0001`.
-- **Behavior:** Protects the variant reference, set-nulls the optional order reference, and reverses cleanly.
-
-### Module: `apps/payments/migrations/0001_initial.py`
-
-- **Purpose:** Create payment persistence.
-- **Inputs:** Order migration.
-- **Outputs:** One-to-one Payment table and unique nullable provider reference.
-- **Dependencies:** `orders.0001`.
-- **Behavior:** Amount uses MySQL unsigned INT centavos.
-
-### Module: `apps/reviews/migrations/0001_initial.py`
-
-- **Purpose:** Create review persistence and moderation fields.
-- **Inputs:** Catalog, orders, and Customer migrations.
-- **Outputs:** Review table with rating and customer/product uniqueness constraints.
-- **Dependencies:** `catalog.0001`, `orders.0001`, and `AUTH_USER_MODEL`.
-- **Behavior:** Protects evidence order and cascades customer/product content.
-
-### Module: `apps/shipping/migrations/0001_initial.py`
-
-- **Purpose:** Create shipment persistence.
-- **Inputs:** Order migration.
-- **Outputs:** One-to-one Shipment table.
-- **Dependencies:** `orders.0001`.
-- **Behavior:** Stores J&T-default courier and optional booking/tracking values.
-
-## Data Relationship Map
-
-- **Purpose:** Make ownership, cardinality, and deletion behavior explicit.
-- **Inputs:** Model foreign-key and one-to-one declarations.
-- **Outputs:** Relational dependency table.
-- **Dependencies:** MySQL foreign keys.
-- **Behavior:** Historical commerce references use `PROTECT` or `SET_NULL`; profile-owned/disposable records use cascade.
-
-| Source | Target | Cardinality | Deletion behavior |
-|---|---|---:|---|
-| Product | Category | many-to-one | Category is protected. |
-| ProductVariant | Product | many-to-one | Variant cascades with removable product. |
-| StockRecord | ProductVariant | one-to-one | Counter cascades with removable variant. |
-| StockMovement | ProductVariant | many-to-one | Variant is protected. |
-| StockMovement | Order | optional many-to-one | Referenced order is protected. |
-| Reservation | ProductVariant | many-to-one | Variant with hold history is protected. |
-| Reservation | Order | optional many-to-one | Order deletion nulls the operational reference; the movement keeps the audit. |
-| Order | Customer | optional many-to-one | Customer deletion sets order customer null. |
-| OrderItem | Order | many-to-one | Item cascades with order. |
-| OrderItem | ProductVariant | many-to-one | Sold variant is protected. |
-| Payment | Order | one-to-one | Payment cascades with order. |
-| Shipment | Order | one-to-one | Shipment cascades with order. |
-| WishlistItem | Customer | many-to-one | Wishlist row cascades. |
-| WishlistItem | Product | many-to-one | Wishlist row cascades. |
-| Review | Customer | many-to-one | Review cascades. |
-| Review | Product | many-to-one | Review cascades. |
-| Review | Order | many-to-one | Evidence order is protected. |
-
-## Database Constraint Inventory
-
-- **Purpose:** Enumerate persistence rules that survive ordinary ORM bypasses.
-- **Inputs:** Model and migration constraint declarations.
-- **Outputs:** Named MySQL checks, unique indexes, and foreign keys.
-- **Dependencies:** MySQL 8 check-constraint enforcement.
-- **Behavior:** Invalid writes raise database integrity errors.
-
-| Domain | Constraint behavior |
-|---|---|
-| Catalog | Unique category name/slug, product slug, variant SKU, and variant axis tuple; nonnegative prices. |
-| Accounts | Unique email and unique customer/product wishlist tuple. |
-| Inventory | One stock row per variant; reserved not above on-hand; nonnegative counters; movement sign matches reason; reservation quantity at least one. |
-| Orders | Unique order number; total reconciliation; quantity at least one; unique order/variant line; four-digit year; sequence at most 99,999. |
-| Payments | One payment per order; globally unique non-null provider reference; nonnegative amount. |
-| Reviews | Rating from 1 through 5; unique customer/product review tuple. |
-| Shipping | One shipment per order. |
-
-## Test Module: `tests/test_money.py`
-
-- **Purpose:** Execute the A-3 integer-centavo and presentation contract.
-- **Inputs:** Money helpers, currency settings, Django template engine, invalid type matrix, and overflow boundaries.
-- **Outputs:** 70 passing cases.
-- **Dependencies:** pytest, Django settings overrides, and the `money` template-tag library.
-- **Behavior:** Covers PHP defaults, strict integer typing, signed opt-in validation, maximum bounds, exact formatting, runtime symbol/minor-unit settings, multiplication, iterable/generator sums, overflow, filter registration, and template-safe invalid values.
-
-## Test Module: `tests/test_sanity.py`
-
-- **Purpose:** Verify the A-1 scaffold contract.
-- **Inputs:** Loaded Django test settings.
-- **Outputs:** 3 passing assertions.
-- **Dependencies:** pytest-django settings initialization.
-- **Behavior:** Confirms settings import, MySQL/`utf8mb4`/InnoDB configuration, and all 10 installed apps.
-
-## Test Module: `tests/test_models.py`
-
-- **Purpose:** Verify A-2 schema, state guards, constraints, and seed idempotency on MySQL.
-- **Inputs:** Real migrated MySQL test database and domain models.
-- **Outputs:** 45 passing cases.
-- **Dependencies:** pytest-django, MySQL information_schema, and `seed_demo`.
-- **Behavior:** Covers table engine/collation, seven INT money fields, auth/guest semantics, order lifecycle and bypass resistance, total reconciliation, payment reference uniqueness, rating/quantity/movement checks, append-only ORM paths, and exact seed counts.
-
-## Test Module: `tests/test_order_services.py`
-
-- **Purpose:** Verify annual order-number correctness and locking.
-- **Inputs:** Real MySQL transactions, two worker connections, year boundaries, and exhaustion state.
-- **Outputs:** 7 passing cases.
-- **Dependencies:** Thread pool, barrier, Django connection isolation, and `next_order_no()`.
-- **Behavior:** Proves concurrent first allocations are unique/consecutive; rejects invalid years; preserves exhaustion boundary; verifies database constraints.
-
-## Test Module: `tests/test_inventory.py`
-
-- **Purpose:** Prove the Epic B inventory core: no-oversell concurrency, reservation lifecycle, audit coupling, and low-stock behavior.
-- **Inputs:** Real MySQL connections (up to 20 concurrent buyer threads), stocked variant fixtures, clock manipulation via queryset updates, and settings overrides.
-- **Outputs:** 20 passing cases including both release gates.
-- **Dependencies:** `apps.inventory.services`, `apps.notifications.services`, `jobs.scheduler`, and order-number allocation.
-- **Behavior:** The former strict-XFAIL red contract now passes live (2 buyers/1 unit → exactly one success). The M2 gate runs 20 parallel buyers against 10 units and requires exactly 10 successes with zero oversell and zero movements. Further cases pin TTL bounds, strict quantity typing, no-trace failures, release idempotency, commit audit coupling, past-expiry commit honor, sweep selectivity, adjustment rules, availability-based scanning, alert email content, recipient-less degradation, and scheduler job registration.
-
-## Test Module: `tests/test_health.py`
-
-- **Purpose:** Verify operational probe semantics.
-- **Inputs:** Django test client, mocked database cursor, simulated `DatabaseError`.
-- **Outputs:** 4 passing cases.
-- **Dependencies:** URL configuration and `config.views`.
-- **Behavior:** Proves liveness never touches MySQL; readiness executes exact `SELECT 1` plus `fetchone`; failures return generic 503 without leaked details; POST returns 405 without cursor access.
-
-## Test Module: `tests/test_staging_preview.py`
-
-- **Purpose:** Verify the temporary M1 browser is hidden, read-only, and exact.
-- **Inputs:** Preview setting overrides, deterministic seed, inactive sentinel product/variant.
-- **Outputs:** 5 passing cases.
-- **Dependencies:** MySQL, seed command, staging template, money formatter.
-- **Behavior:** Proves default/explicit disabled GET and POST return 404; enabled POST returns 405; enabled GET uses the expected template and renders only 5 active products/180 variants with correct categories and peso prices.
-
-## Test Module: `tests/test_staging_settings.py`
-
-- **Purpose:** Verify deployment settings fail closed in isolated interpreter imports.
-- **Inputs:** Complete disposable environment plus parameterized invalid values.
-- **Outputs:** 48 passing cases.
-- **Dependencies:** Python subprocess, production/staging settings.
-- **Behavior:** Covers all required values, weak/example secrets/passwords, CSV emptiness, wildcard/URL/public-IP hostname rejection, HTTPS-origin/netloc syntax, port range/type, exact Boolean flags, proxy/allowed-host/CSRF agreement, the single silenced HSTS-preload warning, WhiteNoise/HSTS/secure-cookie defaults, public-host insecure rejection, and localhost override behavior.
-
-## Quality Assurance
-
-- **Purpose:** Record the successful post-implementation gate required before static analysis.
-- **Inputs:** Settled source tree, Python virtual environment, Docker MySQL, migrations, and tests.
-- **Outputs:** Verified pass/fail evidence.
-- **Dependencies:** `.venv`, uv, Docker Compose, Caddy, Gunicorn, MySQL 8.4.10.
-- **Behavior:** Every local A-4 code/deployment check passed; one explicitly expected B-1 service contract remains XFAIL. Public staging is not claimed by local evidence.
-
-### QA Result Matrix
-
-- **Purpose:** Consolidate reproducible post-change evidence.
-- **Inputs:** Settled tree and QA commands.
-- **Outputs:** Pass/fail matrix.
-- **Dependencies:** Local Python, MySQL, Docker, Caddy, and YAML tooling.
-- **Behavior:** Records local evidence only; public staging remains unproven.
-
-| Check | Command or method | Result |
-|---|---|---|
-| Ruff lint | `.venv/Scripts/ruff check .` | Passed; all checks passed. |
-| Ruff format | `.venv/Scripts/ruff format --check .` | Passed; 94 files already formatted (2026-07-19). |
-| Django system check | `manage.py check` | Passed; 0 issues. |
-| Migration drift | `manage.py makemigrations --check --dry-run` | Passed; no changes detected. |
-| Applied migration state | `manage.py migrate --check --settings=config.settings.dev` | Passed; no pending migration. |
-| Unit/integration tests | `.venv/Scripts/pytest -q` | Passed; 273 passed on MySQL 8, including both concurrency gates, checkout/webhook flow tests, and page-render smoke tests (2026-07-19). |
-| A-4 focused tests | health + preview + staging settings modules | Passed; 57 cases. |
-| Dependency compatibility | `uv --no-cache pip check --python .venv` | Passed; 18 packages compatible. |
-| YAML validation | isolated `yamllint` parse of CI and staging Compose | Passed; syntax valid with document-start style disabled. |
-| Compose validation | hardened staging Compose `config --quiet` | Passed. |
-| Entrypoint validation | invalid `STAGING_SEED_DEMO` container run | Passed; rejected before mutation with exit 64. |
-| Docker image | Python 3.14 staging build | Passed; source `0:0`, runtime/static UID/GID `10001:10001`. |
-| Container security | Docker inspect and in-container write checks | Passed; all app capabilities dropped, no-new-privileges active, source not writable by the runtime identity, and `/app/staticfiles` writable by UID/GID 10001. |
-| Log bounds | Docker inspect for all three services | Passed; `json-file`, `10m`, 3 files. |
-| Local HTTPS smoke | Caddy → Gunicorn/Django → MySQL | Passed; live/ready 200, admin 302, admin CSS 200, seed 5/180. |
-| Persistence smoke | `up -d --force-recreate --wait` | Passed; retained 5 products, 180 variants, 180 stock rows, 180 movements. |
-| Network boundary | Docker inspect | Passed; app/MySQL have no published ports; MySQL reports 0 non-InnoDB tables. |
-| Static collection | staging `collectstatic --noinput` | Passed; 127 originals present and manifest/compressed derivatives processed. |
-| Patch whitespace | `git diff --check` | Passed; only a Windows LF-to-CRLF advisory appeared. |
-| Staging settings | `manage.py check --deploy --fail-level WARNING --settings=config.settings.staging` | Passed; no reported issues and exactly one intentional `security.W021` check silenced. |
-| Database metadata | information_schema queries | Passed; 0 non-InnoDB or non-`utf8mb4` tables. |
-| Money column type | information_schema query | Passed; all 7 money columns are `int unsigned`. |
-
-### Migration Execution Evidence
-
-- **Purpose:** Validate migration correctness beyond a plan-only check.
-- **Inputs:** Temporary database `metrodrip_migration_ci_gate` initially created with Latin-1 defaults.
-- **Outputs:** Successful forward, backward, and second forward migration.
-- **Dependencies:** MySQL alter/create/drop privileges.
-- **Behavior:** First migration converted the database to `utf8mb4_0900_ai_ci`; all tables were InnoDB; `migrate catalog zero` removed dependent project tables; reapplication succeeded; the exact temporary database was then dropped. CI repeats the same forward/reverse/forward sequence on its disposable database.
-
-### Seed Execution Evidence
-
-- **Purpose:** Validate exact data volume and rerun idempotency.
-- **Inputs:** Clean migrated temporary QA database.
-- **Outputs:** First run reported categories=5, products=5, variants=180, stock_records=180, stock_movements=180.
-- **Dependencies:** `seed_demo` and A-2 migrations.
-- **Behavior:** Second run reported zero created in every category; no stock or movement duplication occurred.
-
-### Development Database State
-
-- **Purpose:** Record local schema mutation performed during migration QA.
-- **Inputs:** Confirmed-empty `metrodrip` Docker database.
-- **Outputs:** Rebuilt schema using finalized initial migrations; no demo catalog loaded.
-- **Dependencies:** Docker MySQL service.
-- **Behavior:** The empty database was recreated after an earlier draft `0001` could not reverse newly amended constraints; finalized migrations then applied successfully.
-
-### A-4 Disposable Deployment Evidence
-
-- **Purpose:** Prove the deployment artifacts work together beyond static configuration checks.
-- **Inputs:** Final project `metrodrip-a4-final`, alternate host ports 28080/28443, localhost Caddy certificate, fresh named volumes, explicit demo flags, and the rebuilt source image.
-- **Outputs:** Healthy MySQL/app containers, a running Caddy container, and verified HTTPS responses.
-- **Dependencies:** Docker Desktop, built staging image, MySQL 8.4.10, Caddy 2.
-- **Behavior:** Initial startup applied migrations and seeded exactly 5/180/180/180 catalog-variant-stock-movement rows. HTTPS probes, admin redirect, and static asset passed. Forced recreation replaced all three containers while volumes preserved identical counts. App ran as UID/GID 10001 with root-owned `0:0:755` source and writable `10001:10001:755` static output; MySQL had no host port. Disposable containers, networks, and volumes were removed afterward.
-- **Limitation:** Local Caddy TLS used a localhost certificate and `curl -k`; it does not prove public DNS, publicly trusted ACME issuance, external routing, or public uptime. M1 remains open.
-
-## Staging Environment Contract
-
-- **Purpose:** Enumerate deployment configuration ownership and validation.
-- **Inputs:** Host/operator environment file.
-- **Outputs:** Deterministic Compose and Django configuration.
-- **Dependencies:** Compose interpolation, production/staging settings, Caddy.
-- **Behavior:** Real values live only in ignored `deploy/.env.staging`; example values are documentation and intentionally fail startup until replaced.
-
-| Variable | Consumer | Required behavior |
-|---|---|---|
-| `DJANGO_SETTINGS_MODULE` | app | Compose fixes `config.settings.staging`. |
-| `DJANGO_SECRET_KEY` | Django | Required; at least 50 characters/five distinct; known weak prefixes rejected. |
-| `DJANGO_ALLOWED_HOSTS` | Django | Required literal-host CSV without wildcards/URLs/public IPs; must contain `STAGING_HOST` exactly. |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | Django | Required exact HTTPS-origin CSV without wildcard/non-DNS hosts; one hostname must match `STAGING_HOST`. |
-| `MYSQL_DATABASE` | app/db | Required non-empty database name. |
-| `MYSQL_USER` | app/db | Required non-empty application user. |
-| `MYSQL_PASSWORD` | app/db | Required; at least 16 characters/five distinct; example prefix rejected. |
-| `MYSQL_ROOT_PASSWORD` | db only | Required by Compose/MySQL; never passed to Django or Caddy. |
-| `MYSQL_HOST` | app | Required; Compose fixes `db`. |
-| `MYSQL_PORT` | app | Required ASCII port; Compose fixes `3306`. |
-| `STAGING_HOST` | app/Caddy | Required literal proxy/site hostname; must agree with both Django security lists. Public deployment uses a public DNS hostname; local smoke may use `localhost` or `127.0.0.1`. |
-| `CADDY_EMAIL` | Caddy | Required ACME contact. |
-| `STAGING_HTTP_PORT` | Compose | Defaults to host port 80. |
-| `STAGING_HTTPS_PORT` | Compose | Defaults to host TCP/UDP port 443. |
-| `STAGING_SEED_DEMO` | entrypoint | Defaults 0; exact 0/1 only; 1 runs idempotent seed. |
-| `STAGING_SEED_PREVIEW_ENABLED` | Django | Defaults false; exact 0/1; 1 exposes read-only preview. |
-| `STAGING_ALLOW_INSECURE_HTTP` | Django | Defaults false; exact 0/1; `1` permitted only for `localhost` or `127.0.0.1`. |
-
-## Storefront Commerce Modules (Epic C/D/G — 2026-07-19 QA pass)
-
-- **Purpose:** Document the commerce layer's module contracts at machine-parseable granularity.
-- **Inputs:** Storefront requests, the localStorage cart, PayMongo events, and account sessions.
-- **Outputs:** Rendered §14 design-system pages, JSON APIs, orders, payments, and notifications.
-- **Dependencies:** All domain services documented above; templates in `templates/`; the design system in `static/css/storefront.css`.
-- **Behavior:** Views stay thin; every stock/order/payment mutation routes through domain services.
-
-### Module: `apps/storefront/views.py`
-
-- **Purpose:** Public storefront: homepage (5-min cache), listing (filters/sort/search, HTMX grid swaps), product detail (variant-picker JSON, approved reviews, wishlist state), cart shell, availability API, checkout, tokenized success/status pages, contact form, gated seed preview.
-- **Inputs:** GET filters, JSON checkout payloads (`{customer fields, zone_id, items:[{variant_id, qty}]}`), signed tokens.
-- **Outputs:** HTML pages, JSON (`{success, checkout_url}` / `{availability}` / `{error}`), 400/404/409/502 semantics.
-- **Dependencies:** catalog/inventory/orders/payments/shipping/notifications services, `Signer`, `ShippingZone`, `HomepageBanner`.
-- **Behavior:** Checkout follows ADR-D-002 (single atomic block, effective prices, order-linked holds, full rollback on shortage, hold release on provider failure). Success/status pages follow ADR-D-004 (signed token only). The mock confirmation runs only under `MOCK_PAYMENTS` (ADR-D-001).
-
-### Module: `apps/payments/services.py`
-
-- **Purpose:** PayMongo checkout-session adapter and the single payment-confirmation service.
-- **Inputs:** Orders, success/cancel URLs, optional provider-reported method.
-- **Outputs:** `(checkout_url, session_id)`; idempotent `confirm_order_paid()` returning first-confirmation truth; `PayMongoError`.
-- **Dependencies:** `requests`, Payment model, inventory commit/reserve services, order state machine.
-- **Behavior:** Mock mode records a pending Payment and routes to the tokenized success URL. Confirmation locks the payment row, commits the order's own holds, re-reserves shortfalls (CRITICAL log on true shortage, never oversell), and transitions Pending→Paid — the only code path allowed to (Invariant 3).
-
-### Module: `apps/payments/views.py`
-
-- **Purpose:** `/api/webhooks/paymongo/` — signature-verified, idempotent payment webhook.
-- **Inputs:** Raw request body plus `Paymongo-Signature: t=…,te=…,li=…`.
-- **Outputs:** 400 (bad/missing signature or malformed payload), 200 (processed, replayed, unsubscribed type, or logged unknown reference).
-- **Dependencies:** `PAYMONGO_WEBHOOK_SECRET`, `confirm_order_paid`, notification adapters.
-- **Behavior:** ADR-D-003. Constant-time HMAC over `<t>.<body>`; fail-closed without a secret; notifications fire once, after first confirmation, and can never fail the webhook response.
-
-### Module: `apps/accounts/views.py`
-
-- **Purpose:** Registration (with automatic guest-order claiming), login (host-validated `next`), logout, profile view/update, order history, manual claim, wishlist toggle.
-- **Inputs:** Form POSTs, JSON wishlist toggles, authenticated sessions.
-- **Outputs:** Rendered account pages, redirects with Django messages, wishlist JSON `{success, added}`.
-- **Dependencies:** Customer manager, Order (JSON email lookup), WishlistItem, `url_has_allowed_host_and_scheme`.
-- **Behavior:** Claim responses never disclose whether a guessed order number exists for someone else's email; profile POST updates name/phone only.
-
-### Module: `apps/reviews/views.py`
-
-- **Purpose:** Verified-purchase review submission (FR-17).
-- **Inputs:** POST with order_no, product_id, rating 1–5, optional body.
-- **Outputs:** Redirect to the tokenized status page with a message; `update_or_create` per (customer, product).
-- **Dependencies:** Order ownership lookup, delivered-status and in-order-product checks, Review model.
-- **Behavior:** Every edit resets status to pending — nothing unapproved ever renders publicly (M4.5 gate).
-
-### Module: `apps/cms/models.py` + contact flow
-
-- **Purpose:** CMS-lite (FR-20/FR-18): `HomepageBanner` (title, image URL, link, active, order) and `ContactMessage` (stored inquiries with resolution flag); flatpages provide About/FAQ/Privacy.
-- **Inputs:** Admin edits; public contact POSTs.
-- **Outputs:** Homepage hero content; stored + staff-emailed inquiries (`send_contact_alert`, store-only without recipients).
-- **Dependencies:** django.contrib.flatpages + sites (SITE_ID=1), notifications adapter.
-- **Behavior:** Contact storage is the requirement; the email leg degrades gracefully.
-
-### Module: `apps/storefront/templatetags/`
-
-- **Purpose:** Presentation-safe filters: `peso` / `centavos_to_peso` (money.py) and `sign` / `format_centavos` (storefront_tags.py).
-- **Inputs:** Integer centavos; order primary keys.
-- **Outputs:** `₱1,234.56` strings (empty on malformed input, never a 500); `Signer` tokens interchangeable with view-minted ones.
-- **Dependencies:** `apps.orders.money`, `django.core.signing`.
-- **Behavior:** Templates never format money or mint tokens ad hoc.
-
-### Asset: `static/css/storefront.css` + `static/js/cart.js`
-
-- **Purpose:** The §14 design system (tokens, BEM components, waybill/sku/barcode motifs, forms, alerts, panels, status timeline) and the localStorage cart module.
-- **Inputs:** Design tokens (`--color-ink`, `--color-volt`, …); cart operations from product detail/cart/checkout pages.
-- **Outputs:** One coherent visual system across all pages; `metrodrip_cart` per ADR-C-001 with `cart-updated` events for the navbar badge.
-- **Dependencies:** Google Fonts (Anton/Inter/IBM Plex Mono), Alpine.js, HTMX.
-- **Behavior:** Cart availability flags come from `/api/cart/availability/` on cart load; checkout remains the authoritative validation.
-
-### Test Modules: `tests/test_checkout_flow.py`, `tests/test_storefront_pages.py`
-
-- **Purpose:** Pin the D-1/D-2/D-3 contracts and render every public page.
-- **Inputs:** Real MySQL, seeded catalog, HMAC-signed webhook bodies, mock-payment settings overrides.
-- **Outputs:** 26 cases: checkout totals/holds/rollback, mock confirmation idempotency and gating, webhook signature accept/reject/fail-closed/replay, tokenized page access, page-render smoke, contact/wishlist/profile flows, open-redirect rejection.
-- **Dependencies:** pytest-django client, override_settings, seed_demo.
-- **Behavior:** The render smoke tests exist specifically because template-layer 500s (missing filter libraries) previously shipped unnoticed.
-
-## Hard Invariant Coverage
-
-- **Purpose:** Map required invariants to current enforcement.
-- **Inputs:** Handover invariants and implemented guards.
-- **Outputs:** Coverage and remaining-gap matrix.
-- **Dependencies:** Models, migrations, services, deployment settings, and tests.
-- **Behavior:** Separates current enforcement from later-epic work.
-
-| Hard invariant | Current coverage | Remaining gap |
-|---|---|---|
-| No overselling | Checkout and the webhook route every stock change through the locked services; reservations are order-linked; insufficient stock rolls the whole checkout back; both concurrency gates run live. | Raw SQL remains outside code guards. |
-| Integer centavos | MySQL unsigned-INT fields, strict type validation, pre-write overflow checks, exact arithmetic, configured formatting; checkout snapshots effective variant prices. | Reporting/export code (F-1) must keep using these helpers. |
-| Webhook payment truth | HMAC-SHA256 signature verification (constant-time, `te`/`li`, fail-closed without a secret) gates the idempotent handler; Pending→Paid happens only inside `confirm_order_paid()`; the dev-only mock gate cannot boot in production/staging. | PayMongo replay log table is not persisted (idempotency rests on payment status + unique provider ref); daily reconciliation (M5) not yet automated. |
-| Append-only stock audit | Movement instance/queryset/bulk/conflict mutation guards, protected FKs, and services that couple every counter change to its movement in one transaction. | StockRecord direct ORM mutation outside the services module remains technically possible; raw SQL can bypass ORM guards. |
-| Enforced order state machine | Locked transition API, ordinary-ORM bypass guards, webhook-only Paid authority, and admin actions that transition via the API with reservation/stock side effects. | Privileged raw SQL remains outside code guards. |
-| InnoDB and utf8mb4 | First migration configures/verifies defaults; settings/server reinforce; metadata tests pass. The 2026-07-19 pass reverted an accidental SQLite base-settings swap and re-pinned the sanity test. | Production migration principal must retain required ALTER permission. |
-| Card data never reaches server | Hosted PayMongo checkout sessions only; no card fields exist anywhere in forms or models. | — |
-
-## Known Implementation Gaps
-
-- **Purpose:** Prevent planned requirements from being mistaken for delivered behavior.
-- **Inputs:** Handover build order compared with current source.
-- **Outputs:** Explicit next-work boundary.
-- **Dependencies:** Future epics.
-- **Behavior:** Each listed capability is absent unless stated otherwise.
-
-- A-4 public staging evidence is absent: no selected host, DNS record, trusted public certificate, external URL, or authoritative public smoke result exists. Local deployment artifacts are complete. This is an operator action (host/DNS/spend authority), not a code gap.
-- Real PayMongo sandbox credentials have not been exercised: the live-API branch of `create_checkout_session` and the courier-side J&T API are implemented against documented contracts but unverified against real endpoints (M3 gate work).
-- Email verification on registration and password reset (FR-14) are absent; saved-address book UI and checkout prefill from saved addresses are absent (the JSON field exists).
-- Geocoded zone auto-detection (FR-13) is partial: Places autocomplete fills address/city, but the shipping zone is always the manual dropdown.
-- The low-stock admin dashboard flag (FR-9's visual leg) is absent; scan and email exist.
-- The staging Compose stack runs exactly one `scheduler` service; development still requires running `manage.py run_scheduler` manually when TTL expiry behavior is being exercised.
-- The variant-matrix generator (C-1) is absent from the catalog admin; variants are created row-by-row or via seed.
-- Printable invoice exists as an admin view; the customer-facing invoice from order history and the packing slip (FR-19) are absent. CSV export exists via the admin action; the reconciliation-grade sales/inventory export formats (F-1) are not finalized.
-- Inbound courier webhook (`/api/webhooks/courier/`), delivery-status SMS at Out-for-Delivery, and admin 2FA/rate-limiting (F-2) are absent.
-- Catalog page caching exists only on the homepage; CDN/object storage for product media, production email provider, uptime alerting, and monitoring are absent.
-- `Payment.status`, `Shipment.status`, and `Review.status` permit direct ORM mutation outside the admin/service paths.
-- Root-level `seed_assignment.py`, `seed_data.py`, and `seed_more.py` are ad-hoc dev scripts (lint-exempted); `seed_demo` is the canonical idempotent seed and now also provisions shipping zones, flatpages, and a homepage banner.
-
-## Next Strict Build Step
-
-- **Purpose:** Identify the next task without expanding scope.
-- **Inputs:** Handover dependency order, the implemented commerce layer, and open M1/M3 gate evidence.
-- **Outputs:** Task sequence for continuation.
-- **Dependencies:** PayMongo sandbox keys, a Linux host with DNS control, and courier API access are operator-provided.
-- **Behavior:** (1) Operator deploys the A-4 stack publicly (M1) and supplies PayMongo sandbox keys so the real checkout-session and webhook paths replace the mock gate end-to-end (M3: all three payment methods, replay idempotency, abandoned checkout restores stock ≤ 16 min). (2) Complete C-1's variant-matrix generator in the catalog admin. (3) Epic E completion: J&T booking against the real API with the manual-waybill fallback, courier webhook, and E-4 cancel/refund flows already wired in admin. (4) Epic G remainder: email verification, password reset, saved-address checkout prefill, customer-facing invoice/packing slip.
-
-## Infrastructure and Operations
-
-### `config.settings.base` (WhiteNoise Integration)
-
-- **Purpose:** Serve static assets (CSS, JS, images) during local development and staging when `DEBUG = False`.
-- **Inputs:** `STATIC_URL`, `STATIC_ROOT`, `STATICFILES_STORAGE`, and `INSTALLED_APPS` (specifically `whitenoise.runserver_nostatic`).
-- **Outputs:** HTTP responses for static files via `WhiteNoiseMiddleware`.
-- **Dependencies:** `whitenoise` package.
-- **Behavior:** Bypasses Django's default `runserver` static file interception to allow WhiteNoise to serve collected static files securely and efficiently.
-
-### `seed_data.py`
-
-- **Purpose:** Provide an idempotent baseline script to generate initial categories, products, flatpages (About, Contact, Privacy), and stock inventory for the storefront.
-- **Inputs:** Django ORM environment loaded via `config.settings.dev`.
-- **Outputs:** Database rows for 2 Categories, 3 Products, corresponding Variants, StockRecords, and 3 FlatPages mapped to `Site` ID 1.
-- **Dependencies:** `apps.catalog`, `apps.inventory`, `django.contrib.flatpages`, `django.contrib.sites`.
-- **Behavior:** Checks for existence via `get_or_create`. Generates variants across standard sizes and colors, injecting dummy `qty_on_hand` (50) for testing.
-
-### `seed_more.py`
-
-- **Purpose:** Expand the staging catalog with additional categories and streetwear products.
-- **Inputs:** Django ORM environment loaded via `config.settings.dev`.
-- **Outputs:** Database rows for 3 additional Categories (Outerwear, Headwear, Accessories), 4 Products (Asphalt Puffer, Drip Logo Beanie, Tactical Bag, Acid Wash Hoodie), corresponding Variants, and StockRecords.
-- **Dependencies:** `apps.catalog`, `apps.inventory`.
-- **Behavior:** Checks for existence via `get_or_create`. Generates variants mapped to newly created categories, injecting dummy `qty_on_hand` (30) for testing.
-
-## Enterprise Architecture (EA) Alignment
-
-- **Purpose:** Document how the MetroDrip v1 architecture aligns with the IT growth requirements projected in Assignment 1.2.
-- **Inputs:** Assignment 1.2 PDF, `DECISIONS.md`, and current Django application structure.
-- **Outputs:** Mapping of future features to current architectural constraints and design choices.
-
-### 1. Dedicated Mobile Application (iOS/Android)
-- **Future Need:** Mobile client accessing business logic.
-- **Current Alignment:** `apps.storefront.views` handles presentation (HTML), while all core business logic (stock checking, checkout, catalog filtering) is encapsulated in domain services (`apps.catalog.services`, `apps.inventory.services`). 
-- **EA Principle:** Layered Architecture & Separation of Concerns. An API layer (e.g. Django REST Framework) can be added that calls the same domain services without duplicating logic.
-
-### 2. AI-Powered Personalized Product Recommendations
-- **Future Need:** Behavioral tracking and recommendation engine based on SKU data.
-- **Current Alignment:** Every product variant has a strictly unique SKU (Hard Invariant `uniq_variant_axes`). Stock mutations are append-only `StockMovement` ledgers (`ADR-A-010`), and `OrderItem` captures a frozen snapshot of the `unit_price`. This canonical, immutable data model provides a clean foundation for machine learning ingestion.
-- **EA Principle:** Single Source of Truth / Canonical Data Model.
-
-### 3. Partnership with 3PL and Multi-Warehouse Stock
-- **Future Need:** Shifting fulfillment to 3PL and storing stock in multiple locations (Manila/Cebu).
-- **Current Alignment:** The `inventory` domain is strictly modular (`ADR-B-001`). No other app manipulates stock quantities directly; they must call `reserve_stock` or `adjust_stock`. Adding warehouse tracking simply requires extending `apps.inventory` without refactoring the `catalog` or `orders` apps.
-- **EA Principle:** Modularity / Component Architecture.
-
-### 4. International Shipping and Multi-Currency
-- **Future Need:** Multi-currency pricing, cross-border shipping, exchange rates.
-- **Current Alignment:** Money is explicitly typed and stored as integer centavos (`ADR-A-013`). The `apps.shipping` and `apps.payments` apps utilize adapters. Adding new currencies or international couriers involves adding new adapters rather than re-writing money arithmetic logic.
-- **EA Principle:** Standardization and Vendor Independence.
-
-### 5. AR Try-On / Virtual Fitting
-- **Future Need:** Serving 3D models and AR content for products.
-- **Current Alignment:** The `Product.images` field explicitly stores CDN/object storage URLs rather than local `ImageField` files (`DECISIONS.md`). The media delivery capability is logically separated from the application server.
-- **EA Principle:** Capability-based Planning and Scalability by Design.
+# Module / File: Repository architecture and current delivery state
+
+## Function: N/A — runtime architecture contract
+- **Purpose**: Describe the deployed shape, ownership boundaries, and principal dependencies of the MetroDrip application.
+- **Inputs**:
+  - `HTTP request` (`django.http.HttpRequest`): Browser, admin, health-probe, or PayMongo webhook traffic.
+  - `scheduled invocation` (`APScheduler job`): Reservation-expiry and low-stock work.
+- **Outputs**: HTML responses, narrow JSON responses, provider acknowledgements, email/SMS attempts, and transactional MySQL state.
+- **Dependencies**: Python 3.14, Django 5.2, MySQL 8.4/InnoDB, Django templates, HTMX 2.0.4, Alpine.js 3.14.9, APScheduler, Gunicorn, WhiteNoise, Caddy, PayMongo, Semaphore, and Google Maps.
+- **Behavior**: The repository is one Django modular monolith containing 10 first-party apps (`catalog`, `inventory`, `orders`, `payments`, `shipping`, `notifications`, `accounts`, `reviews`, `cms`, and `storefront`), one MySQL database, and one dedicated scheduler process. Views delegate catalog queries and stock/order/payment mutations to domain services. Direct model relationships cross app boundaries inside the same database. The staging topology is Caddy → Gunicorn/Django → MySQL, with one separate scheduler container using the same image.
+- **Side Effects**: This documentation entry performs none; the described runtime writes orders, reservations, payments, shipments, reviews, CMS content, notification logs, and inventory ledger rows.
+
+## Function: N/A — request and data-flow contract
+- **Purpose**: Record the principal control flow from storefront input to persisted commerce state.
+- **Inputs**:
+  - `storefront input` (`HTML form or JSON body`): Search/filter values, cart variant IDs, checkout identity/address data, reviews, and contact messages.
+  - `provider event` (`signed JSON body`): PayMongo payment event.
+- **Outputs**: Product pages, reservations, pending orders/payments, paid orders, immutable stock movements, fulfillment state, and notifications.
+- **Dependencies**: `apps.storefront.views`, `apps.catalog.services`, `apps.inventory.services`, `apps.orders.services`, `apps.payments.services`, and the Django ORM.
+- **Behavior**: Catalog reads annotate active products and approved reviews. Checkout parses a client-side cart, reloads authoritative variants/prices, allocates an order number, creates the order and lines, and reserves stock inside one transaction. Hosted checkout creation then creates a pending Payment. In deployment, only a signature-verified PayMongo webhook calls `confirm_order_paid`; development can use the explicitly gated mock path. Confirmation locks the Payment, commits the order’s reservations, writes sale movements, and transitions the Order to Paid. Admin actions drive later order transitions and fulfillment side effects.
+- **Side Effects**: Creates and updates commerce rows, obtains InnoDB row locks, calls PayMongo/Semaphore/email adapters, and writes logs.
+
+## Function: N/A — implemented capability inventory
+- **Purpose**: Enumerate the capabilities present at the Cycle 1 baseline.
+- **Inputs**:
+  - `repository source` (`filesystem tree`): Application, templates, assets, migrations, tests, and deployment configuration.
+- **Outputs**: A machine-readable implementation boundary for later cycles.
+- **Dependencies**: All modules documented below.
+- **Behavior**: Implemented capabilities include email-based Django authentication; customer profiles; order history; guest-order claiming; wishlists; a CMS banner/contact/flatpage layer; product/category/three-axis variants; catalog search/filter/sort; localStorage cart; stock availability checks; atomic checkout holds; integer-centavo money; hosted/mock payment checkout; signed webhook confirmation; tokenized order pages; order state enforcement; inventory reservation/ledger services; scheduler jobs; shipping-zone rates; mock J&T booking; review moderation; admin reports/invoices/CSV actions; container health probes; and provider-neutral local HTTPS staging.
+- **Side Effects**: None.
+
+## Function: N/A — known implementation-gap inventory
+- **Purpose**: Prevent requested future behavior from being reported as delivered.
+- **Inputs**:
+  - `project plan` (`MetroDrip_Project_Plan_UIUX_AI_Prompt.md`): Requested target state.
+  - `current source` (`repository revision 653324fc3af66263cdc5da1135e442d6a7d8a50d` plus Cycle 1 worktree): Verified implementation state.
+- **Outputs**: Explicit continuation boundary.
+- **Dependencies**: Future architecture, catalog, identity, commerce, accessibility, and deployment cycles.
+- **Behavior**: The canonical seed still contains 5 products rather than the requested deterministic 45-product rich catalog. Product media/specification entities, verified email, password reset, saved-address CRUD/prefill, stronger order-claim proof, comprehensive server-side checkout forms, timestamp-fresh webhook validation, atomic fulfillment/refund orchestration, deterministic courier simulation, notification templates/preferences, Developers page, approved design-token rollout, WCAG/browser QA, and the target five-service topology are not complete. Public DNS, trusted certificate, external URL, and uptime evidence require operator infrastructure. Five higher-precedence course/Phase 1 documents referenced by the supplied plan are absent, so exact FR/NFR traceability cannot yet be claimed.
+- **Side Effects**: None.
+
+## Function: N/A — Cycle 1 QA gate
+- **Purpose**: Record the post-change acceptance evidence for the 2026-07-27 foundation cycle.
+- **Inputs**:
+  - `Cycle 1 change set` (`git worktree`): Banner rendering fix, migration enforcement, CI compilation step, and regression tests.
+  - `local services` (`Docker Desktop and MySQL 8.4.10`): Real database and disposable HTTPS stack.
+- **Outputs**: `QA_PASSED`.
+- **Dependencies**: Python 3.14.4, Ruff 0.15.22, pytest 8.4.2, Django 5.2.16, Docker 28.5.1, and Compose 2.40.2.
+- **Behavior**: `compileall`, Ruff lint, Ruff formatting, `uv pip check`, Django system checks, migration drift, warning-level staging checks, local/staging Compose validation, Dockerfile checks, image build/ownership checks, and 276 real-MySQL tests passed. `catalog.0002_enforce_mysql_defaults` passed forward → reverse → forward. Metadata reported database defaults `utf8mb4/utf8mb4_0900_ai_ci` and zero noncompliant tables. A disposable Caddy/Gunicorn/MySQL/scheduler stack returned readiness 200, admin 302, static 200, rendered the seeded banner URL, retained `5/180/180/180/1` product/variant/stock/movement/banner counts after forced recreation, and was removed with its disposable volumes.
+- **Side Effects**: Applied `catalog.0002_enforce_mysql_defaults` to the local development database, built local test images, and created then removed the isolated `metrodrip-cycle1` staging stack; no public deployment was changed or proven.
+
+# Module / File: manage.py
+
+## Function: main()
+- **Purpose**: Initialize Django settings and dispatch a management command.
+- **Inputs**:
+  - `sys.argv` (`list[str]`): Command-line arguments supplied to Django.
+  - `DJANGO_SETTINGS_MODULE` (`str | None`): Optional preselected settings module.
+- **Outputs**: `None`; command output is written by Django.
+- **Dependencies**: `os`, `sys`, and `django.core.management.execute_from_command_line`.
+- **Behavior**: Defaults the settings module to `config.settings.dev`, raises a contextual ImportError when Django cannot import, and passes the original argument vector to Django.
+- **Side Effects**: May set one process environment value and execute any selected Django command.
+
+# Module / File: config/settings/base.py, dev.py, and test.py
+
+## Function: N/A — shared settings contract
+- **Purpose**: Define shared, development, and test runtime configuration.
+- **Inputs**:
+  - `.env` (`filesystem file, optional`): Local environment values.
+  - `process environment` (`mapping[str, str]`): Database, provider, notification, and secret settings.
+- **Outputs**: Django settings for 10 apps, middleware, templates, MySQL, authentication, currency, inventory jobs, providers, and static files.
+- **Dependencies**: `python-dotenv`, PyMySQL, Django, MySQL 8, and WhiteNoise.
+- **Behavior**: Base settings install PyMySQL as MySQLdb, select `django.db.backends.mysql`, request `utf8mb4`, set InnoDB/strict SQL mode for every connection, define PHP integer-centavo settings, register `accounts.Customer`, and keep preview/mock features disabled. Development enables debug, localhost, console email, and mock payments only when no PayMongo key exists. Tests retain real MySQL, switch to fast password hashing/in-memory email, and use DummyCache to prevent cached-page leakage.
+- **Side Effects**: Loads `.env`, installs the PyMySQL compatibility hook, and configures global Django behavior during import.
+
+# Module / File: config/settings/prod.py
+
+## Function: _required_environment(name)
+- **Purpose**: Read one mandatory non-empty deployment value.
+- **Inputs**:
+  - `name` (`str`): Environment-variable name.
+- **Outputs**: `str` containing the stripped value.
+- **Dependencies**: `os.environ` and `ImproperlyConfigured`.
+- **Behavior**: Rejects missing, empty, and whitespace-only values before Django boots.
+- **Side Effects**: Reads process environment; performs no write.
+
+## Function: _required_csv_environment(name)
+- **Purpose**: Parse one mandatory comma-separated environment list.
+- **Inputs**:
+  - `name` (`str`): Environment-variable name.
+- **Outputs**: `list[str]` of stripped non-empty values.
+- **Dependencies**: `_required_environment`.
+- **Behavior**: Splits the required value, removes empty members, and rejects a list with no populated member.
+- **Side Effects**: None.
+
+## Function: _normalize_deployment_hostname(hostname)
+- **Purpose**: Canonicalize a trusted deployment hostname and reject broadened trust syntax.
+- **Inputs**:
+  - `hostname` (`str`): Literal hostname candidate.
+- **Outputs**: `str` containing lowercase DNS syntax, `localhost`, or `127.0.0.1`.
+- **Dependencies**: `ipaddress`, `_HOST_LABEL_PATTERN`, and Python string validation.
+- **Behavior**: Rejects public IP literals, wildcard/URL/internal single-label syntax, oversized names, invalid labels, and numeric-only top-level labels.
+- **Side Effects**: None.
+
+## Function: _required_hostnames_environment(name)
+- **Purpose**: Parse Django’s required allowed-host list.
+- **Inputs**:
+  - `name` (`str`): Environment-variable name containing CSV hostnames.
+- **Outputs**: `list[str]` of normalized literal hostnames.
+- **Dependencies**: `_required_csv_environment`, `_normalize_deployment_hostname`, and `ImproperlyConfigured`.
+- **Behavior**: Normalizes every member and converts validation failures to a setting-specific boot error.
+- **Side Effects**: None.
+
+## Function: _required_hostname_environment(name)
+- **Purpose**: Read and validate one required literal deployment hostname.
+- **Inputs**:
+  - `name` (`str`): Environment-variable name.
+- **Outputs**: `str` normalized hostname.
+- **Dependencies**: `_required_environment`, `_normalize_deployment_hostname`, and `ImproperlyConfigured`.
+- **Behavior**: Rejects invalid hostname syntax with a deployment-setting error.
+- **Side Effects**: None.
+
+## Function: _required_https_origins_environment(name)
+- **Purpose**: Validate Django’s CSRF trusted-origin list.
+- **Inputs**:
+  - `name` (`str`): Environment-variable name containing CSV origins.
+- **Outputs**: `list[str]` of exact HTTPS origins.
+- **Dependencies**: `_required_csv_environment`, `_normalize_deployment_hostname`, and `urllib.parse.urlsplit`.
+- **Behavior**: Rejects non-HTTPS schemes, credentials, invalid hostnames/ports, non-origin paths, queries, fragments, and netloc normalization mismatches.
+- **Side Effects**: None.
+
+## Function: _required_port_environment(name)
+- **Purpose**: Validate one TCP port without changing Django’s expected string type.
+- **Inputs**:
+  - `name` (`str`): Environment-variable name.
+- **Outputs**: `str` containing an ASCII decimal integer from 1 through 65535.
+- **Dependencies**: `_required_environment`.
+- **Behavior**: Rejects signs, Unicode digits, decimals, zero, and overflow.
+- **Side Effects**: None.
+
+## Function: _required_secret_environment(name)
+- **Purpose**: Reject weak or example Django signing keys.
+- **Inputs**:
+  - `name` (`str`): Environment-variable name.
+- **Outputs**: `str` containing a secret of at least 50 characters and five distinct characters.
+- **Dependencies**: `_required_environment`.
+- **Behavior**: Rejects short, low-diversity, `django-insecure-`, and `replace-with-` values without logging the secret.
+- **Side Effects**: None.
+
+## Function: _required_password_environment(name)
+- **Purpose**: Reject weak or example application-database passwords.
+- **Inputs**:
+  - `name` (`str`): Environment-variable name.
+- **Outputs**: `str` containing a password of at least 16 characters and five distinct characters.
+- **Dependencies**: `_required_environment`.
+- **Behavior**: Rejects short, low-diversity, and `replace-with-` values without logging the password.
+- **Side Effects**: None.
+
+# Module / File: config/settings/staging.py
+
+## Function: _environment_flag(name, *, default=False)
+- **Purpose**: Parse an explicit deployment Boolean without truthy-string ambiguity.
+- **Inputs**:
+  - `name` (`str`): Environment-variable name.
+  - `default` (`bool`): Value used when the variable is absent.
+- **Outputs**: `bool`.
+- **Dependencies**: `os.environ` and `ImproperlyConfigured`.
+- **Behavior**: Accepts only exact strings `0` and `1`; missing values use the supplied default.
+- **Side Effects**: Reads process environment.
+
+# Module / File: config/views.py
+
+## Function: liveness(request)
+- **Purpose**: Report that the Django process can route an HTTP request.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET request.
+- **Outputs**: `JsonResponse` with HTTP 200 and `{"status": "ok"}`.
+- **Dependencies**: Django `JsonResponse` and `require_GET`.
+- **Behavior**: Performs no database access so an external database outage does not trigger a process-restart loop.
+- **Side Effects**: None.
+
+## Function: readiness(request)
+- **Purpose**: Report whether Django can execute a minimal database query.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET request.
+- **Outputs**: `JsonResponse` with HTTP 200 `ok` or HTTP 503 `unavailable`.
+- **Dependencies**: Django database connection, `DatabaseError`, and application logger.
+- **Behavior**: Executes `SELECT 1`; database errors are logged while the HTTP body hides credentials and driver details.
+- **Side Effects**: Opens/uses a database connection and may write a warning log.
+
+# Module / File: apps/accounts/models.py
+
+## Function: CustomerManager._create(self, email, password, **extra_fields)
+- **Purpose**: Implement the shared persistence path for customers and administrators.
+- **Inputs**:
+  - `self` (`CustomerManager`): Bound model manager.
+  - `email` (`str`): Required login identity.
+  - `password` (`str | None`): Plain password or `None` for Django’s unusable marker.
+  - `extra_fields` (`dict[str, object]`): Additional Customer fields.
+- **Outputs**: Persisted `Customer`.
+- **Dependencies**: Django email normalization, password hashing, unusable-password support, and manager database alias.
+- **Behavior**: Rejects an empty email, normalizes it, hashes or disables the password, and saves through the selected database.
+- **Side Effects**: Inserts one customer row.
+
+## Function: CustomerManager.create_user(self, email, password=None, **extra_fields)
+- **Purpose**: Create a normal non-staff customer by default.
+- **Inputs**:
+  - `self` (`CustomerManager`): Bound manager.
+  - `email` (`str`): Customer email.
+  - `password` (`str | None`): Optional password.
+  - `extra_fields` (`dict[str, object]`): Optional profile/flag overrides.
+- **Outputs**: Persisted `Customer`.
+- **Dependencies**: `CustomerManager._create`.
+- **Behavior**: Defaults `is_staff` and `is_superuser` to false, then delegates creation.
+- **Side Effects**: Inserts one customer row.
+
+## Function: CustomerManager.create_superuser(self, email, password, **extra_fields)
+- **Purpose**: Create a privileged Django administrator.
+- **Inputs**:
+  - `self` (`CustomerManager`): Bound manager.
+  - `email` (`str`): Administrator email.
+  - `password` (`str`): Required non-empty password.
+  - `extra_fields` (`dict[str, object]`): Optional model values.
+- **Outputs**: Persisted privileged `Customer`.
+- **Dependencies**: `CustomerManager._create`.
+- **Behavior**: Defaults both privilege flags true and rejects missing passwords or false privilege overrides.
+- **Side Effects**: Inserts one customer row.
+
+## Function: Customer.__str__(self)
+- **Purpose**: Return the customer’s display identity.
+- **Inputs**:
+  - `self` (`Customer`): Customer instance.
+- **Outputs**: `str` email address.
+- **Dependencies**: `Customer.email`.
+- **Behavior**: Returns the stored email.
+- **Side Effects**: None.
+
+## Function: WishlistItem.__str__(self)
+- **Purpose**: Return readable wishlist relationship text.
+- **Inputs**:
+  - `self` (`WishlistItem`): Wishlist row.
+- **Outputs**: `str` containing customer and product display values.
+- **Dependencies**: Related Customer and Product string conversion.
+- **Behavior**: Joins the two related displays with a heart symbol.
+- **Side Effects**: May lazily read related rows; performs no write.
+
+# Module / File: apps/accounts/views.py
+
+## Function: _safe_next_url(request)
+- **Purpose**: Prevent open redirects after authentication.
+- **Inputs**:
+  - `request` (`HttpRequest`): Request containing optional POST/GET `next`.
+- **Outputs**: `str | None` validated same-host target.
+- **Dependencies**: `url_has_allowed_host_and_scheme`.
+- **Behavior**: Uses POST before GET, restricts the target to the request host, and requires HTTPS when the current request is secure.
+- **Side Effects**: None.
+
+## Function: register_view(request)
+- **Purpose**: Register and authenticate a customer.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET or registration form POST.
+- **Outputs**: Registration HTML, validation HTML, or redirect to profile.
+- **Dependencies**: Customer manager, Django login, Order, messages, and templates.
+- **Behavior**: Redirects authenticated users, normalizes submitted email, requires email/password/name, rejects duplicate email, creates/logs in the customer, and attaches guest orders whose JSON email exactly matches.
+- **Side Effects**: Inserts a Customer, creates a session, may attach multiple Orders, and may enqueue a success message.
+
+## Function: login_view(request)
+- **Purpose**: Authenticate an email/password customer safely.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET or login form POST.
+- **Outputs**: Login HTML or a safe redirect.
+- **Dependencies**: Django `authenticate`, `login`, `_safe_next_url`, and template rendering.
+- **Behavior**: Normalizes email, authenticates credentials, uses a validated `next` target when present, and returns a generic invalid-credential error otherwise.
+- **Side Effects**: May create/update an authenticated session.
+
+## Function: logout_view(request)
+- **Purpose**: End the current authenticated session.
+- **Inputs**:
+  - `request` (`HttpRequest`): POST request.
+- **Outputs**: Redirect to storefront home.
+- **Dependencies**: Django `logout` and `require_POST`.
+- **Behavior**: Clears the current session identity and redirects.
+- **Side Effects**: Mutates/deletes session authentication data.
+
+## Function: profile_view(request)
+- **Purpose**: Render a customer dashboard and update basic profile fields.
+- **Inputs**:
+  - `request` (`HttpRequest`): Authenticated GET or POST.
+- **Outputs**: Profile HTML or post-update redirect.
+- **Dependencies**: Customer, Order, WishlistItem, messages, and `login_required`.
+- **Behavior**: POST trims name/phone, rejects an empty name, persists approved fields, and redirects. GET loads five recent orders plus product/category-aware wishlist rows.
+- **Side Effects**: POST may update Customer and messages; GET performs reads only.
+
+## Function: order_history(request)
+- **Purpose**: Display every order belonging to the authenticated customer.
+- **Inputs**:
+  - `request` (`HttpRequest`): Authenticated request.
+- **Outputs**: Order-history HTML.
+- **Dependencies**: Order ORM, template rendering, and `login_required`.
+- **Behavior**: Queries customer-owned orders newest first.
+- **Side Effects**: Database reads only.
+
+## Function: claim_guest_order(request)
+- **Purpose**: Attach an unclaimed guest order when its snapshot email matches the logged-in account.
+- **Inputs**:
+  - `request` (`HttpRequest`): Authenticated POST containing `order_no`.
+- **Outputs**: Redirect to order history with a non-enumerating message.
+- **Dependencies**: Order ORM, Customer session, Django messages, and `require_POST`.
+- **Behavior**: Looks up only unclaimed orders, compares lowercase emails, attaches exact matches, and uses the same failure message for nonexistent and mismatched orders.
+- **Side Effects**: May update one Order customer foreign key and write a message.
+
+## Function: toggle_wishlist(request)
+- **Purpose**: Toggle a product bookmark for the authenticated customer.
+- **Inputs**:
+  - `request` (`HttpRequest`): POST JSON containing `product_id`.
+- **Outputs**: `JsonResponse` with `{success, added}` or HTTP 400 error.
+- **Dependencies**: JSON parser, Product, WishlistItem, `login_required`, and `require_POST`.
+- **Behavior**: Treats malformed JSON and unknown IDs identically, creates a missing bookmark, or deletes an existing one.
+- **Side Effects**: Inserts or deletes one WishlistItem.
+
+# Module / File: apps/catalog/models.py
+
+## Function: Category.__str__(self)
+- **Purpose**: Return category display text.
+- **Inputs**:
+  - `self` (`Category`): Category row.
+- **Outputs**: `str` category name.
+- **Dependencies**: `Category.name`.
+- **Behavior**: Returns the stored name.
+- **Side Effects**: None.
+
+## Function: Product.__str__(self)
+- **Purpose**: Return product display text.
+- **Inputs**:
+  - `self` (`Product`): Product row.
+- **Outputs**: `str` product name.
+- **Dependencies**: `Product.name`.
+- **Behavior**: Returns the stored name.
+- **Side Effects**: None.
+
+## Function: ProductVariant.__str__(self)
+- **Purpose**: Return variant display text.
+- **Inputs**:
+  - `self` (`ProductVariant`): Variant row.
+- **Outputs**: `str` SKU.
+- **Dependencies**: `ProductVariant.sku`.
+- **Behavior**: Returns the globally unique SKU.
+- **Side Effects**: None.
+
+## Function: ProductVariant.price(self)
+- **Purpose**: Resolve the authoritative unit price in integer centavos.
+- **Inputs**:
+  - `self` (`ProductVariant`): Variant with related Product.
+- **Outputs**: `int` variant override or product base price.
+- **Dependencies**: `price_override` and `product.base_price`.
+- **Behavior**: Uses the override only when non-null; zero is not mistaken for null.
+- **Side Effects**: May lazily read the Product; performs no write.
+
+# Module / File: apps/catalog/services.py
+
+## Function: get_catalog_queryset(*, filters=None, sort=None, search=None)
+- **Purpose**: Build the active-product listing query with annotations, filters, search, and sorting.
+- **Inputs**:
+  - `filters` (`dict[str, str] | None`): Category, size, color, fit, and min/max price values.
+  - `sort` (`str | None`): Supported catalog sort key.
+  - `search` (`str | None`): Free-text product/description/SKU search.
+- **Outputs**: `QuerySet[Product]` with price, variant, review, and popularity annotations.
+- **Dependencies**: Product, ReviewStatus, Django `Q`, `Avg`, `Count`, `Min`, and `Max`.
+- **Behavior**: Restricts to active products, filters variant axes conjunctively, ignores malformed optional integer price filters, searches multiple fields, deduplicates joins, and defaults unknown sorts to newest.
+- **Side Effects**: None until queryset evaluation; evaluation performs database reads.
+
+## Function: get_all_categories()
+- **Purpose**: Return categories with active-product counts.
+- **Inputs**:
+  - `None` (`None`): No explicit parameters.
+- **Outputs**: `QuerySet[Category]`.
+- **Dependencies**: Category ORM, Count, and Q.
+- **Behavior**: Annotates each category and orders names alphabetically.
+- **Side Effects**: Database reads on evaluation.
+
+## Function: get_available_colors()
+- **Purpose**: Return the distinct color filter options used by active products.
+- **Inputs**:
+  - `None` (`None`): No explicit parameters.
+- **Outputs**: `list[str]` sorted color values.
+- **Dependencies**: ProductVariant ORM.
+- **Behavior**: Filters through active parent products, selects distinct colors, orders them, and materializes the query.
+- **Side Effects**: Performs one database read.
+
+## Function: get_product_detail(slug)
+- **Purpose**: Load an active product with category, stock-aware variants, and approved reviews.
+- **Inputs**:
+  - `slug` (`str`): Unique product slug.
+- **Outputs**: `Product | None`.
+- **Dependencies**: Product, ReviewStatus, StockRecord relations, review/customer relations, annotations, and Prefetch.
+- **Behavior**: Annotates approved-review statistics, orders variants, attaches approved reviews to `approved_reviews`, and returns None for inactive/missing products.
+- **Side Effects**: Performs database reads only.
+
+# Module / File: apps/catalog/admin.py
+
+## Function: ProductAdmin.generate_variant_matrix(self, request, queryset)
+- **Purpose**: Create missing Size × Color × Fit variants for selected products.
+- **Inputs**:
+  - `self` (`ProductAdmin`): Bound admin instance.
+  - `request` (`HttpRequest`): Staff admin request.
+  - `queryset` (`QuerySet[Product]`): Selected products.
+- **Outputs**: `None`; emits an admin message with the created count.
+- **Dependencies**: ProductVariant, Size, Fit, transaction savepoints, and IntegrityError.
+- **Behavior**: Uses existing product colors or `Default`, generates every supported size/fit combination, derives a deterministic-looking SKU prefix, skips existing axes, and currently suppresses cross-product SKU collisions.
+- **Side Effects**: Inserts ProductVariant rows and writes an admin message; it does not create StockRecord or StockMovement rows.
+
+# Module / File: apps/catalog/management/commands/seed_demo.py
+
+## Function: Command.handle(self, *args, **options)
+- **Purpose**: Seed a deterministic, idempotent five-product demo catalog and operating data.
+- **Inputs**:
+  - `self` (`Command`): Django command instance.
+  - `args` (`tuple[object, ...]`): Unused positional command arguments.
+  - `options` (`dict[str, object]`): Django command options.
+- **Outputs**: `None`; writes a compact created-count summary.
+- **Dependencies**: Category, Product, ProductVariant, StockRecord, StockMovement, ShippingZone, FlatPage, Site, HomepageBanner, settings, and transaction.
+- **Behavior**: Upserts five stable products/categories, creates 180 deterministic variants, creates stock only when absent, writes one matching +10 restock movement per new stock row, creates three zones/flatpages/banner, preserves live stock on rerun, and wraps all writes in one transaction.
+- **Side Effects**: Inserts/updates catalog and CMS data, inserts create-only inventory/ledger data, attaches flatpages to the configured Site, and writes command output.
+
+# Module / File: apps/catalog/migrations/0001_initial.py
+
+## Function: configure_mysql_defaults(apps, schema_editor)
+- **Purpose**: Enforce MySQL/InnoDB/Unicode defaults before fresh domain tables are created.
+- **Inputs**:
+  - `apps` (`StateApps`): Historical app registry; not read.
+  - `schema_editor` (`BaseDatabaseSchemaEditor`): Active migration connection.
+- **Outputs**: `None`; raises RuntimeError when the invariant cannot be established.
+- **Dependencies**: MySQL 8 metadata, quoted identifiers, `django_migrations`, and DDL privileges.
+- **Behavior**: Rejects non-MySQL backends, alters database defaults to `utf8mb4_0900_ai_ci`, pins session InnoDB, normalizes the migration-recorder table, and verifies database/session values.
+- **Side Effects**: Executes MySQL DDL and session statements.
+
+# Module / File: apps/catalog/migrations/0002_enforce_mysql_defaults.py
+
+## Function: enforce_mysql_defaults(apps, schema_editor)
+- **Purpose**: Repair existing installations affected while the initial invariant operation was historically disabled.
+- **Inputs**:
+  - `apps` (`StateApps`): Historical app registry; not read.
+  - `schema_editor` (`BaseDatabaseSchemaEditor`): Active migration connection.
+- **Outputs**: `None`; raises RuntimeError with remaining table violations.
+- **Dependencies**: MySQL 8 information_schema, identifier quoting, and DDL privileges.
+- **Behavior**: Rejects non-MySQL backends, repairs database defaults, pins the session engine, finds only noncompliant base tables, converts each to InnoDB/`utf8mb4_0900_ai_ci`, and verifies defaults, engine, and every table afterward. The migration is non-atomic because MySQL commits DDL implicitly and uses a no-op reverse.
+- **Side Effects**: May rebuild noncompliant MySQL tables and changes database/session defaults.
+
+# Module / File: apps/cms/models.py
+
+## Function: HomepageBanner.__str__(self)
+- **Purpose**: Return the CMS banner title for admin/display use.
+- **Inputs**:
+  - `self` (`HomepageBanner`): Banner row.
+- **Outputs**: `str` title.
+- **Dependencies**: `HomepageBanner.title`.
+- **Behavior**: Returns the stored title.
+- **Side Effects**: None.
+
+## Function: ContactMessage.__str__(self)
+- **Purpose**: Return readable contact-message attribution.
+- **Inputs**:
+  - `self` (`ContactMessage`): Stored inquiry.
+- **Outputs**: `str` containing sender name and email.
+- **Dependencies**: ContactMessage fields.
+- **Behavior**: Formats the sender identity.
+- **Side Effects**: None.
+
+# Module / File: apps/inventory/models.py
+
+## Function: StockRecord.available(self)
+- **Purpose**: Calculate sellable stock from physical and reserved counters.
+- **Inputs**:
+  - `self` (`StockRecord`): Stock row.
+- **Outputs**: `int` equal to `qty_on_hand - qty_reserved`.
+- **Dependencies**: Database check `chk_reserved_lte_on_hand`.
+- **Behavior**: Subtracts reserved units without writing state.
+- **Side Effects**: None.
+
+## Function: AppendOnlyMovementQuerySet.update(self, **kwargs)
+- **Purpose**: Block bulk updates to inventory audit history.
+- **Inputs**:
+  - `self` (`AppendOnlyMovementQuerySet`): Movement queryset.
+  - `kwargs` (`dict[str, object]`): Requested fields.
+- **Outputs**: Never returns normally; raises TypeError.
+- **Dependencies**: None.
+- **Behavior**: Rejects every QuerySet update.
+- **Side Effects**: None.
+
+## Function: AppendOnlyMovementQuerySet.bulk_update(self, objs, fields, batch_size=None)
+- **Purpose**: Block bulk object rewrites of inventory audit history.
+- **Inputs**:
+  - `self` (`AppendOnlyMovementQuerySet`): Movement queryset.
+  - `objs` (`Iterable[StockMovement]`): Requested rows.
+  - `fields` (`Iterable[str]`): Requested fields.
+  - `batch_size` (`int | None`): Requested batch size.
+- **Outputs**: Never returns normally; raises TypeError.
+- **Dependencies**: None.
+- **Behavior**: Rejects every bulk update.
+- **Side Effects**: None.
+
+## Function: AppendOnlyMovementQuerySet.delete(self)
+- **Purpose**: Block queryset deletion of inventory audit history.
+- **Inputs**:
+  - `self` (`AppendOnlyMovementQuerySet`): Movement queryset.
+- **Outputs**: Never returns normally; raises TypeError.
+- **Dependencies**: None.
+- **Behavior**: Rejects deletion.
+- **Side Effects**: None.
+
+## Function: AppendOnlyMovementQuerySet.bulk_create(self, objs, batch_size=None, ignore_conflicts=False, update_conflicts=False, update_fields=None, unique_fields=None)
+- **Purpose**: Permit append-only bulk inserts while rejecting conflict-update rewrites.
+- **Inputs**:
+  - `self` (`AppendOnlyMovementQuerySet`): Movement queryset.
+  - `objs` (`Iterable[StockMovement]`): New ledger rows.
+  - `batch_size` (`int | None`): Optional batch size.
+  - `ignore_conflicts` (`bool`): Django insert option.
+  - `update_conflicts` (`bool`): Forbidden rewrite option.
+  - `update_fields` (`Iterable[str] | None`): Conflict-update fields.
+  - `unique_fields` (`Iterable[str] | None`): Conflict target fields.
+- **Outputs**: `list[StockMovement]` for plain inserts.
+- **Dependencies**: Django QuerySet bulk creation.
+- **Behavior**: Raises TypeError when `update_conflicts` is true; otherwise delegates the append.
+- **Side Effects**: May insert multiple immutable ledger rows.
+
+## Function: StockMovement.save(self, *args, **kwargs)
+- **Purpose**: Allow ledger insertion while preventing instance updates.
+- **Inputs**:
+  - `self` (`StockMovement`): Movement instance.
+  - `args` (`tuple[object, ...]`): Django save arguments.
+  - `kwargs` (`dict[str, object]`): Django save options.
+- **Outputs**: `None`.
+- **Dependencies**: Django Model.save.
+- **Behavior**: Raises TypeError when a primary key already exists; delegates only new-row insertion.
+- **Side Effects**: Inserts one StockMovement when new.
+
+## Function: StockMovement.delete(self, *args, **kwargs)
+- **Purpose**: Prevent instance deletion of inventory audit history.
+- **Inputs**:
+  - `self` (`StockMovement`): Persisted movement.
+  - `args` (`tuple[object, ...]`): Ignored delete arguments.
+  - `kwargs` (`dict[str, object]`): Ignored delete options.
+- **Outputs**: Never returns normally; raises TypeError.
+- **Dependencies**: None.
+- **Behavior**: Rejects deletion unconditionally.
+- **Side Effects**: None.
+
+# Module / File: apps/inventory/services.py
+
+## Function: _require_positive_int(value, name)
+- **Purpose**: Enforce strict positive-integer inventory inputs.
+- **Inputs**:
+  - `value` (`object`): Candidate value.
+  - `name` (`str`): Field name used in the error.
+- **Outputs**: `int` validated value.
+- **Dependencies**: Python type system.
+- **Behavior**: Rejects Booleans, non-integers, zero, and negative values.
+- **Side Effects**: None.
+
+## Function: reserve_stock(*, variant_id, qty, session_key="", order=None)
+- **Purpose**: Place one TTL-bound stock hold without overselling.
+- **Inputs**:
+  - `variant_id` (`int`): ProductVariant primary key.
+  - `qty` (`int`): Positive requested units.
+  - `session_key` (`str`): Guest/session correlation value.
+  - `order` (`Order | None`): Checkout order owning the hold.
+- **Outputs**: Active `Reservation`.
+- **Dependencies**: StockRecord, Reservation, settings TTL, transaction.atomic, and select_for_update.
+- **Behavior**: Validates quantity, locks the stock row, checks computed availability, increments reserved units, and creates the matching active reservation before releasing the lock.
+- **Side Effects**: Updates StockRecord and inserts Reservation in one transaction.
+
+## Function: _end_active_reservation(reservation, terminal_status)
+- **Purpose**: Release one already-locked active reservation into a terminal state.
+- **Inputs**:
+  - `reservation` (`Reservation`): Active locked reservation.
+  - `terminal_status` (`ReservationStatus`): Released or expired status.
+- **Outputs**: Updated `Reservation`.
+- **Dependencies**: StockRecord row lock and timezone.
+- **Behavior**: Locks stock, checks counter coverage, decrements reserved units, stamps terminal status/time, and returns the row.
+- **Side Effects**: Updates StockRecord and Reservation.
+
+## Function: release_reservation(reservation_id)
+- **Purpose**: Return an abandoned or cancelled hold to availability idempotently.
+- **Inputs**:
+  - `reservation_id` (`int`): Reservation primary key.
+- **Outputs**: Terminal `Reservation`.
+- **Dependencies**: Reservation lock, `_end_active_reservation`, and transaction.atomic.
+- **Behavior**: Returns released/expired rows unchanged, rejects committed sales, and releases an active row.
+- **Side Effects**: May update StockRecord and Reservation in one transaction.
+
+## Function: commit_reservation(*, reservation_id, order)
+- **Purpose**: Convert an active hold into a paid physical sale and audit movement.
+- **Inputs**:
+  - `reservation_id` (`int`): Active reservation primary key.
+  - `order` (`Order`): Paid order reference.
+- **Outputs**: Committed `Reservation`.
+- **Dependencies**: Reservation/StockRecord locks, StockMovement, transaction.atomic, and timezone.
+- **Behavior**: Rejects non-active or uncovered holds, decrements on-hand and reserved counters, appends one negative sale movement, links the order, and terminally commits the hold.
+- **Side Effects**: Updates StockRecord/Reservation and inserts StockMovement atomically.
+
+## Function: adjust_stock(*, variant_id, delta, reason, ref_order=None)
+- **Purpose**: Apply audited restock, return, or manual-adjustment changes.
+- **Inputs**:
+  - `variant_id` (`int`): Variant primary key.
+  - `delta` (`int`): Nonzero physical quantity change.
+  - `reason` (`MovementReason | str`): Non-sale movement reason.
+  - `ref_order` (`Order | None`): Optional related order.
+- **Outputs**: Updated `StockRecord`.
+- **Dependencies**: StockRecord lock, StockMovement, MovementReason, and transaction.atomic.
+- **Behavior**: Validates sign/reason, forbids sales, prevents on-hand dropping below reserved, updates the counter, and appends the matching ledger entry.
+- **Side Effects**: Updates StockRecord and inserts StockMovement atomically.
+
+## Function: release_expired_reservations(now=None)
+- **Purpose**: Expire every overdue active hold without letting one bad row block the sweep.
+- **Inputs**:
+  - `now` (`datetime | None`): Evaluation time; defaults to timezone.now.
+- **Outputs**: `int` expired count.
+- **Dependencies**: Reservation ORM, `_end_active_reservation`, per-row transactions, locks, and logger.
+- **Behavior**: Collects candidate IDs, rechecks each under lock, skips racing terminal/future rows, expires valid candidates, and logs then continues after per-row exceptions.
+- **Side Effects**: May update many StockRecord/Reservation rows and write exception logs.
+
+## Function: scan_low_stock()
+- **Purpose**: Find variants whose available units are at or below their configured threshold.
+- **Inputs**:
+  - `None` (`None`): No explicit parameters.
+- **Outputs**: `QuerySet[StockRecord]` annotated with `available_units`.
+- **Dependencies**: Django F expressions and related variant/product models.
+- **Behavior**: Computes availability in SQL, filters against each row’s threshold, selects related display data, and orders by SKU.
+- **Side Effects**: Database reads on evaluation.
+
+# Module / File: jobs/scheduler.py and apps/inventory/management/commands/run_scheduler.py
+
+## Function: sweep_expired_reservations()
+- **Purpose**: Execute the periodic reservation-expiry job safely in a long-lived process.
+- **Inputs**:
+  - `None` (`None`): Scheduler invocation.
+- **Outputs**: `None`.
+- **Dependencies**: `release_expired_reservations`, `close_old_connections`, and logger.
+- **Behavior**: Closes stale connections before/after work and logs a positive expiry count.
+- **Side Effects**: May expire reservations, update inventory counters, recycle DB connections, and write logs.
+
+## Function: run_low_stock_scan()
+- **Purpose**: Execute the periodic low-stock scan and alert adapter.
+- **Inputs**:
+  - `None` (`None`): Scheduler invocation.
+- **Outputs**: `None`.
+- **Dependencies**: `scan_low_stock`, `send_low_stock_alert`, `close_old_connections`, and logger.
+- **Behavior**: Recycles connections around the scan and logs when alerts cover one or more SKUs.
+- **Side Effects**: Performs database reads, may send email, recycles DB connections, and writes logs.
+
+## Function: build_scheduler(scheduler_class=BackgroundScheduler)
+- **Purpose**: Build the two-job scheduler without starting it.
+- **Inputs**:
+  - `scheduler_class` (`type[BaseScheduler]`): Injectable scheduler implementation.
+- **Outputs**: Configured scheduler instance.
+- **Dependencies**: APScheduler, zoneinfo, Django settings, and the two job functions.
+- **Behavior**: Uses the application timezone, schedules the expiry sweep in seconds and low-stock scan in minutes, and prevents overlapping/catch-up bursts with coalescing and one instance.
+- **Side Effects**: Creates in-memory scheduler/job objects only.
+
+## Function: Command.handle(self, *args, **options)
+- **Purpose**: Run one foreground blocking scheduler process.
+- **Inputs**:
+  - `self` (`Command`): Django management command.
+  - `args` (`tuple[object, ...]`): Unused positional arguments.
+  - `options` (`dict[str, object]`): Command options.
+- **Outputs**: `None` after interruption.
+- **Dependencies**: `build_scheduler` and BlockingScheduler.
+- **Behavior**: Builds the blocking scheduler, announces startup, starts it, and handles Ctrl+C with a stop message.
+- **Side Effects**: Starts long-lived scheduled jobs and writes command output.
+
+# Module / File: apps/orders/models.py
+
+## Function: OrderQuerySet.update(self, **kwargs)
+- **Purpose**: Block queryset-level status bypasses while preserving ordinary field updates.
+- **Inputs**:
+  - `self` (`OrderQuerySet`): Order queryset.
+  - `kwargs` (`dict[str, object]`): Requested updates.
+- **Outputs**: `int` affected-row count for non-status updates.
+- **Dependencies**: `IllegalTransition` and Django QuerySet.update.
+- **Behavior**: Rejects any `status` key and delegates other fields.
+- **Side Effects**: May bulk-update non-status fields.
+
+## Function: OrderQuerySet.bulk_update(self, objs, fields, batch_size=None)
+- **Purpose**: Block bulk status rewrites.
+- **Inputs**:
+  - `self` (`OrderQuerySet`): Order queryset.
+  - `objs` (`Iterable[Order]`): Orders to update.
+  - `fields` (`Iterable[str]`): Field names.
+  - `batch_size` (`int | None`): Optional batch size.
+- **Outputs**: `int` affected-row count for allowed fields.
+- **Dependencies**: `IllegalTransition` and Django bulk_update.
+- **Behavior**: Rejects status in the field list and delegates other updates.
+- **Side Effects**: May bulk-update non-status fields.
+
+## Function: OrderQuerySet.bulk_create(self, objs, batch_size=None, ignore_conflicts=False, update_conflicts=False, update_fields=None, unique_fields=None)
+- **Purpose**: Enforce Pending as the only initial order state and block conflict status updates.
+- **Inputs**:
+  - `self` (`OrderQuerySet`): Order queryset.
+  - `objs` (`Iterable[Order]`): New orders.
+  - `batch_size` (`int | None`): Optional batch size.
+  - `ignore_conflicts` (`bool`): Insert option.
+  - `update_conflicts` (`bool`): Upsert option.
+  - `update_fields` (`Iterable[str] | None`): Upsert fields.
+  - `unique_fields` (`Iterable[str] | None`): Conflict target fields.
+- **Outputs**: `list[Order]`.
+- **Dependencies**: OrderStatus, IllegalTransition, and Django bulk_create.
+- **Behavior**: Materializes input, validates every recognized status as Pending, forbids conflict updates of status, and delegates valid inserts.
+- **Side Effects**: May insert or conflict-update allowed order fields.
+
+## Function: Order.save(self, *args, **kwargs)
+- **Purpose**: Enforce Pending insertion and reject direct/stale status assignment.
+- **Inputs**:
+  - `self` (`Order`): Order instance.
+  - `args` (`tuple[object, ...]`): Django save arguments.
+  - `kwargs` (`dict[str, object]`): Save options including `update_fields`/`using`.
+- **Outputs**: `None`.
+- **Dependencies**: OrderStatus, IllegalTransition, transaction.atomic, and select_for_update.
+- **Behavior**: Validates new orders, permits explicit non-status field saves, and otherwise locks the stored row to ensure the instance status still matches before delegating.
+- **Side Effects**: Inserts or updates an Order and may acquire a row lock.
+
+## Function: Order.transition_to(self, new_status)
+- **Purpose**: Perform the sole sanctioned order-state transition.
+- **Inputs**:
+  - `self` (`Order`): Persisted order.
+  - `new_status` (`OrderStatus | str`): Requested target.
+- **Outputs**: Updated caller `Order`.
+- **Dependencies**: ALLOWED_TRANSITIONS, transaction.atomic, select_for_update, and IllegalTransition.
+- **Behavior**: Rejects unsaved/unknown targets, locks a fresh row, validates the current-to-target edge, writes status through the parent save implementation, and refreshes caller state.
+- **Side Effects**: Updates one Order status atomically.
+
+# Module / File: apps/orders/money.py
+
+## Function: require_centavos(value, field_name="amount", *, allow_negative=False)
+- **Purpose**: Enforce the shared integer-centavo type and MySQL range boundary.
+- **Inputs**:
+  - `value` (`object`): Candidate amount.
+  - `field_name` (`str`): Error-context label.
+  - `allow_negative` (`bool`): Explicit signed-report opt-in.
+- **Outputs**: `int` validated amount.
+- **Dependencies**: `MAX_CENTAVOS` and MoneyValueError.
+- **Behavior**: Rejects Boolean/non-integer input, unauthorized negatives, and magnitudes beyond unsigned MySQL INT.
+- **Side Effects**: None.
+
+## Function: format_centavos(value, symbol=None)
+- **Purpose**: Format a valid amount as grouped Philippine-peso display text.
+- **Inputs**:
+  - `value` (`int`): Nonnegative centavos.
+  - `symbol` (`str | None`): Optional display symbol override.
+- **Outputs**: `str` formatted major/minor units.
+- **Dependencies**: `require_centavos`, `CURRENCY_SYMBOL`, and `CURRENCY_MINOR_UNITS`.
+- **Behavior**: Validates amount/symbol/scale and formats without float arithmetic.
+- **Side Effects**: None.
+
+## Function: multiply_centavos(unit_price, quantity)
+- **Purpose**: Compute an order-line total exactly.
+- **Inputs**:
+  - `unit_price` (`int`): Unit price in centavos.
+  - `quantity` (`int`): Positive non-Boolean units.
+- **Outputs**: `int` line total.
+- **Dependencies**: `require_centavos`.
+- **Behavior**: Validates both inputs, multiplies integers, and validates overflow.
+- **Side Effects**: None.
+
+## Function: sum_centavos(amounts)
+- **Purpose**: Sum nonnegative amounts with immediate overflow detection.
+- **Inputs**:
+  - `amounts` (`Iterable[int]`): Centavo values.
+- **Outputs**: `int` total.
+- **Dependencies**: `require_centavos`.
+- **Behavior**: Validates each indexed item and the running total.
+- **Side Effects**: Consumes the iterable; performs no external write.
+
+# Module / File: apps/orders/services.py
+
+## Function: next_order_no(year=None)
+- **Purpose**: Allocate a race-safe `MD-YYYY-NNNNN` identifier.
+- **Inputs**:
+  - `year` (`int | None`): Four-digit business year or current Manila year.
+- **Outputs**: `str` order number.
+- **Dependencies**: OrderNumberSequence, timezone.localdate, transaction.atomic, select_for_update, and sequence-domain exceptions.
+- **Behavior**: Rejects Boolean/non-four-digit years, locks or creates the annual row, rejects exhaustion at 99999, increments once, and zero-pads five digits.
+- **Side Effects**: Inserts or updates one OrderNumberSequence.
+
+# Module / File: apps/core/admin.py and apps/orders/admin.py
+
+## Function: ExportCsvMixin.export_as_csv(self, request, queryset)
+- **Purpose**: Export selected model rows using their concrete database fields.
+- **Inputs**:
+  - `self` (`ModelAdmin mixin`): Admin instance with a model.
+  - `request` (`HttpRequest`): Staff request.
+  - `queryset` (`QuerySet`): Selected rows.
+- **Outputs**: CSV `HttpResponse`.
+- **Dependencies**: Python csv and Django model metadata.
+- **Behavior**: Writes a header of field names and one raw-value row per selected object.
+- **Side Effects**: Evaluates the queryset and streams response bytes; does not mutate the database.
+
+## Function: OrderAdmin.get_urls(self)
+- **Purpose**: Add sales-report and printable-invoice routes to Order admin.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin instance.
+- **Outputs**: `list[URLPattern]`.
+- **Dependencies**: Django admin URL wrapping and path.
+- **Behavior**: Prepends protected custom routes to inherited model-admin URLs.
+- **Side Effects**: None.
+
+## Function: OrderAdmin.sales_report_view(self, request)
+- **Purpose**: Render aggregate revenue/order counts and per-status counts.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+- **Outputs**: Sales-report HTML.
+- **Dependencies**: Order ORM, Count, Sum, `format_centavos`, and template rendering.
+- **Behavior**: Counts revenue only for paid/packed/shipped/delivered states, formats it, aggregates all status counts, and supplies admin context.
+- **Side Effects**: Database reads only.
+
+## Function: OrderAdmin.invoice_view(self, request, object_id)
+- **Purpose**: Render one staff-accessible printable order invoice.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+  - `object_id` (`str`): Order primary-key path value.
+- **Outputs**: Invoice HTML or 404.
+- **Dependencies**: Order ORM and invoice template.
+- **Behavior**: Loads the order by primary key and renders it.
+- **Side Effects**: Database read only.
+
+## Function: OrderAdmin.mark_as_packed(self, request, queryset)
+- **Purpose**: Transition selected paid orders to Packed and book mock shipments.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff action request.
+  - `queryset` (`QuerySet[Order]`): Selected orders.
+- **Outputs**: `None`; admin result messages.
+- **Dependencies**: Order.transition_to, Shipment, `book_shipment`, ContentType, and LogEntry.
+- **Behavior**: Processes each order, transitions it, creates/gets a shipment, books it, writes an admin audit entry, and counts illegal transitions as failures.
+- **Side Effects**: Updates Orders/Shipments, inserts Shipment/LogEntry rows, and writes messages.
+
+## Function: OrderAdmin.mark_as_shipped(self, request, queryset)
+- **Purpose**: Transition selected packed orders to Shipped and notify customers.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff action request.
+  - `queryset` (`QuerySet[Order]`): Selected orders.
+- **Outputs**: `None`; admin result messages.
+- **Dependencies**: Order transition API, ShipmentStatus, SMS adapter, and LogEntry.
+- **Behavior**: Transitions each order, marks an existing shipment in transit, sends an optional phone notification, writes audit history, and reports illegal transitions.
+- **Side Effects**: Updates Orders/Shipments, may call Semaphore, inserts LogEntry, and writes messages/logs.
+
+## Function: OrderAdmin.mark_as_cancelled(self, request, queryset)
+- **Purpose**: Cancel selected pending orders and release their active holds.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff action request.
+  - `queryset` (`QuerySet[Order]`): Selected orders.
+- **Outputs**: `None`; admin result messages.
+- **Dependencies**: Order transition API, Reservation, and `release_reservation`.
+- **Behavior**: Transitions each eligible order then releases every active order-linked reservation.
+- **Side Effects**: Updates Order, Reservation, and StockRecord rows and writes admin messages.
+
+## Function: OrderAdmin.mark_as_refunded(self, request, queryset)
+- **Purpose**: Transition selected fulfilled/paid orders to Refunded and restore units.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff action request.
+  - `queryset` (`QuerySet[Order]`): Selected orders.
+- **Outputs**: `None`; admin result messages.
+- **Dependencies**: Order transition API, order items, `adjust_stock`, and MovementReason.RETURN.
+- **Behavior**: Transitions the order first, then restores each line with a positive return movement; illegal transitions are reported. The multi-line orchestration is not yet one encompassing transaction.
+- **Side Effects**: Updates Order/StockRecord rows, inserts StockMovement rows, and writes messages.
+
+# Module / File: apps/payments/services.py
+
+## Function: _auth_headers()
+- **Purpose**: Build PayMongo Basic-auth JSON headers.
+- **Inputs**:
+  - `None` (`None`): Reads the configured secret.
+- **Outputs**: `dict[str, str]` request headers.
+- **Dependencies**: Base64 and `PAYMONGO_SECRET_KEY`.
+- **Behavior**: Encodes `secret:` and returns Authorization, Content-Type, and Accept headers.
+- **Side Effects**: Reads settings.
+
+## Function: create_checkout_session(order, success_url, cancel_url)
+- **Purpose**: Create one pending Payment and hosted or mocked checkout session.
+- **Inputs**:
+  - `order` (`Order`): Persisted order with items/address/totals.
+  - `success_url` (`str`): Signed post-payment return URL.
+  - `cancel_url` (`str`): Cart return URL.
+- **Outputs**: `tuple[str, str]` checkout URL and provider/session ID.
+- **Dependencies**: settings, Payment, PayMongo API, requests, item snapshots, and PayMongoError.
+- **Behavior**: Mock mode records a deterministic pending Payment and appends `mock=1`. Provider mode builds exact PHP line items and billing metadata, POSTs with a timeout, rejects bad status/schema, and records the returned pending session.
+- **Side Effects**: Inserts Payment and may make one external HTTPS request.
+
+## Function: confirm_order_paid(*, order, method=None)
+- **Purpose**: Idempotently confirm payment, consume stock holds, and transition the order.
+- **Inputs**:
+  - `order` (`Order`): Order whose one-to-one Payment exists.
+  - `method` (`str | None`): Provider-reported method.
+- **Outputs**: `bool`; true for first confirmation, false for replay.
+- **Dependencies**: Payment row lock, inventory commit/reserve services, Order transition API, transaction.atomic, and logger.
+- **Behavior**: Locks Payment, short-circuits an already-paid row, stamps payment status/time/method, commits active order reservations, attempts reserve+commit for shortfalls, logs a critical unfillable paid line without overselling, and transitions Pending → Paid.
+- **Side Effects**: Updates Payment/Order/Reservation/StockRecord, inserts sale movements or replacement reservations, and may write warning/critical logs.
+
+# Module / File: apps/payments/views.py
+
+## Function: _signature_valid(request)
+- **Purpose**: Fail-closed verify the PayMongo webhook HMAC.
+- **Inputs**:
+  - `request` (`HttpRequest`): Raw body and `Paymongo-Signature`.
+- **Outputs**: `bool`.
+- **Dependencies**: HMAC-SHA256, constant-time comparison, and `PAYMONGO_WEBHOOK_SECRET`.
+- **Behavior**: Rejects an unset secret or missing timestamp, computes HMAC over `<timestamp>.<raw body>`, and accepts a matching test/live signature.
+- **Side Effects**: May write an error log when the secret is absent.
+
+## Function: _extract_reference_and_method(payload)
+- **Purpose**: Normalize supported PayMongo event shapes into an order reference and payment method.
+- **Inputs**:
+  - `payload` (`dict[str, object]`): Parsed provider event.
+- **Outputs**: `tuple[str, str]`.
+- **Dependencies**: Provider JSON structure and `_METHOD_ALIASES`.
+- **Behavior**: Reads reference_number or a known description prefix, extracts direct/nested source type, and maps `paymaya` to `maya`.
+- **Side Effects**: None.
+
+## Function: paymongo_webhook(request)
+- **Purpose**: Process signed paid events idempotently and acknowledge provider retries.
+- **Inputs**:
+  - `request` (`HttpRequest`): POST webhook request.
+- **Outputs**: Empty `HttpResponse` with HTTP 400 or 200.
+- **Dependencies**: `_signature_valid`, JSON, Order, `confirm_order_paid`, Signer, notifications, and `require_POST`.
+- **Behavior**: Verifies before parsing, rejects malformed/empty-reference paid events, acknowledges unsubscribed and unknown-order events appropriately, confirms known orders, and sends notifications only on first confirmation while isolating notification failures.
+- **Side Effects**: May mutate all payment-confirmation state, send email/SMS, and write logs.
+
+# Module / File: apps/notifications/services.py and apps/notifications/sms.py
+
+## Function: send_order_confirmation(order, status_url)
+- **Purpose**: Email an order summary and signed tracking link.
+- **Inputs**:
+  - `order` (`Order`): Confirmed order.
+  - `status_url` (`str`): Tokenized tracking URL.
+- **Outputs**: `bool` sent indicator.
+- **Dependencies**: Django email backend, order items, and `format_centavos`.
+- **Behavior**: Skips/logs orders without email, formats line/totals, and sends one plain-text message.
+- **Side Effects**: May query items, send email, and write a warning log.
+
+## Function: send_contact_alert(contact_message)
+- **Purpose**: Notify configured staff about a stored contact inquiry.
+- **Inputs**:
+  - `contact_message` (`ContactMessage`): Persisted inquiry.
+- **Outputs**: `bool` sent indicator.
+- **Dependencies**: `CONTACT_ALERT_RECIPIENTS` and Django email backend.
+- **Behavior**: Logs and returns false when recipients are absent; otherwise sends sender/message details.
+- **Side Effects**: May send email and write an informational log.
+
+## Function: send_low_stock_alert(records)
+- **Purpose**: Email configured staff a low-stock SKU report.
+- **Inputs**:
+  - `records` (`Iterable[StockRecord]`): Low-stock rows.
+- **Outputs**: `int` number of rows included in a sent alert, otherwise zero.
+- **Dependencies**: `LOW_STOCK_ALERT_RECIPIENTS`, Django email backend, and StockRecord relations.
+- **Behavior**: Materializes input, skips empty data, degrades to logging without recipients, formats counters, and sends one summary email.
+- **Side Effects**: May query related data, send email, and write logs.
+
+## Function: send_sms(phone_number, message)
+- **Purpose**: Send a Semaphore SMS while keeping notifications off the critical path.
+- **Inputs**:
+  - `phone_number` (`str`): Destination.
+  - `message` (`str`): Message body.
+- **Outputs**: `bool` provider-success indicator.
+- **Dependencies**: Semaphore settings, requests, and logger.
+- **Behavior**: Logs a mock message when unconfigured, otherwise POSTs with a five-second timeout and converts every exception to false.
+- **Side Effects**: May make an external request and currently logs destination/message/provider error details.
+
+# Module / File: apps/shipping/jnt.py
+
+## Function: book_shipment(shipment)
+- **Purpose**: Simulate J&T booking for a pending Shipment.
+- **Inputs**:
+  - `shipment` (`Shipment`): Shipment row.
+- **Outputs**: `bool`; false for non-pending, true after booking.
+- **Dependencies**: Python random, timezone, and ShipmentStatus.
+- **Behavior**: Generates a random 12-digit mock waybill, derives the J&T tracking URL, stamps Booked/time, and saves.
+- **Side Effects**: Updates Shipment and consumes nondeterministic randomness.
+
+# Module / File: apps/reviews/views.py and apps/reviews/admin.py
+
+## Function: submit_review(request)
+- **Purpose**: Create or update a moderated verified-purchase review.
+- **Inputs**:
+  - `request` (`HttpRequest`): Authenticated POST with order_no, product_id, rating, and body.
+- **Outputs**: Redirect to the signed order-status page.
+- **Dependencies**: Order ownership/items/status, Product, Review, Signer, messages, and decorators.
+- **Behavior**: Hides foreign order existence, validates rating and Delivered/product membership, upserts one review per customer/product, and resets edits to Pending.
+- **Side Effects**: Inserts/updates Review and writes a user message.
+
+## Function: ReviewAdmin.approve_reviews(self, request, queryset)
+- **Purpose**: Bulk-approve pending reviews.
+- **Inputs**:
+  - `self` (`ReviewAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+  - `queryset` (`QuerySet[Review]`): Selected rows.
+- **Outputs**: `None`.
+- **Dependencies**: ReviewStatus and admin messaging.
+- **Behavior**: Updates only Pending rows and reports the count.
+- **Side Effects**: Bulk-updates Review status and writes an admin message.
+
+## Function: ReviewAdmin.reject_reviews(self, request, queryset)
+- **Purpose**: Bulk-reject pending reviews.
+- **Inputs**:
+  - `self` (`ReviewAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+  - `queryset` (`QuerySet[Review]`): Selected rows.
+- **Outputs**: `None`.
+- **Dependencies**: ReviewStatus and admin messaging.
+- **Behavior**: Updates only Pending rows and reports the count.
+- **Side Effects**: Bulk-updates Review status and writes an admin message.
+
+# Module / File: apps/storefront/views.py
+
+## Function: homepage(request)
+- **Purpose**: Render active CMS banners and the eight newest active products.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET request.
+- **Outputs**: Homepage HTML cached for five minutes outside tests.
+- **Dependencies**: Product, HomepageBanner, template renderer, `require_GET`, and `cache_page`.
+- **Behavior**: Selects product categories efficiently, orders products newest first, orders active banners by CMS order, and renders `banner.image_url` directly.
+- **Side Effects**: Database reads and cache read/write.
+
+## Function: shop_listing(request)
+- **Purpose**: Render the searchable/filterable/sortable paginated shop.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET filters, sort, search, and page.
+- **Outputs**: Full shop HTML or HTMX grid fragment.
+- **Dependencies**: Catalog query services, Paginator, Size/Fit choices, and templates.
+- **Behavior**: Builds nonblank filters, executes the catalog service, paginates 12 per page, returns a fragment for HX-Request, and otherwise supplies filter metadata.
+- **Side Effects**: Database reads.
+
+## Function: product_detail(request, slug)
+- **Purpose**: Render product content and stock-aware variant-picker data.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET request and user session.
+  - `slug` (`str`): Product slug.
+- **Outputs**: Product-detail HTML or 404.
+- **Dependencies**: `get_product_detail`, StockRecord, money formatter, WishlistItem, and JSON serialization.
+- **Behavior**: Maps every variant to axes/price/available data, treats missing stock as sold out, orders sizes by enum, computes wishlist state, and renders the picker/reviews.
+- **Side Effects**: Database reads.
+
+## Function: cart_page(request)
+- **Purpose**: Render the browser-managed cart shell.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET request.
+- **Outputs**: Cart HTML.
+- **Dependencies**: Template renderer and `require_GET`.
+- **Behavior**: Returns the page whose Alpine component hydrates `metrodrip_cart`.
+- **Side Effects**: None server-side.
+
+## Function: cart_availability(request)
+- **Purpose**: Return authoritative availability for up to 50 variant IDs.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET comma-list or POST JSON `ids`.
+- **Outputs**: `JsonResponse` availability map or HTTP 400/405.
+- **Dependencies**: JSON, StockRecord, and HttpResponseNotAllowed.
+- **Behavior**: Parses integer IDs, rejects empty/oversized/malformed input, queries tracked rows, and returns zero for unknown/unstocked IDs.
+- **Side Effects**: Database read only.
+
+## Function: _parse_checkout_items(raw_items)
+- **Purpose**: Validate checkout cart shape and merge duplicate variant lines.
+- **Inputs**:
+  - `raw_items` (`object`): Expected non-empty list of mappings.
+- **Outputs**: `dict[int, int]` variant-to-total quantity.
+- **Dependencies**: `MAX_CHECKOUT_LINES` and `MAX_LINE_QTY`.
+- **Behavior**: Rejects empty/non-list/oversized input, converts IDs/quantities to integers, validates each original line at 1..99, and sums duplicate quantities.
+- **Side Effects**: None.
+
+## Function: checkout_page(request)
+- **Purpose**: Render checkout or atomically create an order with stock holds and payment session.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET or JSON POST containing items, customer/address fields, and zone_id.
+- **Outputs**: Checkout HTML, success JSON with checkout URL, or HTTP 400/409/502 JSON error.
+- **Dependencies**: ShippingZone, ProductVariant, Order/OrderItem, order-number service, inventory reservation service, payment service, session framework, and transaction.atomic.
+- **Behavior**: GET lists active zones. POST parses items, requires name/email, validates zone, ensures a session, reloads authoritative variants, calculates effective-price subtotal, inserts reconciled totals/order/items and order-linked holds atomically, maps stock/input errors, then creates a checkout session. Provider failure releases active holds and returns a retryable error.
+- **Side Effects**: Creates session, Order, OrderItem, Reservation, StockRecord updates, Payment/provider request, and logs; provider failure releases holds but leaves the pending order.
+
+## Function: checkout_success(request, token)
+- **Purpose**: Render the signed post-payment landing page and support the development mock-confirmation path.
+- **Inputs**:
+  - `request` (`HttpRequest`): Request with optional `mock=1`.
+  - `token` (`str`): Signer token containing order primary key.
+- **Outputs**: Success HTML or 404.
+- **Dependencies**: Signer, Order, settings, `confirm_order_paid`, and notifications.
+- **Behavior**: Rejects bad/missing orders, optionally confirms only when mock payments are enabled and explicitly requested, sends first-confirmation notifications with graceful failure, and renders order/token.
+- **Side Effects**: Development mock path may execute full payment/inventory/order mutation and notifications.
+
+## Function: order_status(request, token)
+- **Purpose**: Render a read-only token-protected order tracking timeline.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET request.
+  - `token` (`str`): Signed order primary key.
+- **Outputs**: Order-status HTML or 404.
+- **Dependencies**: Signer, Order with payment/shipment/items, `_PROGRESS_STEPS`, and `require_GET`.
+- **Behavior**: Rejects invalid tokens/orders, loads related commerce data, builds done/current/todo steps for the happy path, and uses terminal badges for cancelled/refunded orders.
+- **Side Effects**: Database reads.
+
+## Function: contact_page(request)
+- **Purpose**: Store contact inquiries and attempt a staff alert.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET or form POST.
+- **Outputs**: Contact HTML with form, validation error, or success.
+- **Dependencies**: ContactMessage, `send_contact_alert`, template renderer, and logger.
+- **Behavior**: Requires trimmed name/email/message, stores first, isolates notification exceptions, and keeps storage as the required outcome.
+- **Side Effects**: Inserts ContactMessage, may send email, and may log notification exceptions.
+
+## Function: staging_seed_preview(request)
+- **Purpose**: Expose read-only seeded-catalog evidence behind an explicit staging flag.
+- **Inputs**:
+  - `request` (`HttpRequest`): GET request.
+- **Outputs**: Preview HTML, 404 while disabled, or 405 for an enabled non-GET request.
+- **Dependencies**: Staging setting, Product ORM, Count, and template renderer.
+- **Behavior**: Loads active products/category/variant counts, materializes totals, and renders the temporary acceptance page.
+- **Side Effects**: Database reads only.
+
+# Module / File: apps/storefront/templatetags/money.py and storefront_tags.py
+
+## Function: peso(value)
+- **Purpose**: Format template centavos without allowing malformed context to crash a page.
+- **Inputs**:
+  - `value` (`object`): Candidate centavo value.
+- **Outputs**: `str` peso display or empty string.
+- **Dependencies**: `format_centavos` and MoneyValueError.
+- **Behavior**: Delegates valid values and suppresses domain-format exceptions.
+- **Side Effects**: None.
+
+## Function: sign(value)
+- **Purpose**: Mint the same signed token consumed by order success/status views.
+- **Inputs**:
+  - `value` (`object`): Usually an Order primary key.
+- **Outputs**: `str` Django Signer token.
+- **Dependencies**: `django.core.signing.Signer`.
+- **Behavior**: Stringifies and signs the value with the configured Django secret.
+- **Side Effects**: None.
+
+## Function: format_centavos_filter(value)
+- **Purpose**: Provide a second template-safe alias for peso formatting.
+- **Inputs**:
+  - `value` (`object`): Candidate centavo value.
+- **Outputs**: `str` formatted amount or empty string.
+- **Dependencies**: `format_centavos` and MoneyValueError.
+- **Behavior**: Delegates valid values and suppresses malformed display input.
+- **Side Effects**: None.
+
+# Module / File: static/js/cart.js and storefront templates
+
+## Function: cartPage()
+- **Purpose**: Supply the Alpine.js cart state machine backed by browser localStorage.
+- **Inputs**:
+  - `metrodrip_cart` (`JSON string | absent`): Browser-stored cart lines.
+  - `cart-updated/storage events` (`Event`): Same-page and cross-tab updates.
+- **Outputs**: Alpine component with items, loading state, item/subtotal getters, mutations, and peso formatting.
+- **Dependencies**: Alpine.js, localStorage, CustomEvent, and optional `window.checkCartAvailability`.
+- **Behavior**: Loads malformed storage as empty, persists mutations, dispatches update events, removes quantities below one, computes display totals, and requests advisory server availability after initialization.
+- **Side Effects**: Reads/writes browser localStorage and registers/dispatches browser events.
+
+## Function: N/A — template and design-layer contract
+- **Purpose**: Describe server-rendered pages and their client-side enhancement boundary.
+- **Inputs**:
+  - `Django context` (`mapping[str, object]`): Products, orders, account data, messages, tokens, and settings.
+  - `browser interaction` (`DOM events`): Variant/cart/checkout/wishlist actions.
+- **Outputs**: Storefront/account/admin HTML styled by `static/css/storefront.css`.
+- **Dependencies**: Django templates, HTMX 2.0.4 with SRI, Alpine.js 3.14.9, Google Fonts, and cart.js.
+- **Behavior**: Base template provides navigation/footer/cart badge. Product detail and checkout embed Alpine components; cart uses cart.js and availability fetches. Cycle 1 corrected homepage banner rendering to the model’s `image_url`. Current CSS remains the pre-plan token system and still requires the dedicated UI/accessibility cycle.
+- **Side Effects**: Browser scripts use localStorage, fetch JSON endpoints, redirect to hosted checkout, and may load third-party CDN/font resources.
+
+# Module / File: Dockerfile, docker-compose.yml, deploy/, and .github/workflows/ci.yml
+
+## Function: N/A — deployment and CI contract
+- **Purpose**: Describe local database, hardened staging, startup, and continuous-validation mechanics.
+- **Inputs**:
+  - `environment` (`mapping[str, str]`): Secrets, hosts, ports, MySQL credentials, and staging flags.
+  - `repository source` (`Docker build context`): Application and dependency manifest.
+- **Outputs**: Local MySQL service, non-root Django image, four-service staging stack, HTTPS ingress, and two CI jobs.
+- **Dependencies**: Docker 28+, Compose 2.40+, `python:3.14-slim`, `mysql:8.4`, `caddy:2-alpine`, Gunicorn, and WhiteNoise.
+- **Behavior**: Local Compose publishes only MySQL for host-run Django. The image installs requirements, keeps source root-owned, grants UID/GID 10001 write access only to static output, and runs the entrypoint. Entrypoint validates seed flags, collects static, migrates, optionally seeds, then execs Gunicorn. Staging isolates MySQL on an internal network and exposes only Caddy. CI now compiles Python before Ruff, runs real-MySQL tests/reversible migrations, builds the image, checks ownership, and exercises disposable HTTPS persistence.
+- **Side Effects**: Builds images, creates containers/networks/volumes, applies migrations/seeds, and may obtain public certificates when deployed with real DNS.
+
+# Module / File: tests/
+
+## Function: N/A — automated regression contract
+- **Purpose**: Summarize executable coverage without treating test helpers as production APIs.
+- **Inputs**:
+  - `pytest invocation` (`command`): `python -m pytest` using `config.settings.test`.
+  - `MySQL service` (`MySQL 8/InnoDB`): Real lock and constraint behavior.
+- **Outputs**: 276 collected passing cases from 174 source-level test functions as of Cycle 1.
+- **Dependencies**: pytest, pytest-django, Django test client, threading/concurrency helpers, seeded data, HMAC fixtures, and MySQL metadata.
+- **Behavior**: Coverage spans admin actions/registration, checkout/payment/webhook flow, two inventory concurrency gates, reservation/ledger semantics, model/database constraints, order allocation/state guards, centavo boundaries, health probes, staging settings/preview, catalog/storefront behavior, template rendering, banner URL regression, and migration-operation regression. Parametrization expands source functions into the 276 executed cases.
+- **Side Effects**: Creates and destroys isolated test database state, sends mail only through the test backend, and may run concurrent database transactions.
+
+# Module / File: apps/accounts/admin.py
+
+## Function: WishlistItemAdmin.has_add_permission(self, request)
+- **Purpose**: Prevent staff from fabricating storefront-managed wishlist rows.
+- **Inputs**:
+  - `self` (`WishlistItemAdmin`): Bound admin instance.
+  - `request` (`HttpRequest`): Staff request.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permission contract.
+- **Behavior**: Denies add access unconditionally.
+- **Side Effects**: None.
+
+## Function: WishlistItemAdmin.has_delete_permission(self, request, obj=None)
+- **Purpose**: Prevent staff from deleting customer-managed wishlist rows.
+- **Inputs**:
+  - `self` (`WishlistItemAdmin`): Bound admin instance.
+  - `request` (`HttpRequest`): Staff request.
+  - `obj` (`WishlistItem | None`): Optional row.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permission contract.
+- **Behavior**: Denies deletion unconditionally.
+- **Side Effects**: None.
+
+# Module / File: apps/catalog/admin.py display helpers
+
+## Function: ProductVariantInline.effective_price_display(self, obj)
+- **Purpose**: Display the resolved variant price in the inline editor.
+- **Inputs**:
+  - `self` (`ProductVariantInline`): Bound inline.
+  - `obj` (`ProductVariant`): Variant or unsaved inline object.
+- **Outputs**: `str` formatted pesos or em dash.
+- **Dependencies**: ProductVariant.price and `format_centavos`.
+- **Behavior**: Returns an em dash before persistence; otherwise formats the effective price.
+- **Side Effects**: May read the related Product; performs no write.
+
+## Function: CategoryAdmin.product_count(self, obj)
+- **Purpose**: Display the number of products assigned to a category.
+- **Inputs**:
+  - `self` (`CategoryAdmin`): Bound admin.
+  - `obj` (`Category`): Category row.
+- **Outputs**: `int` related product count.
+- **Dependencies**: Category.products manager.
+- **Behavior**: Executes the related count query.
+- **Side Effects**: Database read only.
+
+## Function: ProductAdmin.base_price_display(self, obj)
+- **Purpose**: Display a product’s base price in pesos.
+- **Inputs**:
+  - `self` (`ProductAdmin`): Bound admin.
+  - `obj` (`Product`): Product row.
+- **Outputs**: `str` formatted price.
+- **Dependencies**: `format_centavos`.
+- **Behavior**: Formats the integer-centavo base price.
+- **Side Effects**: None.
+
+## Function: ProductAdmin.variant_count(self, obj)
+- **Purpose**: Display the number of variants belonging to a product.
+- **Inputs**:
+  - `self` (`ProductAdmin`): Bound admin.
+  - `obj` (`Product`): Product row.
+- **Outputs**: `int` related variant count.
+- **Dependencies**: Product.variants manager.
+- **Behavior**: Executes the related count query.
+- **Side Effects**: Database read only.
+
+# Module / File: apps/inventory/admin.py
+
+## Function: StockRecordInline.available_display(self, obj)
+- **Purpose**: Display computed availability in the variant inline.
+- **Inputs**:
+  - `self` (`StockRecordInline`): Bound inline.
+  - `obj` (`StockRecord`): Stock row or unsaved inline.
+- **Outputs**: `int | str` available units or em dash.
+- **Dependencies**: StockRecord.available.
+- **Behavior**: Returns an em dash for an unsaved row and computed availability otherwise.
+- **Side Effects**: None.
+
+## Function: StockRecordAdmin.available_display(self, obj)
+- **Purpose**: Display computed availability in the stock list/detail.
+- **Inputs**:
+  - `self` (`StockRecordAdmin`): Bound admin.
+  - `obj` (`StockRecord`): Stock row.
+- **Outputs**: `int` available units.
+- **Dependencies**: StockRecord.available.
+- **Behavior**: Returns on-hand minus reserved.
+- **Side Effects**: None.
+
+## Function: StockMovementAdmin.has_add_permission(self, request)
+- **Purpose**: Keep ledger insertion behind inventory services.
+- **Inputs**:
+  - `self` (`StockMovementAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies manual add access.
+- **Side Effects**: None.
+
+## Function: StockMovementAdmin.has_change_permission(self, request, obj=None)
+- **Purpose**: Prevent staff from rewriting append-only ledger rows.
+- **Inputs**:
+  - `self` (`StockMovementAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+  - `obj` (`StockMovement | None`): Optional row.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies change access.
+- **Side Effects**: None.
+
+## Function: StockMovementAdmin.has_delete_permission(self, request, obj=None)
+- **Purpose**: Prevent staff from erasing append-only ledger rows.
+- **Inputs**:
+  - `self` (`StockMovementAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+  - `obj` (`StockMovement | None`): Optional row.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies delete access.
+- **Side Effects**: None.
+
+## Function: ReservationAdmin.session_key_short(self, obj)
+- **Purpose**: Limit session-key exposure in the reservation list.
+- **Inputs**:
+  - `self` (`ReservationAdmin`): Bound admin.
+  - `obj` (`Reservation`): Reservation row.
+- **Outputs**: `str` blank marker, full short key, or first 12 characters plus ellipsis.
+- **Dependencies**: Reservation.session_key.
+- **Behavior**: Truncates values longer than 12 characters.
+- **Side Effects**: None.
+
+## Function: ReservationAdmin.has_add_permission(self, request)
+- **Purpose**: Keep reservation creation behind checkout services.
+- **Inputs**:
+  - `self` (`ReservationAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies manual creation.
+- **Side Effects**: None.
+
+## Function: ReservationAdmin.has_change_permission(self, request, obj=None)
+- **Purpose**: Keep reservation state transitions behind inventory services.
+- **Inputs**:
+  - `self` (`ReservationAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+  - `obj` (`Reservation | None`): Optional row.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies manual changes.
+- **Side Effects**: None.
+
+## Function: ReservationAdmin.has_delete_permission(self, request, obj=None)
+- **Purpose**: Preserve reservation lifecycle evidence.
+- **Inputs**:
+  - `self` (`ReservationAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+  - `obj` (`Reservation | None`): Optional row.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies deletion.
+- **Side Effects**: None.
+
+# Module / File: apps/inventory/models.py display methods
+
+## Function: StockRecord.__str__(self)
+- **Purpose**: Return readable current stock counters.
+- **Inputs**:
+  - `self` (`StockRecord`): Stock row.
+- **Outputs**: `str` variant ID, on-hand, and reserved values.
+- **Dependencies**: Stored StockRecord fields.
+- **Behavior**: Formats the current counters.
+- **Side Effects**: None.
+
+## Function: Reservation.__str__(self)
+- **Purpose**: Return readable hold identity and lifecycle state.
+- **Inputs**:
+  - `self` (`Reservation`): Reservation row.
+- **Outputs**: `str` variant ID, quantity, and status.
+- **Dependencies**: Stored Reservation fields.
+- **Behavior**: Formats the hold summary.
+- **Side Effects**: None.
+
+## Function: StockMovement.__str__(self)
+- **Purpose**: Return readable signed-ledger information.
+- **Inputs**:
+  - `self` (`StockMovement`): Movement row.
+- **Outputs**: `str` variant ID, signed delta, and reason.
+- **Dependencies**: Stored StockMovement fields.
+- **Behavior**: Formats positive deltas with an explicit plus sign.
+- **Side Effects**: None.
+
+# Module / File: apps/orders/admin.py display and permission helpers
+
+## Function: OrderItemInline.unit_price_display(self, obj)
+- **Purpose**: Display historical unit price in pesos.
+- **Inputs**:
+  - `self` (`OrderItemInline`): Bound inline.
+  - `obj` (`OrderItem`): Item or unsaved inline.
+- **Outputs**: `str` formatted price or em dash.
+- **Dependencies**: `format_centavos`.
+- **Behavior**: Returns an em dash for unsaved rows and formats the snapshot otherwise.
+- **Side Effects**: None.
+
+## Function: OrderItemInline.has_add_permission(self, request, obj=None)
+- **Purpose**: Prevent staff from adding historical order lines.
+- **Inputs**:
+  - `self` (`OrderItemInline`): Bound inline.
+  - `request` (`HttpRequest`): Staff request.
+  - `obj` (`Order | None`): Parent order.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django inline permissions.
+- **Behavior**: Denies add access.
+- **Side Effects**: None.
+
+## Function: OrderItemInline.has_delete_permission(self, request, obj=None)
+- **Purpose**: Prevent staff from deleting historical order lines.
+- **Inputs**:
+  - `self` (`OrderItemInline`): Bound inline.
+  - `request` (`HttpRequest`): Staff request.
+  - `obj` (`Order | None`): Parent order.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django inline permissions.
+- **Behavior**: Denies delete access.
+- **Side Effects**: None.
+
+## Function: OrderAdmin.subtotal_display(self, obj)
+- **Purpose**: Display order subtotal in pesos.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin.
+  - `obj` (`Order`): Order row.
+- **Outputs**: `str` formatted subtotal.
+- **Dependencies**: `format_centavos`.
+- **Behavior**: Formats integer centavos.
+- **Side Effects**: None.
+
+## Function: OrderAdmin.shipping_fee_display(self, obj)
+- **Purpose**: Display order shipping fee in pesos.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin.
+  - `obj` (`Order`): Order row.
+- **Outputs**: `str` formatted shipping fee.
+- **Dependencies**: `format_centavos`.
+- **Behavior**: Formats integer centavos.
+- **Side Effects**: None.
+
+## Function: OrderAdmin.total_display(self, obj)
+- **Purpose**: Display order total in pesos.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin.
+  - `obj` (`Order`): Order row.
+- **Outputs**: `str` formatted total.
+- **Dependencies**: `format_centavos`.
+- **Behavior**: Formats integer centavos.
+- **Side Effects**: None.
+
+## Function: OrderAdmin.has_add_permission(self, request)
+- **Purpose**: Prevent staff from fabricating orders outside checkout.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies add access.
+- **Side Effects**: None.
+
+## Function: OrderAdmin.has_delete_permission(self, request, obj=None)
+- **Purpose**: Prevent staff from erasing commercial history.
+- **Inputs**:
+  - `self` (`OrderAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+  - `obj` (`Order | None`): Optional order.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies deletion.
+- **Side Effects**: None.
+
+# Module / File: apps/orders/models.py display methods
+
+## Function: Order.__str__(self)
+- **Purpose**: Return the public order identifier for display/logging.
+- **Inputs**:
+  - `self` (`Order`): Order row.
+- **Outputs**: `str` order number.
+- **Dependencies**: Order.order_no.
+- **Behavior**: Returns the stored `MD-YYYY-NNNNN` value.
+- **Side Effects**: None.
+
+## Function: OrderItem.__str__(self)
+- **Purpose**: Return readable order-line identity.
+- **Inputs**:
+  - `self` (`OrderItem`): Order line.
+- **Outputs**: `str` order ID, variant ID, and quantity.
+- **Dependencies**: Stored foreign-key IDs and quantity.
+- **Behavior**: Formats the line without loading related objects.
+- **Side Effects**: None.
+
+## Function: OrderNumberSequence.__str__(self)
+- **Purpose**: Return readable annual allocator state.
+- **Inputs**:
+  - `self` (`OrderNumberSequence`): Sequence row.
+- **Outputs**: `str` year and last value.
+- **Dependencies**: Stored sequence fields.
+- **Behavior**: Formats the allocator state.
+- **Side Effects**: None.
+
+# Module / File: apps/payments/admin.py and apps/payments/models.py
+
+## Function: PaymentAdmin.amount_display(self, obj)
+- **Purpose**: Display the payment amount in pesos.
+- **Inputs**:
+  - `self` (`PaymentAdmin`): Bound admin.
+  - `obj` (`Payment`): Payment row.
+- **Outputs**: `str` formatted amount.
+- **Dependencies**: `format_centavos`.
+- **Behavior**: Formats integer centavos.
+- **Side Effects**: None.
+
+## Function: PaymentAdmin.has_add_permission(self, request)
+- **Purpose**: Keep Payment creation behind checkout.
+- **Inputs**:
+  - `self` (`PaymentAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies manual creation.
+- **Side Effects**: None.
+
+## Function: PaymentAdmin.has_delete_permission(self, request, obj=None)
+- **Purpose**: Preserve provider reconciliation history.
+- **Inputs**:
+  - `self` (`PaymentAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+  - `obj` (`Payment | None`): Optional payment.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies deletion.
+- **Side Effects**: None.
+
+## Function: Payment.__str__(self)
+- **Purpose**: Return readable payment identity/state.
+- **Inputs**:
+  - `self` (`Payment`): Payment row.
+- **Outputs**: `str` order ID, method, and status.
+- **Dependencies**: Stored Payment fields.
+- **Behavior**: Formats the payment summary.
+- **Side Effects**: None.
+
+# Module / File: apps/reviews/admin.py and apps/reviews/models.py
+
+## Function: ReviewAdmin.has_add_permission(self, request)
+- **Purpose**: Keep review creation behind verified storefront submission.
+- **Inputs**:
+  - `self` (`ReviewAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies manual creation.
+- **Side Effects**: None.
+
+## Function: ReviewAdmin.has_delete_permission(self, request, obj=None)
+- **Purpose**: Preserve submitted review history while allowing moderation status.
+- **Inputs**:
+  - `self` (`ReviewAdmin`): Bound admin.
+  - `request` (`HttpRequest`): Staff request.
+  - `obj` (`Review | None`): Optional review.
+- **Outputs**: `bool` false.
+- **Dependencies**: Django ModelAdmin permissions.
+- **Behavior**: Denies deletion.
+- **Side Effects**: None.
+
+## Function: Review.__str__(self)
+- **Purpose**: Return readable product/rating/customer/moderation text.
+- **Inputs**:
+  - `self` (`Review`): Review row.
+- **Outputs**: `str` summary.
+- **Dependencies**: Stored Review fields.
+- **Behavior**: Formats product ID, star rating, customer ID, and status.
+- **Side Effects**: None.
+
+# Module / File: apps/shipping/models.py
+
+## Function: ShippingZone.__str__(self)
+- **Purpose**: Return the zone’s display name.
+- **Inputs**:
+  - `self` (`ShippingZone`): Zone row.
+- **Outputs**: `str` name.
+- **Dependencies**: ShippingZone.name.
+- **Behavior**: Returns the stored name.
+- **Side Effects**: None.
+
+## Function: Shipment.__str__(self)
+- **Purpose**: Return readable order/courier/tracking identity.
+- **Inputs**:
+  - `self` (`Shipment`): Shipment row.
+- **Outputs**: `str` order ID, courier, and waybill or fallback text.
+- **Dependencies**: Stored Shipment fields.
+- **Behavior**: Uses `(no waybill)` until booking/manual entry.
+- **Side Effects**: None.

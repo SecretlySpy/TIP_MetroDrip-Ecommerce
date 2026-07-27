@@ -13,7 +13,8 @@
     <div class="banners">
       {% for banner in banners %}
         <a href="{{ banner.link_url|default:'#' }}" class="banner__link">
-          <img src="{{ banner.image.url }}" alt="{{ banner.title }}" class="banner__img">
+          {# HomepageBanner stores a validated remote URL rather than a Django image file. #}
+          <img src="{{ banner.image_url }}" alt="{{ banner.title }}" class="banner__img">
         </a>
       {% endfor %}
     </div>
