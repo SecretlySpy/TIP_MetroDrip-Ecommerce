@@ -176,6 +176,61 @@ docker compose up -d db --wait
 
 Rerunning updates stable catalog metadata but does not reset existing stock or duplicate the initial stock ledger.
 
+### Category hierarchy
+
+Categories are two levels deep: main categories such as **Hoodies**, each with **Men** and **Women** subcategories. Migration `catalog.0003_category_hierarchy` adds those children to whatever main categories a database already holds, and `seed_mock_catalog` re-establishes them for any added later.
+
+Child slugs are parent-prefixed (`hoodies-men`) because `Category.name` is intentionally not unique — "Men" has to exist under every parent. The slug is the only globally unique identifier.
+
+```mermaid
+flowchart TD
+    Root["Hoodies<br/>slug: hoodies"]
+    Men["Men<br/>slug: hoodies-men"]
+    Women["Women<br/>slug: hoodies-women"]
+    Legacy["Products assigned to<br/>Hoodies directly"]
+    PM["Placeholder + real<br/>men's products"]
+    PW["Placeholder + real<br/>women's products"]
+
+    Root --> Men
+    Root --> Women
+    Root -.-> Legacy
+    Men --> PM
+    Women --> PW
+```
+
+A third level is rejected by model validation, and a category cannot become its own parent. Neither rule is a database constraint: depth needs a join, and MySQL refuses a CHECK constraint that references an AUTO_INCREMENT column.
+
+Filtering follows the branch:
+
+| Link | Returns |
+|---|---|
+| `/shop/?category=hoodies` | products on **Hoodies** itself plus everything in its subcategories |
+| `/shop/?category=hoodies-men` | only products assigned to **Hoodies → Men** |
+
+### Filling the catalog for browsing tests
+
+A five-product catalog cannot exercise pagination or a category menu. `seed_mock_catalog` adds deterministic placeholders alongside the demo data, without touching the `seed_demo` contract above:
+
+```bash
+# Preview the plan; writes nothing.
+python manage.py seed_mock_catalog --dry-run
+
+# Create 100 placeholders spread evenly across every subcategory.
+python manage.py seed_mock_catalog
+
+# Any other target works too.
+python manage.py seed_mock_catalog --count 40
+```
+
+| Behaviour | Detail |
+|---|---|
+| `--count` | Number of **placeholders** to maintain, not the total catalog size. A database with 12 real products ends with 112. |
+| Distribution | Round-robin across every subcategory. 100 over 18 leaves gives ten leaves 6 products and eight leaves 5. |
+| Rerun | Creates nothing. Slugs derive from (category, audience, sequence), so a second run resolves to rows that already exist. |
+| Existing stock | Never reset. Quantities, reservations, and thresholds are left exactly as found. |
+| Over target | Reported as a warning. The command has no delete path. |
+| Identification | Placeholders carry `is_mock=True` and are filterable in Django Admin. They are ordinary active products otherwise. |
+
 ## 8. Optional scheduler
 
 Checkout reservations expire through the dedicated scheduler process. In a second terminal:

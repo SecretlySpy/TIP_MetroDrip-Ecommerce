@@ -60,8 +60,14 @@ def get_catalog_queryset(*, filters=None, sort=None, search=None):
 
     # --- Filters ---
 
+    # A main-category slug spans the whole branch: products pinned directly to
+    # the root (legacy assignments predating the hierarchy) plus everything in
+    # its children. A child slug only matches the first half of the OR, because
+    # the taxonomy is capped at two levels so children have no children.
     if category_slug := filters.get("category"):
-        qs = qs.filter(category__slug=category_slug)
+        qs = qs.filter(
+            Q(category__slug=category_slug) | Q(category__parent__slug=category_slug)
+        ).distinct()
 
     # Variant-axis filters: at least one variant must match the selected axis
     # value for the product to appear. Multiple axis filters are AND-combined.
@@ -122,6 +128,50 @@ def get_all_categories():
     return Category.objects.annotate(
         product_count=Count("products", filter=Q(products__is_active=True))
     ).order_by("name")
+
+
+def get_category_tree():
+    """Return main categories with their children, for navigation and filters.
+
+    Exactly two queries regardless of taxonomy size: one for the roots, one for
+    the prefetched children. Both carry an active-product count, so templates
+    can render counts without touching the database.
+
+    Returns
+    -------
+    list[Category]
+        Roots ordered by name. Each carries:
+        `child_categories`  — its children, ordered by name, each annotated
+                              with `product_count`;
+        `product_count`     — products assigned directly to the root;
+        `total_product_count` — the root plus every child, matching what a
+                              click on the main category actually lists.
+    """
+    active_products = Count("products", filter=Q(products__is_active=True))
+
+    children = (
+        Category.objects.filter(parent__isnull=False)
+        .annotate(product_count=active_products)
+        .order_by("name")
+    )
+
+    roots = list(
+        Category.objects.filter(parent__isnull=True)
+        .annotate(product_count=active_products)
+        .prefetch_related(
+            models.Prefetch("children", queryset=children, to_attr="child_categories")
+        )
+        .order_by("name")
+    )
+
+    # Summed in Python from already-prefetched rows; a database-side rollup
+    # would need a third query or a correlated subquery per root.
+    for root in roots:
+        root.total_product_count = root.product_count + sum(
+            child.product_count for child in root.child_categories
+        )
+
+    return roots
 
 
 def get_available_colors():

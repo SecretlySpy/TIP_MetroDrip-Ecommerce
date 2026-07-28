@@ -30,19 +30,46 @@ class ProductVariantInline(admin.TabularInline):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("name", "slug", "product_count")
-    search_fields = ("name",)
+    list_display = ("hierarchy_label", "slug", "parent", "product_count")
+    list_filter = ("parent",)
+    search_fields = ("name", "slug")
     prepopulated_fields = {"slug": ("name",)}
+    ordering = ("parent__name", "name")
+
+    @admin.display(description="Category", ordering="name")
+    def hierarchy_label(self, obj):
+        return obj.hierarchy_label
 
     @admin.display(description="Products")
     def product_count(self, obj):
         return obj.products.count()
 
+    def get_queryset(self, request):
+        # `hierarchy_label` and the `parent` column both dereference the parent.
+        return super().get_queryset(request).select_related("parent")
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """Offer only main categories as parents.
+
+        Model validation already rejects a third level, but filtering the choice
+        list means the invalid option is never presented in the first place.
+        """
+        if db_field.name == "parent":
+            kwargs["queryset"] = Category.objects.filter(parent__isnull=True).order_by("name")
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ("name", "category", "base_price_display", "variant_count", "is_active")
-    list_filter = ("category", "is_active")
+    list_display = (
+        "name",
+        "category",
+        "base_price_display",
+        "variant_count",
+        "is_active",
+        "is_mock",
+    )
+    list_filter = ("category", "is_active", "is_mock")
     search_fields = ("name", "slug")
     prepopulated_fields = {"slug": ("name",)}
     inlines = [ProductVariantInline]

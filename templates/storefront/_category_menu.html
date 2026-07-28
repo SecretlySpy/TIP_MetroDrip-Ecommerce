@@ -1,0 +1,40 @@
+{% comment %}
+  Category menu panel — the single source of the taxonomy markup.
+  Desktop renders it as a mega-dropdown and mobile as an inline list purely
+  through CSS, so the two presentations can never drift apart.
+
+  Each group is a native <details>: keyboard operable, collapsible on small
+  screens, and fully functional with JavaScript disabled. Groups ship open so
+  the menu still reads as a complete map when nothing can toggle them.
+{% endcomment %}
+<div class="category-menu" id="category-menu">
+  <div class="category-menu__grid">
+    {% for root in category_nav %}
+      <details class="category-menu__group" open>
+        <summary class="category-menu__heading">
+          {{ root.name }}
+          <span class="category-menu__count">{{ root.total_product_count }}</span>
+        </summary>
+        <ul class="category-menu__list">
+          <li>
+            <a href="{% url 'storefront:shop' %}?category={{ root.slug }}"
+               class="category-menu__link category-menu__link--all">
+              All {{ root.name }}
+            </a>
+          </li>
+          {% for child in root.child_categories %}
+            <li>
+              <a href="{% url 'storefront:shop' %}?category={{ child.slug }}"
+                 class="category-menu__link">
+                {{ child.name }}
+                <span class="category-menu__count">{{ child.product_count }}</span>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% empty %}
+      <p class="category-menu__empty">No categories have been set up yet.</p>
+    {% endfor %}
+  </div>
+</div>

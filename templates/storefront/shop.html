@@ -38,19 +38,41 @@
         </button>
 
         <div class="filter-panel">
-          {# Category filter #}
+          {% comment %}
+            Category filter — two levels.
+
+            The querystring tag (Django 5.1+) rewrites the *current* query
+            string, so size/color/fit/price/search/sort all survive a category
+            change automatically. page=None drops the page number, which would
+            otherwise strand the visitor on page 4 of a smaller result set.
+          {% endcomment %}
           <div class="filter-group">
             <div class="filter-group__title">Category</div>
-            <div class="filter-group__options">
-              <a href="{% url 'storefront:shop' %}{% if search %}?q={{ search }}{% endif %}"
+            <div class="filter-group__options filter-group__options--tree">
+              <a href="{% querystring category=None page=None %}"
                  class="filter-chip {% if not filters.category %}filter-chip--active{% endif %}">
-                All
+                All Categories
               </a>
-              {% for cat in categories %}
-                <a href="?category={{ cat.slug }}{% if search %}&q={{ search }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}"
-                   class="filter-chip {% if filters.category == cat.slug %}filter-chip--active{% endif %}">
-                  {{ cat.name }} ({{ cat.product_count }})
-                </a>
+
+              {% for root in category_nav %}
+                <div class="filter-tree__group">
+                  <a href="{% querystring category=root.slug page=None %}"
+                     class="filter-chip filter-chip--root {% if filters.category == root.slug %}filter-chip--active{% endif %}"
+                     {% if filters.category == root.slug %}aria-current="true"{% endif %}>
+                    {{ root.name }} ({{ root.total_product_count }})
+                  </a>
+                  {% if root.child_categories %}
+                    <div class="filter-tree__children">
+                      {% for child in root.child_categories %}
+                        <a href="{% querystring category=child.slug page=None %}"
+                           class="filter-chip filter-chip--child {% if filters.category == child.slug %}filter-chip--active{% endif %}"
+                           {% if filters.category == child.slug %}aria-current="true"{% endif %}>
+                          {{ child.name }} ({{ child.product_count }})
+                        </a>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
               {% endfor %}
             </div>
           </div>

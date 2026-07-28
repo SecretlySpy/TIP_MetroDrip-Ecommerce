@@ -77,6 +77,9 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                # Category menu in base.html. Lazily evaluated, so pages that
+                # do not render the navigation issue no extra queries.
+                "apps.catalog.context_processors.category_navigation",
             ],
         },
     },

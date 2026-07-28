@@ -1473,3 +1473,215 @@ h5 { font-size: 1rem; }
 }
 
 .auth-card { max-width: 420px; margin: var(--space-3xl) auto; }
+
+/* =============================================================================
+   Category Navigation (Epic C)
+   =============================================================================
+   One markup tree serves both breakpoints: below 768px the panel renders inline
+   inside the existing mobile drawer, above it becomes an anchored dropdown.
+   Keeping a single DOM structure is what stops the two presentations drifting.
+   ========================================================================== */
+
+.navbar__item--menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* The disclosure is a native <details>, so it works without JavaScript. */
+.navbar__menu-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  cursor: pointer;
+  /* Suppress the default triangle in favour of the chevron SVG. */
+  list-style: none;
+}
+
+.navbar__menu-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.navbar__chevron {
+  transition: transform var(--transition-fast);
+}
+
+.navbar__menu[open] .navbar__chevron {
+  transform: rotate(180deg);
+}
+
+.category-menu {
+  z-index: 60;
+  background: var(--color-surface-raised);
+  border: var(--border-thin);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-lg);
+}
+
+.category-menu__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-lg);
+}
+
+.category-menu__group {
+  min-width: 0;
+}
+
+.category-menu__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-ink);
+  padding-bottom: var(--space-xs);
+  margin-bottom: var(--space-xs);
+  border-bottom: 2px solid var(--color-volt);
+  list-style: none;
+}
+
+.category-menu__heading::-webkit-details-marker {
+  display: none;
+}
+
+.category-menu__list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.category-menu__link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: 0.55rem var(--space-xs);
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.category-menu__link:hover,
+.category-menu__link:focus-visible {
+  background: var(--color-base);
+  color: var(--color-ink);
+}
+
+.category-menu__link--all {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.category-menu__count {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-muted);
+}
+
+.category-menu__empty {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+/* --- Desktop: anchored dropdown --- */
+@media (min-width: 769px) {
+  .category-menu {
+    position: absolute;
+    top: calc(100% + var(--space-md));
+    /* Anchored to the toggle's right edge and growing leftwards. Centring the
+       panel on the toggle pushed it off-screen, because the navigation sits on
+       the right-hand side of the bar. */
+    right: 0;
+    width: min(720px, calc(100vw - 2rem));
+    max-height: min(70vh, 560px);
+    overflow-y: auto;
+  }
+}
+
+/* --- Mobile: inline inside the existing drawer --- */
+@media (max-width: 768px) {
+  .navbar__item--menu {
+    display: block;
+    width: 100%;
+  }
+
+  .category-menu {
+    position: static;
+    width: 100%;
+    margin-top: var(--space-md);
+    box-shadow: none;
+    padding: var(--space-md);
+    /* 9 expanded groups overflow a phone screen; scroll inside the panel
+       rather than pushing the account and cart links off the drawer. */
+    max-height: 55vh;
+    overflow-y: auto;
+  }
+
+  .category-menu__grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-md);
+  }
+
+  /* WCAG 2.5.8 target size — comfortable tapping at 320px width. */
+  .category-menu__link,
+  .category-menu__heading {
+    min-height: 44px;
+  }
+}
+
+/* --- Shop sidebar: two-level filter tree --- */
+.filter-group__options--tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  align-items: stretch;
+}
+
+.filter-tree__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.filter-tree__children {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  padding-left: var(--space-md);
+  /* A rule rather than indentation alone, so the parent/child relationship
+     survives at 320px where the indent is barely perceptible. */
+  border-left: 2px solid var(--color-border);
+  margin-left: var(--space-xs);
+}
+
+.filter-chip--root {
+  font-weight: 600;
+  text-align: left;
+}
+
+.filter-chip--child {
+  font-size: 0.8125rem;
+}
+
+/* --- Shared interaction affordances --- */
+.category-menu__link:focus-visible,
+.category-menu__heading:focus-visible,
+.navbar__menu-toggle:focus-visible,
+.filter-chip:focus-visible {
+  outline: 3px solid var(--color-volt);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navbar__chevron,
+  .category-menu__link {
+    transition: none;
+  }
+}

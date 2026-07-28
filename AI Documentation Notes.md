@@ -168,6 +168,81 @@
 - **Behavior**: Accepts only exact strings `0` and `1`; missing values use the supplied default.
 - **Side Effects**: Reads process environment.
 
+# Module / File: apps/catalog/seed_catalog.py
+
+## Function: N/A - deterministic seed vocabulary
+- **Purpose**: Hold the pure definitions shared by the catalog seeding commands so generated data is byte-identical across machines.
+- **Inputs**:
+  - `parent_slug` (`str`), `audience_suffix` (`str`), `sequence` (`int`), `index` (`int`): coordinates of one placeholder slot.
+- **Outputs**: `AUDIENCES` tuple, colour/size/fit cycles, price-ladder constants, the naming helpers `category_code`, `mock_product_slug`, `mock_product_name`, `mock_sku`, `mock_price`, `mock_variant_axes`, and `allocate_round_robin`.
+- **Dependencies**: `apps.catalog.models.Size`, `apps.catalog.models.Fit`.
+- **Behavior**: Every function is a pure function of its arguments - no randomness, no clock, no database - which is what makes `seed_mock_catalog` safe to rerun. `allocate_round_robin(count, buckets)` returns per-bucket counts with the remainder given to the leading buckets, so 100 items over 18 buckets yields ten 6s followed by eight 5s.
+- **Side Effects**: None.
+
+# Module / File: apps/catalog/management/commands/seed_mock_catalog.py
+
+## Function: Command.handle(self, *args, **options)
+- **Purpose**: Bring the catalog's placeholder population up to `--count`, spread evenly across every audience subcategory.
+- **Inputs**:
+  - `--count` (`int`, default 100): how many `is_mock` products should exist. Counts placeholders only, not hand-authored products, so a database with 12 real products ends at 112.
+  - `--dry-run` (`bool`): plan and report without writing.
+- **Outputs**: `None`. Writes created/existing tallies for categories, products, variants, stock records, and movements to stdout.
+- **Dependencies**: `Category`, `Product`, `ProductVariant`, `StockRecord`, `StockMovement`, `apps.catalog.seed_catalog`.
+- **Behavior**: Aborts with an error when no main categories exist. Ensures every root has its audience children, builds a deterministic slot plan, then creates only the slots whose slug is absent. Warns - without deleting - when placeholders already exceed the target.
+- **Side Effects**: Creates categories, products, variants, stock records, and stock movements. Never updates or deletes an existing row.
+
+## Function: Command._ensure_audience_categories(self, dry_run)
+- **Purpose**: Guarantee that each main category has its `Men` and `Women` children.
+- **Inputs**:
+  - `dry_run` (`bool`): when true, count what is missing without creating it.
+- **Outputs**: `tuple[list, int]` - leaf slots ordered by root slug, and the number of children created.
+- **Dependencies**: `Category`, `AUDIENCES`.
+- **Behavior**: Re-establishes the invariant rather than trusting migration 0003, which back-fills only the categories present when it ran; a database migrated before being seeded has none, and roots added later would otherwise have no children. A dry run still emits the slot so the distribution can be planned and reported.
+- **Side Effects**: Creates `Category` rows unless `dry_run`.
+
+## Function: Command._build_plan(self, count, leaves)
+- **Purpose**: Assign every placeholder slot to a leaf category deterministically.
+- **Inputs**:
+  - `count` (`int`): total placeholders wanted.
+  - `leaves` (`list`): leaf slots from `_ensure_audience_categories`.
+- **Outputs**: `list[dict]` with `root`, `audience`, `category`, `sequence`, and a monotonic `index`.
+- **Dependencies**: `allocate_round_robin`.
+- **Behavior**: Quotas come from round-robin allocation; sequence numbers restart at 1 per leaf so existing slugs stay stable when the target changes.
+- **Side Effects**: None.
+
+## Function: Command._create_product_graph(self, slug, slot, stats)
+- **Purpose**: Create one placeholder together with the inventory rows that make it buyable.
+- **Inputs**:
+  - `slug` (`str`): natural key.
+  - `slot` (`dict`): plan entry.
+  - `stats` (`dict`): counters, mutated in place.
+- **Outputs**: `None`.
+- **Dependencies**: `Product`, `ProductVariant`, `StockRecord`, `StockMovement`, `MovementReason`.
+- **Behavior**: Wrapped in `transaction.atomic`. A product without its variant, stock row, and opening ledger entry would be an unbuyable listing and a hole in the audit trail, so the graph commits all-or-nothing.
+- **Side Effects**: Inserts one product, one variant, one stock record, and one restock movement.
+
+## Function: Command._heal_product_graph(self, product, slot, stats)
+- **Purpose**: Restore inventory rows that an existing placeholder is missing, without disturbing rows that survive.
+- **Inputs**:
+  - `product` (`Product`): an existing placeholder.
+  - `slot` (`dict`): plan entry.
+  - `stats` (`dict`): counters, mutated in place.
+- **Outputs**: `None`.
+- **Dependencies**: `ProductVariant`, `StockRecord`, `StockMovement`, `MovementReason`.
+- **Behavior**: Strictly additive - an existing `StockRecord` is never read back or rewritten, so operational quantities, reservations, and thresholds survive untouched. An opening movement is posted only when the ledger is empty, because `StockMovement` is append-only: a duplicated opening balance could never be corrected and would leave the ledger permanently disagreeing with `qty_on_hand`. A healthy database never reaches this path; it exists for catalog tables that outlived their inventory tables.
+- **Side Effects**: May insert a variant, a stock record, and a movement.
+
+# Module / File: apps/catalog/context_processors.py
+
+## Function: category_navigation(request)
+- **Purpose**: Publish the category tree to every rendered template as `category_nav`.
+- **Inputs**:
+  - `request` (`HttpRequest`): unused; required by the context-processor contract.
+- **Outputs**: `dict` with `category_nav` wrapped in `SimpleLazyObject`.
+- **Dependencies**: `apps.catalog.services.get_category_tree`.
+- **Behavior**: Laziness is load-bearing - without it every admin page, HTMX fragment, and error page would pay two catalog queries for navigation it never renders.
+- **Side Effects**: None until a template dereferences the value.
+
 # Module / File: config/admin.py
 
 ## Function: MetroDripAdminSite.login(self, request, extra_context=None)
@@ -341,6 +416,31 @@
 
 # Module / File: apps/catalog/models.py
 
+## Function: Category.clean(self)
+- **Purpose**: Reject self-parenting, third-level nesting, and duplicate sibling names before a category is saved through a form.
+- **Inputs**:
+  - `self` (`Category`): The instance being validated, with `parent_id` and `name` already assigned.
+- **Outputs**: `None` on success; raises `ValidationError` keyed by field otherwise.
+- **Dependencies**: `Category` table (sibling lookup), `django.core.exceptions.ValidationError`.
+- **Behavior**: When a parent is set, rejects the instance as its own parent, rejects a parent that itself has a parent (depth cap of `Category.MAX_DEPTH` = 2), and rejects demoting a category that already has children. Then rejects any existing sibling sharing the same name under the same parent, excluding itself on update. Errors accumulate and raise together. Django calls this from ModelForm validation, so the admin is covered; bare `Model.save()` does not invoke it.
+- **Side Effects**: None. Read-only; performs at most one sibling query.
+
+## Function: Category.is_root(self)
+- **Purpose**: Report whether the category sits at the top of the taxonomy.
+- **Inputs**: none beyond `self`.
+- **Outputs**: `bool` - `True` when `parent_id` is `None`.
+- **Dependencies**: none.
+- **Behavior**: Reads `parent_id` without dereferencing the relation, so it never triggers a query.
+- **Side Effects**: None.
+
+## Function: Category.hierarchy_label(self)
+- **Purpose**: Render the category's position for admin lists and debugging.
+- **Inputs**: none beyond `self`.
+- **Outputs**: `str` - the name for a root, `"Parent -> Child"` otherwise.
+- **Dependencies**: `Category.parent`.
+- **Behavior**: Dereferences `parent` for non-roots, so callers listing many rows should `select_related("parent")`. `CategoryAdmin.get_queryset` does exactly that.
+- **Side Effects**: None.
+
 ## Function: Category.__str__(self)
 - **Purpose**: Return category display text.
 - **Inputs**:
@@ -389,6 +489,14 @@
 - **Dependencies**: Product, ReviewStatus, Django `Q`, `Avg`, `Count`, `Min`, and `Max`.
 - **Behavior**: Restricts to active products, filters variant axes conjunctively, ignores malformed optional integer price filters, searches multiple fields, deduplicates joins, and defaults unknown sorts to newest.
 - **Side Effects**: None until queryset evaluation; evaluation performs database reads.
+
+## Function: get_category_tree()
+- **Purpose**: Return main categories with their children and active-product counts, for the global menu and the shop filter tree.
+- **Inputs**: none.
+- **Outputs**: `list[Category]` - roots ordered by name, each carrying `child_categories` (children ordered by name, annotated with `product_count`), its own `product_count` for directly assigned products, and `total_product_count` for the whole branch.
+- **Dependencies**: `Category`, `Product`.
+- **Behavior**: Exactly two queries regardless of taxonomy size - one for roots, one for the prefetched children - so templates can render counts without touching the database. `total_product_count` is summed in Python from already-prefetched rows; a database-side rollup would need a third query or a correlated subquery per root.
+- **Side Effects**: None.
 
 ## Function: get_all_categories()
 - **Purpose**: Return categories with active-product counts.

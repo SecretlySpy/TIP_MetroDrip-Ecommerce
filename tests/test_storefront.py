@@ -172,6 +172,59 @@ class TestShopListing:
         assert product.name.encode() in response.content
         assert product2.name.encode() not in response.content
 
+    def test_category_filter_renders_as_a_tree(self, client, category, product, variant):
+        """C-4: main categories and their children, with counts."""
+        child = Category.objects.create(name="Men", slug="t-shirts-men", parent=category)
+        Product.objects.create(name="Mens Tee", slug="mens-tee", category=child, base_price=59900)
+
+        body = client.get("/shop/").content.decode()
+
+        assert "filter-chip--root" in body
+        assert "filter-chip--child" in body
+        assert "?category=t-shirts" in body
+        assert "?category=t-shirts-men" in body
+
+    def test_selected_category_is_marked_current(self, client, category, product, variant):
+        body = client.get("/shop/?category=t-shirts").content.decode()
+
+        assert 'aria-current="true"' in body
+
+    def test_category_filter_keeps_other_active_filters(self, client, category, product, variant):
+        """C-5: switching category must not silently drop size/sort/search."""
+        body = client.get("/shop/?size=M&sort=price_asc&q=Essential").content.decode()
+
+        assert "size=M" in body
+        assert "sort=price_asc" in body
+        assert "q=Essential" in body
+
+    def test_pagination_preserves_filters(self, client, category):
+        """The old ?page=N links replaced the whole query string."""
+        for index in range(15):
+            Product.objects.create(
+                name=f"Bulk Tee {index}",
+                slug=f"bulk-tee-{index}",
+                category=category,
+                base_price=50000 + index,
+            )
+
+        body = client.get("/shop/?category=t-shirts&sort=price_asc").content.decode()
+
+        assert "page=2" in body
+        # Every pagination link must carry the active filters forward.
+        for fragment in ('href="?', "category=t-shirts", "sort=price_asc"):
+            assert fragment in body
+
+    def test_subcategory_filter_excludes_siblings(self, client, category):
+        men = Category.objects.create(name="Men", slug="t-shirts-men", parent=category)
+        women = Category.objects.create(name="Women", slug="t-shirts-women", parent=category)
+        Product.objects.create(name="M Tee", slug="m-tee", category=men, base_price=1000)
+        Product.objects.create(name="W Tee", slug="w-tee", category=women, base_price=1000)
+
+        body = client.get("/shop/?category=t-shirts-men").content.decode()
+
+        assert "M Tee" in body
+        assert "W Tee" not in body
+
     def test_filter_by_size(self, client, product, variant, variant2):
         response = client.get("/shop/?size=M")
         assert product.name.encode() in response.content

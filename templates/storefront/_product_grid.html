@@ -13,25 +13,35 @@
     {% endfor %}
   </div>
 
-  {# Pagination #}
+  {% comment %}
+    Pagination.
+
+    The querystring tag rewrites only the page parameter and keeps every active
+    filter, search term, and sort order. The previous ?page=N form replaced the
+    whole query string, so paging away from a filtered result set silently
+    dropped the filters.
+  {% endcomment %}
   {% if page.paginator.num_pages > 1 %}
   <nav class="pagination" aria-label="Product pages">
     {% if page.has_previous %}
-      <a href="?page={{ page.previous_page_number }}" class="pagination__link">&laquo;</a>
+      <a href="{% querystring page=page.previous_page_number %}" class="pagination__link"
+         rel="prev" aria-label="Previous page">&laquo;</a>
     {% else %}
       <span class="pagination__link pagination__link--disabled">&laquo;</span>
     {% endif %}
 
     {% for num in page.paginator.page_range %}
       {% if num == page.number %}
-        <span class="pagination__link pagination__link--active">{{ num }}</span>
+        <span class="pagination__link pagination__link--active" aria-current="page">{{ num }}</span>
       {% elif num > page.number|add:"-3" and num < page.number|add:"3" %}
-        <a href="?page={{ num }}" class="pagination__link">{{ num }}</a>
+        <a href="{% querystring page=num %}" class="pagination__link"
+           aria-label="Page {{ num }}">{{ num }}</a>
       {% endif %}
     {% endfor %}
 
     {% if page.has_next %}
-      <a href="?page={{ page.next_page_number }}" class="pagination__link">&raquo;</a>
+      <a href="{% querystring page=page.next_page_number %}" class="pagination__link"
+         rel="next" aria-label="Next page">&raquo;</a>
     {% else %}
       <span class="pagination__link pagination__link--disabled">&raquo;</span>
     {% endif %}

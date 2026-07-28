@@ -53,7 +53,9 @@ def test_product_detail_renders(client, seeded):
     assert product.name in response.content.decode()
 
 
-def test_cart_page_renders(client):
+def test_cart_page_renders(client, db):
+    # `db` became necessary when the category menu moved into base.html: every
+    # storefront page now reads the taxonomy, so no page renders DB-free.
     assert client.get(reverse("storefront:cart")).status_code == 200
 
 
@@ -92,7 +94,8 @@ def test_flatpages_render(client, seeded):
         assert client.get(url).status_code == 200, url
 
 
-def test_login_and_register_pages_render(client):
+def test_login_and_register_pages_render(client, db):
+    # See test_cart_page_renders — base.html now queries the category tree.
     assert client.get(reverse("accounts:login")).status_code == 200
     assert client.get(reverse("accounts:register")).status_code == 200
 

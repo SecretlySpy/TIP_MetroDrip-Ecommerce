@@ -36,6 +36,37 @@
       <ul class="navbar__links" :class="{ 'navbar__links--open': mobileNav }">
         <li><a href="{% url 'storefront:home' %}" class="navbar__link {% block nav_home %}{% endblock %}">Home</a></li>
         <li><a href="{% url 'storefront:shop' %}" class="navbar__link {% block nav_shop %}{% endblock %}">Shop</a></li>
+
+        {% comment %}
+          Category disclosure built on native <details>.
+
+          Chosen over an Alpine-only x-show panel so the menu genuinely works
+          with JavaScript disabled: the browser handles open/close, keyboard
+          activation, and the expanded state it exposes to assistive tech. It
+          is also closed in the markup, so there is no flash of an open menu
+          while the deferred Alpine bundle loads.
+
+          Alpine only adds what <details> lacks — Escape and click-outside. It
+          writes `open` directly rather than mirroring it into component state:
+          a two-way `:open` / `@toggle` binding races the native toggle and can
+          slam the panel shut again the moment it opens.
+        {% endcomment %}
+        <li class="navbar__item navbar__item--menu" x-data
+            @click.outside="$refs.categoryMenu.open = false"
+            @keydown.escape.window="$refs.categoryMenu.open = false">
+          <details class="navbar__menu" x-ref="categoryMenu">
+            <summary class="navbar__link navbar__menu-toggle" aria-controls="category-menu">
+              Browse Categories
+              <svg class="navbar__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="3" stroke-linecap="round"
+                   stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </summary>
+            {% include "storefront/_category_menu.html" %}
+          </details>
+        </li>
+
         <li>
           {% if user.is_authenticated %}
             <a href="{% url 'accounts:profile' %}" class="navbar__link">Account</a>
