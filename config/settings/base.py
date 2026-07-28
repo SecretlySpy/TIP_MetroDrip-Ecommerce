@@ -31,7 +31,9 @@ ALLOWED_HOSTS: list[str] = []
 
 INSTALLED_APPS = [
     "whitenoise.runserver_nostatic",
-    "django.contrib.admin",
+    # Replaces "django.contrib.admin" so the admin uses MetroDrip branding.
+    # AdminConfig still autodiscovers every app's admin.py exactly as before.
+    "config.admin.MetroDripAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",

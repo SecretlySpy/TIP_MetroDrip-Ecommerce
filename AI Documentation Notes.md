@@ -168,6 +168,27 @@
 - **Behavior**: Accepts only exact strings `0` and `1`; missing values use the supplied default.
 - **Side Effects**: Reads process environment.
 
+# Module / File: config/admin.py
+
+## Function: MetroDripAdminSite.login(self, request, extra_context=None)
+- **Purpose**: Render the admin login page under the heading "Administrator Login" while leaving every other admin page branded "MetroDrip Administration".
+- **Inputs**:
+  - `request` (`HttpRequest`): The incoming login GET or POST.
+  - `extra_context` (`dict | None`): Additional template context supplied by a caller.
+- **Outputs**: `HttpResponse` — the rendered login page, or a redirect once authenticated.
+- **Dependencies**: `django.contrib.admin.AdminSite`.
+- **Behavior**: Merges `site_header="Administrator Login"` into `extra_context` and delegates to `AdminSite.login`. `AdminSite.login` applies `extra_context` after `each_context`, so the override wins for this view only. Overriding `each_context` instead would also retitle the logout and password-reset pages, which are likewise unauthenticated.
+- **Side Effects**: None.
+
+## Function: N/A — admin site registration contract
+- **Purpose**: Install `MetroDripAdminSite` as the project's default admin site without editing any app's `admin.py`.
+- **Inputs**:
+  - `INSTALLED_APPS` (`list[str]`): Must list `config.admin.MetroDripAdminConfig` in place of `django.contrib.admin`.
+- **Outputs**: `django.contrib.admin.site` resolves to `MetroDripAdminSite`; class attributes set `site_header` to "MetroDrip Administration", `site_title` to "MetroDrip Administration", and `index_title` to "Dashboard".
+- **Dependencies**: `django.contrib.admin.apps.AdminConfig`.
+- **Behavior**: `AdminConfig.default_site` is resolved lazily by the `admin.site` proxy, so existing `admin.site.register(...)` calls across every app and `admin.site.urls` in `config/urls.py` bind to the branded site with no further change. Subclassing `AdminConfig` preserves the autodiscovery of each app's `admin.py` that `django.contrib.admin` normally performs.
+- **Side Effects**: None at import time; autodiscovery runs during app registry population as before.
+
 # Module / File: config/views.py
 
 ## Function: liveness(request)
