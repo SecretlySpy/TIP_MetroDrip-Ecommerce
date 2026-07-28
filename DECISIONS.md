@@ -212,9 +212,9 @@
 - **Rationale:** Order numbers are sequential and guessable; both pages render checkout PII, so numbering must not be an access credential (FR-15's tokenized-link requirement applies to both pages).
 - **Consequences:** Emails, templates, and views all mint tokens with the same default `Signer`, so links are interchangeable; templates use the `sign` filter in `storefront_tags`.
 
-## ADR-E-001 — Two-level category taxonomy
+## ADR-C-002 — Two-level category taxonomy
 
-- **Status:** Accepted. Supersedes the flat single-level `Category` assumed by ADR-A-002's data model.
+- **Status:** Accepted. Revises ADR-A-002: a product still belongs to exactly one category, but a category may now itself belong to a parent.
 - **Decision:** `Category` gains a nullable self-referencing `parent` (PROTECT, `related_name="children"`) capped at two levels. Every main category gets `Men` and `Women` children whose slugs are parent-prefixed (`hoodies-men`). `Category.name` loses its global uniqueness so "Men" can repeat under every parent; `slug` remains globally unique and is the only stable identifier.
 - **Rationale:** The alternative — separate `MainCategory` and `Subcategory` tables — enforces exactly two levels structurally but duplicates every category behaviour, forks `Product.category`, and doubles the admin surface. A self-reference is the smallest extension of the existing domain and keeps one FK on `Product`.
 - **Consequences:**
@@ -223,11 +223,11 @@
   - Filtering a main category must span the branch: `category__slug=X OR category__parent__slug=X`. Products assigned directly to a root before the hierarchy existed keep working, and a child slug matches only its own products because the tree cannot go deeper.
   - Every storefront page now issues two extra catalog queries for the menu. The context processor is lazy, so pages that do not render navigation pay nothing.
 
-## ADR-E-002 — Placeholder catalog as a separate command
+## ADR-C-003 — Placeholder catalog as a separate command
 
 - **Status:** Accepted
 - **Decision:** Bulk placeholder data lives in `seed_mock_catalog`, not in `seed_demo`. Products are flagged `is_mock`; `--count` (default 100) is the number of *placeholders* to maintain, independent of the hand-authored catalog. Each placeholder gets one variant, one stock record, and one opening restock movement, created in a single transaction.
-- **Rationale:** `seed_demo`'s five-product / 180-variant output is a contract the staging preview and several tests assert against. Inflating it to reach a catalog-size target would break those; a separate command leaves the contract intact.
+- **Rationale:** The five-product / 180-variant output fixed by ADR-A-012 is a contract the staging preview and several tests assert against. Inflating it to reach a catalog-size target would break those; a separate command leaves the contract intact.
 - **Consequences:**
   - Idempotency comes from natural keys — `mock-<parent>-<audience>-<seq>` — not from counting, so a rerun resolves to the same slugs and writes nothing. Existing stock, reservations, and thresholds are never read back or rewritten.
   - The command re-establishes the audience children itself rather than trusting migration 0003, which back-fills only the categories that existed when it ran. A database migrated before being seeded has none.
