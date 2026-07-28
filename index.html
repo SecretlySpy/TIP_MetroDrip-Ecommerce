@@ -437,6 +437,16 @@
       padding: var(--space-lg);
     }
 
+    figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--color-border);
+    }
+
+    /* Placeholder styling is retained for any figure that does not yet have a
+       captured image. See docs/images/README.md for the capture conventions. */
     .ph {
       display: flex;
       flex-direction: column;
@@ -786,15 +796,12 @@ uv --version</code></pre></div>
       </div>
 
       <figure>
-        <div class="ph">
-          <span class="ph__icon" aria-hidden="true">🖼️</span>
-          <span class="ph__title">Screenshot placeholder</span>
-          <span class="ph__path">docs/images/01-docker-desktop-running.png</span>
-        </div>
+        <img src="docs/images/01-tools-verified.png"
+             alt="Terminal showing four version checks: git version 2.54.0.windows.1, Python 3.14.4, Docker version 28.5.1, and uv 0.11.12."
+             loading="lazy" width="1250" height="530">
         <figcaption>
-          <b>Suggested capture:</b> Docker Desktop open on the Containers tab, with the whale icon in the
-          system tray / menu bar showing the green “running” state. This is what students should see
-          <em>before</em> continuing to Step 5.
+          All four tools answering with a version number. If any line says “not recognised” instead,
+          revisit the install step for that tool and open a fresh terminal.
         </figcaption>
       </figure>
     </section>
@@ -967,14 +974,12 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <figure>
-        <div class="ph">
-          <span class="ph__icon" aria-hidden="true">🖼️</span>
-          <span class="ph__title">Screenshot placeholder</span>
-          <span class="ph__path">docs/images/02-mysql-container-healthy.png</span>
-        </div>
+        <img src="docs/images/02-mysql-container-healthy.png"
+             alt="Terminal showing docker compose up -d db --wait progressing through Starting, Started, Waiting and finishing at Healthy, followed by docker compose ps listing metrodrip-mysql running mysql:8.4 on port 3306."
+             loading="lazy" width="1250" height="438">
         <figcaption>
-          <b>Suggested capture:</b> the terminal output above showing <code>metrodrip-mysql  Healthy</code>,
-          or the Docker Desktop Containers tab with <code>metrodrip-mysql</code> green and running.
+          <b>Healthy</b> is the word to look for. The follow-up <code>docker compose ps</code> confirms the
+          container is up and publishing port 3306.
         </figcaption>
       </figure>
     </section>
@@ -1051,15 +1056,12 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <figure>
-        <div class="ph">
-          <span class="ph__icon" aria-hidden="true">🖼️</span>
-          <span class="ph__title">Screenshot placeholder</span>
-          <span class="ph__path">docs/images/03-storefront-homepage.png</span>
-        </div>
+        <img src="docs/images/03-storefront-homepage.png"
+             alt="MetroDrip storefront homepage showing the navigation bar and the New Arrivals product grid, with items including Night Route Windbreaker at 2,499 pesos and Platform Twill Overshirt at 1,699 pesos."
+             loading="lazy" width="1600" height="1075">
         <figcaption>
-          <b>Suggested capture:</b> the storefront homepage at <code>http://127.0.0.1:8000/</code> with the
-          navigation bar and product grid visible. This is the “it worked” payoff image — put it near the
-          top of any presentation.
+          The New Arrivals grid on the homepage, served from your own machine. Product cards show a text
+          placeholder because the demo seed ships pricing and stock but no photography.
         </figcaption>
       </figure>
     </section>
@@ -1116,14 +1118,12 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <figure>
-        <div class="ph">
-          <span class="ph__icon" aria-hidden="true">🖼️</span>
-          <span class="ph__title">Screenshot placeholder</span>
-          <span class="ph__path">docs/images/04-admin-dashboard.png</span>
-        </div>
+        <img src="docs/images/04-admin-dashboard.png"
+             alt="Django admin site administration page after logging in, listing the Accounts, Authentication and Authorization, Catalog, CMS, Flat pages, and Inventory sections."
+             loading="lazy" width="1600" height="1075">
         <figcaption>
-          <b>Suggested capture:</b> the Django admin dashboard after logging in, showing the Catalog,
-          Inventory, and Orders sections. Useful for demonstrating the staff-side features.
+          The admin dashboard after a successful login. Every app in the system appears here — Catalog for
+          products, Inventory for stock records and movements, and Orders further down the page.
         </figcaption>
       </figure>
     </section>
@@ -1189,14 +1189,23 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </ol>
 
       <figure>
-        <div class="ph">
-          <span class="ph__icon" aria-hidden="true">🖼️</span>
-          <span class="ph__title">Screenshot placeholder</span>
-          <span class="ph__path">docs/images/05-cart-and-checkout.png</span>
-        </div>
+        <img src="docs/images/05-cart.png"
+             alt="MetroDrip cart page with one line item: Night Route Windbreaker, XS / Carbon Black / oversized, SKU MD-NRJK-XS-CBLK-OVR, quantity 1, 2,499 pesos. The order summary panel shows an estimated total of 2,499 pesos."
+             loading="lazy" width="1600" height="1075">
         <figcaption>
-          <b>Suggested capture:</b> a two-panel image — the cart with one item on the left, the checkout form
-          on the right. Good evidence of a working end-to-end purchase flow for your report.
+          The cart after adding one variant. Note the SKU <code>MD-NRJK-XS-CBLK-OVR</code> — size, colour,
+          and fit each become part of the variant identity, and stock is tracked per variant rather than per
+          product.
+        </figcaption>
+      </figure>
+
+      <figure>
+        <img src="docs/images/06-checkout.png"
+             alt="MetroDrip checkout page with a shipping details form on the left and an order summary on the right carrying the Night Route Windbreaker line item and a 2,499 peso total."
+             loading="lazy" width="1600" height="1075">
+        <figcaption>
+          Checkout carries the same line item through to the order summary. Shipping stays unpriced until a
+          region is chosen, and card details are handled by PayMongo rather than by MetroDrip.
         </figcaption>
       </figure>
     </section>
@@ -1378,15 +1387,13 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <figure>
-        <div class="ph">
-          <span class="ph__icon" aria-hidden="true">🗺️</span>
-          <span class="ph__title">Diagram placeholder</span>
-          <span class="ph__path">docs/images/06-troubleshooting-flowchart.png</span>
-        </div>
+        <img src="docs/images/07-troubleshooting-flowchart.png"
+             alt="Decision flowchart titled 'The page will not load — what to check'. Four questions in sequence: is the runserver terminal still running, is the database container healthy, does /healthz/ready/ return ok, and is the catalogue empty. Each 'no' branches right to a fix command; answering through to the end suggests a hard refresh."
+             loading="lazy" width="1175" height="751">
         <figcaption>
-          <b>Suggested diagram:</b> a decision flowchart — “Page will not load?” → “Is the server terminal
-          still running?” → “Is Docker running?” → “Does <code>/healthz/ready/</code> respond?” → likely cause.
-          Draw it in draw.io or Figma and export as PNG.
+          Work down the left column and take the right-hand branch at the first “No”. Four questions cover
+          nearly every local failure, because there are only two moving parts — the server process and the
+          database container.
         </figcaption>
       </figure>
     </section>
