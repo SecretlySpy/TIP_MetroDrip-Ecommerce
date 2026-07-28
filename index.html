@@ -183,14 +183,17 @@
       border-bottom: 1px solid var(--color-border);
     }
 
+    /* Wraps rather than scrolls. A horizontal scrollbar hides links behind a
+       gesture people do not think to try in a page that scrolls vertically, and
+       on a trackpad the bar is invisible until you touch it. */
     .tocbar nav {
       display: flex;
-      gap: var(--space-lg);
-      overflow-x: auto;
+      flex-wrap: wrap;
+      column-gap: var(--space-md);
+      row-gap: 0.15rem;
       padding: var(--space-sm) var(--space-lg);
       max-width: var(--container-max);
       margin: 0 auto;
-      scrollbar-width: thin;
     }
 
     .tocbar a {
@@ -206,6 +209,37 @@
     }
 
     .tocbar a:hover { color: var(--color-ink); border-bottom-color: var(--color-volt); }
+
+    /* Narrow screens wrap the fifteen links onto five or six rows. Pinned, that
+       is roughly a third of a phone viewport permanently spent on navigation,
+       so below this width the bar scrolls away with the content instead. */
+    @media (max-width: 767px) {
+      .tocbar {
+        position: static;
+        backdrop-filter: none;
+        background: var(--color-base);
+      }
+
+      /* Wrapped tightly, "OVERVIEW 1 · INSTALL 2 · CODE" reads as one run-on
+         string: the gap between links ends up narrower than the interpunct
+         inside them. Chips make each link's extent unambiguous without needing
+         the wide desktop gap. */
+      .tocbar nav {
+        column-gap: var(--space-xs);
+        row-gap: var(--space-xs);
+        padding: var(--space-sm) var(--space-lg) var(--space-md);
+      }
+
+      .tocbar a {
+        padding: 0.3rem 0.55rem;
+        border-radius: var(--radius-pill);
+        background: var(--color-surface-raised);
+        border: 1px solid var(--color-border);
+        border-bottom-width: 1px;
+      }
+
+      html { scroll-padding-top: 1rem; }
+    }
 
     /* --- Sections --- */
     main { padding-top: var(--space-2xl); }
@@ -364,9 +398,11 @@
       pointer-events: none;
     }
 
+    /* Deliberately not sticky. Its old `top: 2.6rem` hard-coded the height of a
+       single-line tocbar; now that the tocbar wraps, no fixed offset can be
+       correct at every width, and two stacked sticky bars ate the viewport on a
+       phone regardless. The OS is chosen once, so scrolling back is cheap. */
     .ostabs {
-      position: sticky;
-      top: 2.6rem;
       z-index: 15;
       display: flex;
       flex-wrap: wrap;
@@ -548,7 +584,6 @@
     :focus-visible { outline: 3px solid var(--color-volt); outline-offset: 2px; }
 
     @media (max-width: 640px) {
-      .ostabs { position: static; }
       .section-head { flex-direction: column; gap: var(--space-xs); }
     }
   </style>
@@ -585,10 +620,10 @@
   <div class="tocbar">
     <nav aria-label="Guide sections">
       <a href="#overview">Overview</a>
-      <a href="#install">1 · Install tools</a>
-      <a href="#clone">2 · Get the code</a>
-      <a href="#venv">3 · Python env</a>
-      <a href="#config">4 · Configure</a>
+      <a href="#install">1 · Install</a>
+      <a href="#clone">2 · Code</a>
+      <a href="#venv">3 · Python</a>
+      <a href="#config">4 · Config</a>
       <a href="#database">5 · Database</a>
       <a href="#migrate">6 · Data</a>
       <a href="#run">7 · Run</a>
