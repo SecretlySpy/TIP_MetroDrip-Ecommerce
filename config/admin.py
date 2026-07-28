@@ -1,36 +1,22 @@
-"""Admin site branding.
+"""Admin app configuration.
 
-Swapping `django.contrib.admin` for `config.admin.MetroDripAdminConfig` in
-INSTALLED_APPS makes `admin.site` resolve to the site below, so every existing
-`admin.site.register(...)` call and `admin.site.urls` keeps working unchanged.
+Replacing `django.contrib.admin` with `config.admin.MetroDripAdminConfig` in
+INSTALLED_APPS makes `admin.site` resolve to `AdministratorSite`, so every
+`admin.site.register(...)` call and `admin.site.urls` keeps working — the
+administrator console simply *is* Django's default site.
+
+`default_site` is a dotted path rather than an import because this module is
+loaded during `apps.populate()`, before models exist. Django resolves the string
+in `AdminConfig.ready()`, by which point `config.consoles` can safely import
+`apps.accounts.roles`.
+
+The merchant console is a second, non-default site — see `config/consoles.py`.
 """
 
-from django.contrib import admin
 from django.contrib.admin.apps import AdminConfig
 
 
-class MetroDripAdminSite(admin.AdminSite):
-    """Default admin site with MetroDrip branding."""
-
-    site_header = "MetroDrip Administration"
-    site_title = "MetroDrip Administration"
-    index_title = "Dashboard"
-
-    def login(self, request, extra_context=None):
-        """Render the login page under its own heading.
-
-        `AdminSite.login` applies `extra_context` last, after `each_context`, so
-        this overrides the site header for the login page only. Overriding
-        `each_context` instead would also retitle logout and password-reset,
-        which are unauthenticated too.
-        """
-        return super().login(
-            request,
-            {**(extra_context or {}), "site_header": "Administrator Login"},
-        )
-
-
 class MetroDripAdminConfig(AdminConfig):
-    """Point Django's admin app at the branded site above."""
+    """Point Django's admin app at the administrator console."""
 
-    default_site = "config.admin.MetroDripAdminSite"
+    default_site = "config.consoles.AdministratorSite"

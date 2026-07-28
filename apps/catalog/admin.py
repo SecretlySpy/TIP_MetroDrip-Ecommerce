@@ -1,13 +1,18 @@
-"""Django admin configuration for the catalog domain (C-1).
+"""Catalog administration — **merchant console** (FR Merchant-01).
 
 Registers Category, Product, and ProductVariant with a variant-matrix generator
 action that creates all Size × Color × Fit combinations for a product.
+
+Merchandising is the seller's job, so none of this appears on the administrator
+console (ADR-F-001). An administrator who needs it holds a superuser account,
+which both consoles admit.
 """
 
 from django.contrib import admin
 from django.db import IntegrityError, transaction
 
 from apps.orders.money import format_centavos
+from config.consoles import merchant_site
 
 from .models import Category, Fit, Product, ProductVariant, Size
 
@@ -28,7 +33,7 @@ class ProductVariantInline(admin.TabularInline):
         return format_centavos(obj.price)
 
 
-@admin.register(Category)
+@admin.register(Category, site=merchant_site)
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ("hierarchy_label", "slug", "parent", "product_count")
     list_filter = ("parent",)
@@ -59,7 +64,7 @@ class CategoryAdmin(admin.ModelAdmin):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
-@admin.register(Product)
+@admin.register(Product, site=merchant_site)
 class ProductAdmin(admin.ModelAdmin):
     list_display = (
         "name",

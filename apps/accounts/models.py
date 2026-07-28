@@ -7,8 +7,13 @@ cannot log in yet; it is not used as a guest-identity flag.
 """
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+
+from .roles import CONSOLE_ROLES, StaffRole
+
+__all__ = ["CONSOLE_ROLES", "Customer", "CustomerManager", "StaffRole", "WishlistItem"]
 
 
 class CustomerManager(BaseUserManager):
@@ -37,11 +42,27 @@ class CustomerManager(BaseUserManager):
     def create_superuser(self, email, password, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
+        # A superuser reaches every console regardless of role, but defaulting to
+        # ADMINISTRATOR keeps `role` an honest description of the account rather
+        # than leaving the project's most privileged login labelled "Customer".
+        extra_fields.setdefault("role", StaffRole.ADMINISTRATOR)
         if not password:
             raise ValueError("Superuser requires a non-empty password")
         if not (extra_fields["is_staff"] and extra_fields["is_superuser"]):
             raise ValueError("Superuser must have is_staff=True and is_superuser=True")
         return self._create(email, password, **extra_fields)
+
+    def merchants(self):
+        """Accounts that can currently reach the merchant console."""
+        return self.filter(is_active=True, is_staff=True).filter(
+            models.Q(is_superuser=True) | models.Q(role=StaffRole.MERCHANT)
+        )
+
+    def administrators(self):
+        """Accounts that can currently reach the administrator console."""
+        return self.filter(is_active=True, is_staff=True).filter(
+            models.Q(is_superuser=True) | models.Q(role=StaffRole.ADMINISTRATOR)
+        )
 
 
 class Customer(AbstractBaseUser, PermissionsMixin):
@@ -56,7 +77,18 @@ class Customer(AbstractBaseUser, PermissionsMixin):
     addresses = models.JSONField(default=list, blank=True)
 
     is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)  # admin-site access only, never storefront logic
+    is_staff = models.BooleanField(default=False)  # console access only, never storefront logic
+    # Which back-office console this account belongs to. `is_staff` is the gate;
+    # `role` is the routing. Both are checked on every console request — see
+    # `config.consoles.ConsoleSite.has_permission`.
+    role = models.CharField(
+        max_length=16,
+        choices=StaffRole.choices,
+        default=StaffRole.CUSTOMER,
+        db_index=True,
+        help_text="Which back-office console this account may enter. "
+        "Requires staff status to take effect.",
+    )
     date_joined = models.DateTimeField(default=timezone.now)
 
     objects = CustomerManager()
@@ -66,6 +98,56 @@ class Customer(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+
+    def clean(self):
+        """Reject a console role that staff status would silently neutralise.
+
+        Like `Category.clean`, this runs through ModelForms (so the administrator
+        console cannot save the contradiction) but not through bulk seeds, which
+        are trusted. The runtime check in `console` is the real boundary — this
+        only stops an operator from creating an account that looks privileged and
+        is not.
+        """
+        super().clean()
+        if self.role in CONSOLE_ROLES and not self.is_staff:
+            raise ValidationError(
+                {
+                    "is_staff": "Staff status is required for the "
+                    f"{self.get_role_display()} role to grant console access."
+                }
+            )
+
+    @property
+    def console(self):
+        """The console this account may enter right now, or None.
+
+        Superusers answer ADMINISTRATOR because that console owns account and
+        role management; `ConsoleSite.has_permission` waves them into the
+        merchant console separately rather than forcing a second login.
+        """
+        if not (self.is_active and self.is_staff):
+            return None
+        if self.is_superuser:
+            return StaffRole.ADMINISTRATOR
+        return self.role if self.role in CONSOLE_ROLES else None
+
+    @property
+    def is_merchant(self):
+        """True when this account may enter the merchant console."""
+        return (
+            self.is_active
+            and self.is_staff
+            and (self.is_superuser or self.role == StaffRole.MERCHANT)
+        )
+
+    @property
+    def is_administrator(self):
+        """True when this account may enter the administrator console."""
+        return (
+            self.is_active
+            and self.is_staff
+            and (self.is_superuser or self.role == StaffRole.ADMINISTRATOR)
+        )
 
 
 class WishlistItem(models.Model):

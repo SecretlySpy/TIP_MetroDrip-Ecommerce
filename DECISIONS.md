@@ -233,3 +233,38 @@
   - The command re-establishes the audience children itself rather than trusting migration 0003, which back-fills only the categories that existed when it ran. A database migrated before being seeded has none.
   - A rerun heals a placeholder missing its inventory rows (partially reversed migration, partial restore) but posts an opening movement only when the ledger is empty. StockMovement is append-only, so a duplicated opening balance could never be corrected.
   - Exceeding the target is reported, never corrected: the command has no delete path.
+
+## ADR-F-001 — Two back-office consoles, not one admin with permissions
+
+- **Status:** Accepted. Realises Epic F-2 and separates the Merchant/Seller requirements from the Administrator requirements.
+- **Decision:** The back office is two Django `AdminSite` instances mounted at different paths. `/admin/` is `AdministratorSite` — accounts, roles, shipping fees, platform settings, audit trail. `/merchant/` is `MerchantSite` — catalog, inventory, orders, payments, shipments, site content, review moderation. Every model is registered on exactly **one** of them; a test asserts the intersection is empty. `Customer.role` (`customer` | `merchant` | `administrator`) selects the console and `is_staff` remains the gate, so both are required. Superusers are admitted to both.
+- **Rationale:** A single site plus per-model permissions was the obvious alternative and is not equivalent. Django builds the admin index from the **registry**, not from permissions, so a merchant would still be shown "Accounts", "Shipping Zones" and "Audit Trail" headings with empty tables beneath them — the separation would be presentational. Two registries make it structural: the URL for an administrator model does not exist under `/merchant/`, so guessing it returns 404 rather than 403. Separate sites also give each console its own login form, branding, and denial page for free.
+- **Consequences:**
+  - `admin.site` stays the administrator console (`AdminConfig.default_site`), which preserves the `admin:` URL namespace that Django's own templates and every existing `reverse("admin:…")` call depend on. Only the merchant console needed a new namespace.
+  - `config/consoles.py` must not be imported before the app registry is ready, so `default_site` is a dotted string resolved in `AdminConfig.ready()` and the role vocabulary lives in `apps/accounts/roles.py`, which imports no models.
+  - Role checks had to be added to the **login form**, not just to `has_permission`. `AdminAuthenticationForm` only checks `is_staff`, which a merchant has, so `/admin/login/` would have accepted merchant credentials, redirected to the index, been refused, and bounced back to the form — an endless loop. Rejecting at the form turns it into one clear message.
+  - A signed-in user who lands on the wrong console gets a 403 page naming their own console, not a second login form. Re-prompting would imply their password was wrong. That page cannot use `admin/base_site.html`, which builds a sidebar from `available_apps` the user has no permission to enumerate, so it is standalone with inlined CSS.
+  - `django.contrib.flatpages` registers itself on the default site during autodiscovery; `apps.cms` unregisters and re-registers it on the merchant console. This depends on `flatpages` sorting before `apps.cms` in INSTALLED_APPS.
+  - Shipping is deliberately split across both consoles: `ShippingZone` (what customers are charged) is administrator, `Shipment` (this parcel's waybill) is merchant. A merchant can dispatch all day without repricing delivery.
+  - Payments and orders live only on the merchant console. Administrator oversight is the audit trail, not a duplicate screen; an administrator who genuinely needs the row holds a superuser account.
+
+## ADR-F-002 — Console permissions derived from the registries
+
+- **Status:** Accepted
+- **Decision:** `sync_console_roles` builds the `Merchants` and `Administrators` groups by walking each console's `_registry` and probing each `ModelAdmin`'s `has_add/change/delete_permission` with a stub request whose user passes every permission check. `view` is granted unconditionally; the other three are granted only where the ModelAdmin allows them. Membership is synced from `role` in the same pass and is exclusive — a re-roled account loses the old group.
+- **Rationale:** The role gate is not the only check; Django still asks `has_perm` per model. A new merchant with the correct role and no permissions signs in to a completely empty console, which reads as a bug and gets "fixed" by granting superuser — destroying the separation the role was introduced to create. Deriving grants from the registry rather than a hand-written list means moving a model between consoles (a one-word change at the `admin.register` call) is picked up on the next run instead of leaving a stale grant behind.
+- **Consequences:**
+  - Read-only admins are respected automatically: `StockMovement`, `Reservation`, `Payment`, and `LogEntry` come back view-only without being named anywhere in the command. The probe is what makes this work, and it is the reason the command reads `_registry` — a private attribute, used deliberately so ownership stays declared at the registration site.
+  - `permissions_for_site` pairs `(content_type_id, codename)` exactly rather than filtering the two columns independently, which would over-match where two models share a codename.
+  - Permissions that `post_migrate` has not created yet are reported, not raised on: the remaining grants are still correct and a later `migrate` completes the set.
+  - `create_console_account` exists because `createsuperuser` only makes superusers, and a superuser reaches both consoles — using it is the fastest way to accidentally prove nothing about the separation.
+
+## ADR-C-004 — Per-visitor correctness beats a shared homepage cache
+
+- **Status:** Accepted. Fixes a live defect found while verifying ADR-F-001.
+- **Decision:** `storefront.homepage` keeps `@cache_page(60 * 5)` but adds `@vary_on_cookie` **below** it, so the Vary header is patched before `cache_page` chooses its key.
+- **Rationale:** The homepage renders `base.html`, whose navbar is per-user — "Log In" vs "Account", and now the staff console shortcut. `cache_page` is a view decorator and stores the response before `SessionMiddleware.process_response` adds `Vary: Cookie`; the header reached the browser but arrived too late to affect the cache key. The first render of `/` was therefore replayed to every visitor for five minutes, in both directions.
+- **Consequences:**
+  - Anonymous visitors have no session cookie until something writes to the session, so they still share one cache entry — the NFR-1 benefit is kept for the traffic that dominates this page. Signed-in visitors each get their own entry.
+  - Asserting `Vary: Cookie` on the response is **not** a regression test for this: the header is present with or without the fix. Only the cached body distinguishes the two states, so the tests compare rendered content across sessions.
+  - The suite's settings use `DummyCache`, which makes every page-cache assertion vacuous. The three tests that cover this install a real `LocMemCache` through a fixture and clear it on both sides.

@@ -1,16 +1,20 @@
-"""Django admin configuration for the payments domain (C-1).
+"""Payment records — **merchant console** (FR Merchant-05).
 
 Payment records are webhook-driven (Hard Invariant 3) and read-only in admin.
+They sit beside orders because a merchant processing a refund needs the
+transaction in front of them; the administrator console governs which payment
+*methods* exist, not individual transactions.
 """
 
 from django.contrib import admin
 
 from apps.orders.money import format_centavos
+from config.consoles import merchant_site
 
 from .models import Payment
 
 
-@admin.register(Payment)
+@admin.register(Payment, site=merchant_site)
 class PaymentAdmin(admin.ModelAdmin):
     list_display = ("order", "method", "status", "amount_display", "provider_ref", "paid_at")
     list_filter = ("method", "status")

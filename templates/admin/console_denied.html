@@ -1,0 +1,91 @@
+{% comment %}
+Shown when a signed-in staff member lands on the console they do NOT belong to
+(config.consoles.ConsoleSite.render_wrong_console). Served with HTTP 403.
+
+Deliberately standalone rather than extending admin/base_site.html: that template
+builds a nav sidebar out of `available_apps`, which the requesting user has no
+permission to enumerate on this site. Rendering our own page keeps a refusal from
+depending on the very context the refusal denies.
+
+The styling is inlined for the same reason it is on Django's own 403 page — this
+must render even if the admin's static files were never collected.
+{% endcomment %}<title>{{ title }} | {{ site_header }}</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; padding: 2rem 1rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5; color: #303030; background: #f8f8f8;
+  }
+  .panel {
+    max-width: 34rem; margin: 3rem auto; padding: 1.75rem;
+    background: #fff; border: 1px solid #e0e0e0; border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
+  }
+  h1 { margin: 0 0 .75rem; font-size: 1.35rem; color: #ba2121; }
+  p { margin: 0 0 1rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1.5rem; }
+  a.button {
+    display: inline-block; padding: .55rem 1rem; border-radius: 4px;
+    background: #417690; color: #fff; text-decoration: none; font-weight: 600;
+  }
+  a.button--muted, button.button--muted {
+    background: #fff; color: #417690; border: 1px solid #417690;
+  }
+  a.button:hover, a.button:focus-visible,
+  button.button:hover, button.button:focus-visible { background: #205067; color: #fff; }
+  a.button:focus-visible, button.button:focus-visible {
+    outline: 3px solid #f5dd5d; outline-offset: 2px;
+  }
+  button.button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    padding: .55rem 1rem; border-radius: 4px;
+  }
+  form { margin: 0; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #121212; color: #e8e8e8; }
+    .panel { background: #1c1c1c; border-color: #3a3a3a; }
+    h1 { color: #e97b7b; }
+    a.button--muted, button.button--muted {
+      background: transparent; color: #8ec9e3; border-color: #8ec9e3;
+    }
+  }
+</style>
+
+<div class="panel">
+  <h1>You are signed in to the wrong console</h1>
+
+  <p>
+    Your account does not have access to the <strong>{{ requested_console }}</strong>.
+    {% if own_console_label %}
+      It belongs to the <strong>{{ own_console_label }}</strong> console.
+    {% endif %}
+  </p>
+
+  <p>
+    MetroDrip keeps selling and platform governance on separate consoles, so an
+    account is admitted to one or the other. If you need access here, ask an
+    administrator to change your role.
+  </p>
+
+  <div class="actions">
+    {% if own_console_url %}
+      <a class="button" href="{{ own_console_url }}">Go to my console</a>
+    {% endif %}
+
+    {% comment %}
+    POST, not a link: signing someone out is a state change, so it carries a CSRF
+    token and cannot be triggered by a crafted <img> on another page. `next`
+    returns to *this* console's login, which is the whole reason for the button —
+    without it the swap lands on the storefront and the operator has to find the
+    console URL again.
+    {% endcomment %}
+    <form method="post" action="{% url 'accounts:logout' %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ login_url }}">
+      <button type="submit" class="button button--muted">Sign in as someone else</button>
+    </form>
+
+    <a class="button button--muted" href="/">Back to the storefront</a>
+  </div>
+</div>

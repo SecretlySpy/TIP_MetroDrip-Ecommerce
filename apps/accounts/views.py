@@ -87,8 +87,16 @@ def login_view(request):
 
 @require_POST
 def logout_view(request):
+    """Sign out, then return to `next` if it is safe, else the storefront home.
+
+    The `next` hop exists for the console-denied page: a staff member who lands
+    on the wrong console needs to swap accounts and come back to *that* console's
+    login, not be dumped on the storefront and left to find it again. It reuses
+    `_safe_next_url`, so an open redirect is impossible here for the same reason
+    it is on login.
+    """
     logout(request)
-    return redirect("storefront:home")
+    return redirect(_safe_next_url(request) or "storefront:home")
 
 
 @login_required

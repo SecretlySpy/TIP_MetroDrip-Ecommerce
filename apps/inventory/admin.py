@@ -1,4 +1,4 @@
-"""Django admin configuration for the inventory domain (C-1).
+"""Inventory administration — **merchant console** (FR Merchant-02).
 
 StockRecord is shown as an inline on the catalog's ProductVariant admin.
 StockMovement is registered as a read-only view — append-only data cannot be
@@ -7,6 +7,8 @@ visibility into active checkout holds.
 """
 
 from django.contrib import admin
+
+from config.consoles import merchant_site
 
 from .models import Reservation, StockMovement, StockRecord
 
@@ -26,7 +28,7 @@ class StockRecordInline(admin.StackedInline):
         return obj.available
 
 
-@admin.register(StockRecord)
+@admin.register(StockRecord, site=merchant_site)
 class StockRecordAdmin(admin.ModelAdmin):
     list_display = (
         "variant",
@@ -44,7 +46,7 @@ class StockRecordAdmin(admin.ModelAdmin):
         return obj.available
 
 
-@admin.register(StockMovement)
+@admin.register(StockMovement, site=merchant_site)
 class StockMovementAdmin(admin.ModelAdmin):
     """Append-only audit log — no edit or delete permitted."""
 
@@ -65,7 +67,7 @@ class StockMovementAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(Reservation)
+@admin.register(Reservation, site=merchant_site)
 class ReservationAdmin(admin.ModelAdmin):
     """Operational view of checkout holds — read-only."""
 

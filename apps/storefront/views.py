@@ -19,6 +19,7 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.cache import cache_page
 from django.views.decorators.http import require_GET
+from django.views.decorators.vary import vary_on_cookie
 
 from apps.accounts.models import WishlistItem
 from apps.catalog.models import Fit, Product, ProductVariant, Size
@@ -48,8 +49,27 @@ logger = logging.getLogger(__name__)
 
 @require_GET
 @cache_page(60 * 5)  # NFR-1: catalog pages are cacheable
+@vary_on_cookie
 def homepage(request):
-    """Render the homepage with hero banners and the newest active products."""
+    """Render the homepage with hero banners and the newest active products.
+
+    `vary_on_cookie` is not optional here, and its position matters.
+
+    This page renders base.html, whose navbar is per-user: "Log In" vs "Account",
+    plus the staff console shortcut. `cache_page` is a *view* decorator, so it
+    stores the response before `SessionMiddleware.process_response` gets a chance
+    to add `Vary: Cookie` — the header does reach the browser, but it arrives too
+    late to influence the cache key. One visitor's rendered navbar was therefore
+    served to every other visitor for the next five minutes.
+
+    Decorators apply bottom-up, so `vary_on_cookie` must sit *below* `cache_page`:
+    on the way out it patches the Vary header first, and `cache_page` then reads
+    that header when choosing the key.
+
+    Anonymous visitors have no session cookie until something writes to the
+    session, so they still share a single cache entry — the NFR-1 benefit is kept
+    for the traffic that dominates this page.
+    """
     featured_products = list(
         Product.objects.filter(is_active=True)
         .select_related("category")

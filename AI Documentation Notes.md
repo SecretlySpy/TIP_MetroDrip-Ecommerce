@@ -7,7 +7,7 @@
   - `scheduled invocation` (`APScheduler job`): Reservation-expiry and low-stock work.
 - **Outputs**: HTML responses, narrow JSON responses, provider acknowledgements, email/SMS attempts, and transactional MySQL state.
 - **Dependencies**: Python 3.14, Django 5.2, MySQL 8.4/InnoDB, Django templates, HTMX 2.0.4, Alpine.js 3.14.9, APScheduler, Gunicorn, WhiteNoise, Caddy, PayMongo, Semaphore, and Google Maps.
-- **Behavior**: The repository is one Django modular monolith containing 10 first-party apps (`catalog`, `inventory`, `orders`, `payments`, `shipping`, `notifications`, `accounts`, `reviews`, `cms`, and `storefront`), one MySQL database, and one dedicated scheduler process. Views delegate catalog queries and stock/order/payment mutations to domain services. Direct model relationships cross app boundaries inside the same database. The staging topology is Caddy → Gunicorn/Django → MySQL, with one separate scheduler container using the same image.
+- **Behavior**: The repository is one Django modular monolith containing 10 first-party apps (`catalog`, `inventory`, `orders`, `payments`, `shipping`, `notifications`, `accounts`, `reviews`, `cms`, and `storefront`), one MySQL database, and one dedicated scheduler process. Views delegate catalog queries and stock/order/payment mutations to domain services. Direct model relationships cross app boundaries inside the same database. The staging topology is Caddy → Gunicorn/Django → MySQL, with one separate scheduler container using the same image. The back office is **two** role-scoped Django admin sites, not one (ADR-F-001): `/admin/` is the administrator console (accounts, roles, shipping fees, audit trail) and `/merchant/` is the merchant console (catalog, inventory, orders, content, reviews). Every model is registered on exactly one of them.
 - **Side Effects**: This documentation entry performs none; the described runtime writes orders, reservations, payments, shipments, reviews, CMS content, notification logs, and inventory ledger rows.
 
 ## Function: N/A — request and data-flow contract
@@ -26,7 +26,7 @@
   - `repository source` (`filesystem tree`): Application, templates, assets, migrations, tests, and deployment configuration.
 - **Outputs**: A machine-readable implementation boundary for later cycles.
 - **Dependencies**: All modules documented below.
-- **Behavior**: Implemented capabilities include email-based Django authentication; customer profiles; order history; guest-order claiming; wishlists; a CMS banner/contact/flatpage layer; product/category/three-axis variants; catalog search/filter/sort; localStorage cart; stock availability checks; atomic checkout holds; integer-centavo money; hosted/mock payment checkout; signed webhook confirmation; tokenized order pages; order state enforcement; inventory reservation/ledger services; scheduler jobs; shipping-zone rates; mock J&T booking; review moderation; admin reports/invoices/CSV actions; container health probes; and provider-neutral local HTTPS staging.
+- **Behavior**: Implemented capabilities include email-based Django authentication; customer profiles; order history; guest-order claiming; wishlists; a CMS banner/contact/flatpage layer; product/category/three-axis variants; two-level category navigation; catalog search/filter/sort; localStorage cart; stock availability checks; atomic checkout holds; integer-centavo money; hosted/mock payment checkout; signed webhook confirmation; tokenized order pages; order state enforcement; inventory reservation/ledger services; scheduler jobs; shipping-zone rates; mock J&T booking; review moderation; admin reports/invoices/CSV actions; container health probes; provider-neutral local HTTPS staging; and **separated administrator and merchant consoles** with a role field, per-console login forms, a wrong-console denial page, registry-derived group permissions, an append-only administrator audit trail, and superuser-only management of roles and privilege fields.
 - **Side Effects**: None.
 
 ## Function: N/A — known implementation-gap inventory
@@ -245,24 +245,101 @@
 
 # Module / File: config/admin.py
 
-## Function: MetroDripAdminSite.login(self, request, extra_context=None)
-- **Purpose**: Render the admin login page under the heading "Administrator Login" while leaving every other admin page branded "MetroDrip Administration".
+## Function: N/A — admin app configuration
+- **Purpose**: Install `AdministratorSite` as the project's default admin site without editing any app's `admin.py`.
+- **Inputs**:
+  - `INSTALLED_APPS` (`list[str]`): Must list `config.admin.MetroDripAdminConfig` in place of `django.contrib.admin`.
+- **Outputs**: `django.contrib.admin.site` resolves to `config.consoles.AdministratorSite`.
+- **Dependencies**: `django.contrib.admin.apps.AdminConfig`.
+- **Behavior**: `default_site` is a **dotted path string**, not an import. Django loads this module during `apps.populate()`, before models exist, so importing `config.consoles` here — which imports `apps.accounts.roles` — would raise `AppRegistryNotReady`. Django resolves the string in `AdminConfig.ready()`, after models are loaded. Because the administrator console *is* the default site, every existing `admin.site.register(...)` call and `admin.site.urls` binds to it unchanged, and the `admin:` URL namespace is preserved for Django's own templates.
+- **Side Effects**: None at import time; autodiscovery runs during app registry population as before.
+- **DSA Used**: None.
+- **Data Analysis Notes**: None.
+- **Responsive & Accessibility Notes**: None.
+- **Security Notes**: Selecting the default site is what makes the administrator console the one reachable at `/admin/`; the access rules themselves live in `config/consoles.py`.
+
+# Module / File: config/consoles.py
+
+## Function: ConsoleSite.has_permission(self, request)
+- **Purpose**: Decide whether a request may enter this console at all (ADR-F-001).
+- **Inputs**:
+  - `request` (`HttpRequest`): Any request routed through `AdminSite.admin_view`.
+- **Outputs**: `bool` — True only for an active staff account whose role matches this console, or any superuser.
+- **Dependencies**: `apps.accounts.roles.StaffRole`.
+- **Behavior**: Returns False unless `user.is_active and user.is_staff`, then admits superusers unconditionally and otherwise requires `user.role == self.console_role`. Anonymous users fail on `is_active`, so the role lookup is never reached for them; `getattr` guards it regardless because `AnonymousUser` has no `role`.
+- **Side Effects**: None.
+- **DSA Used**: Constant-time attribute comparison; no queries.
+- **Data Analysis Notes**: None.
+- **Responsive & Accessibility Notes**: None.
+- **Security Notes**: This is the server-side gate for every view on the console (NFR-10). It runs before any view body, so hidden or disabled interface controls are never the only protection. It is checked on *every* request, so revoking `is_active`, `is_staff`, or the role takes effect on the next request rather than at the next login.
+
+## Function: ConsoleSite.login(self, request, extra_context=None)
+- **Purpose**: Render this console's login page, or explain a wrong-console landing.
 - **Inputs**:
   - `request` (`HttpRequest`): The incoming login GET or POST.
   - `extra_context` (`dict | None`): Additional template context supplied by a caller.
-- **Outputs**: `HttpResponse` — the rendered login page, or a redirect once authenticated.
-- **Dependencies**: `django.contrib.admin.AdminSite`.
-- **Behavior**: Merges `site_header="Administrator Login"` into `extra_context` and delegates to `AdminSite.login`. `AdminSite.login` applies `extra_context` after `each_context`, so the override wins for this view only. Overriding `each_context` instead would also retitle the logout and password-reset pages, which are likewise unauthenticated.
-- **Side Effects**: None.
+- **Outputs**: `HttpResponse` — the login form (200), a redirect once authenticated, or the wrong-console page (403).
+- **Dependencies**: `django.contrib.admin.AdminSite.login`, `ConsoleSite.render_wrong_console`.
+- **Behavior**: If the requester is already authenticated but fails `has_permission`, delegates to `render_wrong_console` instead of showing a form — they arrived here because `admin_view` bounced them, and their credentials were not wrong. Otherwise merges `site_header=self.login_heading` into `extra_context`. `AdminSite.login` applies `extra_context` after `each_context`, so the heading override wins for this view only; overriding `each_context` would also retitle logout and password-reset.
+- **Side Effects**: None directly; `AdminSite.login` may create a session on success.
+- **DSA Used**: None.
+- **Data Analysis Notes**: None.
+- **Responsive & Accessibility Notes**: Inherits Django's responsive `admin/login.html`.
+- **Security Notes**: The heading is cosmetic. The actual per-console credential check is in `ConsoleAuthenticationForm.confirm_login_allowed`.
 
-## Function: N/A — admin site registration contract
-- **Purpose**: Install `MetroDripAdminSite` as the project's default admin site without editing any app's `admin.py`.
+## Function: ConsoleSite.render_wrong_console(self, request)
+- **Purpose**: Return a 403 page naming the console the signed-in user actually owns.
 - **Inputs**:
-  - `INSTALLED_APPS` (`list[str]`): Must list `config.admin.MetroDripAdminConfig` in place of `django.contrib.admin`.
-- **Outputs**: `django.contrib.admin.site` resolves to `MetroDripAdminSite`; class attributes set `site_header` to "MetroDrip Administration", `site_title` to "MetroDrip Administration", and `index_title` to "Dashboard".
-- **Dependencies**: `django.contrib.admin.apps.AdminConfig`.
-- **Behavior**: `AdminConfig.default_site` is resolved lazily by the `admin.site` proxy, so existing `admin.site.register(...)` calls across every app and `admin.site.urls` in `config/urls.py` bind to the branded site with no further change. Subclassing `AdminConfig` preserves the autodiscovery of each app's `admin.py` that `django.contrib.admin` normally performs.
-- **Side Effects**: None at import time; autodiscovery runs during app registry population as before.
+  - `request` (`HttpRequest`): The refused request.
+- **Outputs**: `HttpResponse` with status 403 rendering `admin/console_denied.html`.
+- **Dependencies**: `Customer.console`, `CONSOLE_NAMESPACE`, `django.urls.reverse`.
+- **Behavior**: Reads `request.user.console`; if it names a *different* console, reverses that console's index for a "Go to my console" link. Also passes this console's login URL so the page can offer a CSRF-protected account swap through the storefront logout — this console's own logout is unreachable from here, because `admin_view` bounces a permission-less request off it back to the index.
+- **Side Effects**: None.
+- **DSA Used**: Dictionary lookup on `CONSOLE_NAMESPACE`.
+- **Data Analysis Notes**: None.
+- **Responsive & Accessibility Notes**: The template is standalone with inlined CSS, honours `prefers-color-scheme`, keeps a visible `:focus-visible` outline on every action, and uses a single-column layout that is readable at 320 px. It deliberately does not extend `admin/base_site.html`, which builds a nav sidebar from `available_apps` the requester has no permission to enumerate.
+- **Security Notes**: Discloses only which console the requester's *own* account belongs to — never what exists on the console being refused. Status is 403, not 200, so automated clients and logs record a refusal.
+
+## Function: ConsoleAuthenticationForm.confirm_login_allowed(self, user)
+- **Purpose**: Reject correct credentials belonging to the other console (ADR-F-001).
+- **Inputs**:
+  - `user` (`Customer`): The account that just authenticated.
+- **Outputs**: `None` on success; raises `ValidationError` with code `wrong_console` otherwise.
+- **Dependencies**: `django.contrib.admin.forms.AdminAuthenticationForm`.
+- **Behavior**: Calls `super()` first (which checks `is_active` then `is_staff`), then admits superusers and accounts whose `role` equals `self.console_role`.
+- **Side Effects**: None.
+- **DSA Used**: None.
+- **Data Analysis Notes**: None.
+- **Responsive & Accessibility Notes**: The error renders in Django's standard admin form error region, which is announced by screen readers.
+- **Security Notes**: Without this the separation would be a **redirect loop**, not a boundary: `AdminAuthenticationForm` checks only `is_staff`, which a merchant has, so `/admin/login/` would accept merchant credentials, redirect to the index, be refused by `has_permission`, and bounce back to the form indefinitely. The message names the console, never whether the account exists.
+
+## Function: N/A — console registry ownership contract
+- **Purpose**: Record which console owns which model, and why the split is structural.
+- **Inputs**:
+  - `admin.site._registry` (`dict[Model, ModelAdmin]`): Administrator console registry.
+  - `merchant_site._registry` (`dict[Model, ModelAdmin]`): Merchant console registry.
+- **Outputs**: Two disjoint sets of models; the intersection is asserted empty by `tests/test_console_separation.py`.
+- **Dependencies**: Every app's `admin.py`.
+- **Behavior**: Administrator console (`/admin/`, namespace `admin`) holds `accounts.Customer`, `accounts.WishlistItem`, `auth.Group`, `admin.LogEntry`, `shipping.ShippingZone`, and `sites.Site` — 6 models. Merchant console (`/merchant/`, namespace `merchant`) holds `catalog.Category`, `catalog.Product`, `inventory.StockRecord`, `inventory.StockMovement`, `inventory.Reservation`, `orders.Order`, `payments.Payment`, `shipping.Shipment`, `reviews.Review`, `cms.HomepageBanner`, `cms.ContactMessage`, and `flatpages.FlatPage` — 12 models. `apps.cms` unregisters `FlatPage` from the default site and re-registers it on the merchant console, relying on `django.contrib.flatpages` sorting before `apps.cms` in INSTALLED_APPS.
+- **Side Effects**: None.
+- **DSA Used**: Two hash maps keyed by model class; ownership lookup and the disjointness check are both O(1) per model.
+- **Data Analysis Notes**: Shipping is the only domain that spans both consoles — `ShippingZone` (what customers are charged) is governance, `Shipment` (this parcel's waybill) is fulfilment.
+- **Responsive & Accessibility Notes**: Each console renders Django's standard responsive admin theme.
+- **Security Notes**: Because Django builds the admin index from the registry rather than from permissions, disjoint registries mean an administrator model's URL **does not exist** under `/merchant/` — guessing it returns 404, not 403. A single site with per-model permissions would still render empty headings for the other role's models.
+
+# Module / File: apps/accounts/roles.py
+
+## Function: N/A — back-office role vocabulary
+- **Purpose**: Define the console roles in a module that imports no models.
+- **Inputs**: None.
+- **Outputs**: `StaffRole` (`TextChoices`: `customer`, `merchant`, `administrator`) and `CONSOLE_ROLES` (`frozenset`).
+- **Dependencies**: `django.db.models.TextChoices`.
+- **Behavior**: Exists as a separate module because `config.consoles` needs these values while the admin app is still starting; importing `apps.accounts.models` at that point would raise `AppRegistryNotReady`. A `TextChoices` subclass registers nothing with the app registry, so this module is safe to import at any point. `apps.accounts.models` re-exports both names.
+- **Side Effects**: None.
+- **DSA Used**: `frozenset` membership test for `CONSOLE_ROLES`, O(1).
+- **Data Analysis Notes**: Roles are mutually exclusive; there is no multi-role account. A superuser is modelled as a flag on top of a role, not as a fourth role.
+- **Responsive & Accessibility Notes**: None.
+- **Security Notes**: `is_staff` answers "may this account reach a console at all"; `role` answers "which one". Both are required, so clearing `is_staff` revokes access without having to rewrite the role.
 
 # Module / File: config/views.py
 
@@ -318,9 +395,57 @@
   - `password` (`str`): Required non-empty password.
   - `extra_fields` (`dict[str, object]`): Optional model values.
 - **Outputs**: Persisted privileged `Customer`.
-- **Dependencies**: `CustomerManager._create`.
-- **Behavior**: Defaults both privilege flags true and rejects missing passwords or false privilege overrides.
+- **Dependencies**: `CustomerManager._create`, `StaffRole`.
+- **Behavior**: Defaults both privilege flags true, defaults `role` to `ADMINISTRATOR`, and rejects missing passwords or false privilege overrides.
 - **Side Effects**: Inserts one customer row.
+- **Security Notes**: The role default is descriptive, not restrictive — a superuser reaches both consoles regardless. It exists so the project's most privileged login is not labelled "Customer" in the account list. Scoped, non-superuser console accounts are created with `create_console_account` instead.
+
+## Function: CustomerManager.merchants(self) / CustomerManager.administrators(self)
+- **Purpose**: Query the accounts that can currently reach each console.
+- **Inputs**:
+  - `self` (`CustomerManager`): Bound manager.
+- **Outputs**: `QuerySet[Customer]`.
+- **Dependencies**: `django.db.models.Q`, `StaffRole`.
+- **Behavior**: Filters `is_active=True, is_staff=True` then ORs `is_superuser=True` with the matching `role`. Mirrors the `Customer.console` property in SQL so a set of accounts can be selected without loading every row.
+- **Side Effects**: None.
+- **DSA Used**: Indexed equality on `role` (`db_index=True`) plus two boolean columns; the OR branch is a small scan on the already-narrowed staff set.
+- **Data Analysis Notes**: Staff are a tiny fraction of `accounts_customer`, so the two boolean predicates do the real selectivity work and the `role` index mainly keeps the plan stable as staff counts grow.
+
+## Function: Customer.clean(self)
+- **Purpose**: Reject a console role that staff status would silently neutralise.
+- **Inputs**:
+  - `self` (`Customer`): The instance being validated.
+- **Outputs**: `None`; raises `ValidationError` keyed on `is_staff`.
+- **Dependencies**: `CONSOLE_ROLES`.
+- **Behavior**: Raises when `role` is a console role and `is_staff` is False. Like `Category.clean`, this runs through ModelForms — so the administrator console cannot save the contradiction — but not through bulk seeds, which are trusted.
+- **Side Effects**: None.
+- **DSA Used**: `frozenset` membership, O(1).
+- **Data Analysis Notes**: None.
+- **Responsive & Accessibility Notes**: Surfaces as a field-level error on `is_staff` in the admin form, which Django associates with the input for screen readers.
+- **Security Notes**: This is a usability guard, not the boundary. `ConsoleSite.has_permission` is the enforcement point; `clean` only stops an operator creating an account that *looks* privileged and is not.
+
+## Function: Customer.console (property)
+- **Purpose**: Report the one console this account may enter right now, or None.
+- **Inputs**:
+  - `self` (`Customer`): The account.
+- **Outputs**: `StaffRole.ADMINISTRATOR`, `StaffRole.MERCHANT`, or `None`.
+- **Dependencies**: `CONSOLE_ROLES`, `StaffRole`.
+- **Behavior**: Returns None unless active and staff; superusers answer `ADMINISTRATOR` because that console owns account and role management, and `has_permission` waves them into the merchant console separately rather than forcing a second login. Otherwise returns `role` when it is a console role.
+- **Side Effects**: None.
+- **DSA Used**: `frozenset` membership, O(1); no queries.
+- **Data Analysis Notes**: `role` alone is misleading — an inactive or non-staff account with the Administrator role opens nothing. This property is the effective answer and is what both the navbar and the denial page read.
+- **Responsive & Accessibility Notes**: Drives the staff console shortcut in `templates/base.html`, which is rendered only for accounts that have a console.
+- **Security Notes**: Convenience only. Every console request is re-checked server-side, so removing the navbar link would change nothing about who can get in.
+
+## Function: Customer.is_merchant / Customer.is_administrator (properties)
+- **Purpose**: Boolean predicates for "may enter the merchant / administrator console".
+- **Inputs**:
+  - `self` (`Customer`): The account.
+- **Outputs**: `bool`.
+- **Dependencies**: `StaffRole`.
+- **Behavior**: Active AND staff AND (superuser OR the matching role). Both return True for a superuser, which is correct: superusers are admitted to both consoles.
+- **Side Effects**: None.
+- **Security Notes**: These mirror `ConsoleSite.has_permission` for use in templates and services. They are not a substitute for it — the site's own check is the one that runs before a view executes.
 
 ## Function: Customer.__str__(self)
 - **Purpose**: Return the customer’s display identity.
@@ -370,13 +495,17 @@
 - **Side Effects**: May create/update an authenticated session.
 
 ## Function: logout_view(request)
-- **Purpose**: End the current authenticated session.
+- **Purpose**: End the current authenticated session, returning to a validated `next` when supplied.
 - **Inputs**:
-  - `request` (`HttpRequest`): POST request.
-- **Outputs**: Redirect to storefront home.
-- **Dependencies**: Django `logout` and `require_POST`.
-- **Behavior**: Clears the current session identity and redirects.
+  - `request` (`HttpRequest`): POST request; may carry `next`.
+- **Outputs**: Redirect to `next` when safe, otherwise storefront home.
+- **Dependencies**: Django `logout`, `_safe_next_url`.
+- **Behavior**: Clears the current session identity, then redirects to `_safe_next_url(request)` or `storefront:home`. The `next` hop exists for the console-denied page: a staff member on the wrong console needs to swap accounts and return to *that* console's login rather than being dropped on the storefront.
 - **Side Effects**: Mutates/deletes session authentication data.
+- **DSA Used**: None.
+- **Data Analysis Notes**: None.
+- **Responsive & Accessibility Notes**: Reached only from POST forms (`accounts/profile.html`, `admin/console_denied.html`), each a real submit button.
+- **Security Notes**: `next` is validated by `_safe_next_url`, which rejects any off-host target, so this cannot become an open redirect. Logout stays POST-only in practice, so a crafted `<img>` on a third-party page cannot force it.
 
 ## Function: profile_view(request)
 - **Purpose**: Render a customer dashboard and update basic profile fields.
@@ -1750,3 +1879,191 @@
 - **Dependencies**: Stored Shipment fields.
 - **Behavior**: Uses `(no waybill)` until booking/manual entry.
 - **Side Effects**: None.
+
+# Module / File: apps/accounts/admin.py
+
+## Function: CustomerAdmin.console_display(self, obj)
+- **Purpose**: Show which console an account can actually enter, not merely which role it carries.
+- **Inputs**:
+  - `obj` (`Customer`): The row being rendered.
+- **Outputs**: `str` — the console label, "(superuser)"-suffixed where applicable, or "— storefront only".
+- **Dependencies**: `Customer.console`, `StaffRole`.
+- **Behavior**: Reads `obj.console` and renders its label. Sortable by `role`.
+- **Side Effects**: None.
+- **DSA Used**: None; adds no query per row.
+- **Data Analysis Notes**: The `role` column alone is misleading, because an inactive or non-staff account with the Administrator role opens nothing. This column makes a suspended administrator visibly powerless in the changelist.
+- **Responsive & Accessibility Notes**: Plain text in a standard admin column.
+- **Security Notes**: Read-only display.
+
+## Function: CustomerAdmin.get_readonly_fields(self, request, obj=None)
+- **Purpose**: Enforce the two privilege tiers of FR Admin-03 on the server.
+- **Inputs**:
+  - `request` (`HttpRequest`): The acting administrator's request.
+  - `obj` (`Customer | None`): The account being edited, or None on the add form.
+- **Outputs**: `tuple[str, ...]` of field names rendered read-only.
+- **Dependencies**: `PRIVILEGE_FIELDS`, `_FIELD_ORDER`.
+- **Behavior**: Always locks `date_joined` and `last_login`. Adds every privilege field (`role`, `is_staff`, `is_superuser`, `groups`, `user_permissions`) when the requester is not a superuser, and adds those plus `is_active` when the target is the requester. Filters through `_FIELD_ORDER` so the returned order is deterministic and the admin's field-ordering checks pass.
+- **Side Effects**: None.
+- **DSA Used**: Set union for accumulation, then one ordered pass over `_FIELD_ORDER` — O(n) in field count with a stable result.
+- **Data Analysis Notes**: Fields are returned read-only rather than dropped from the form, so an administrator investigating an account can still see that it is a merchant without being able to change it.
+- **Responsive & Accessibility Notes**: Django renders read-only fields as text, announced by screen readers as static content rather than as a disabled input.
+- **Security Notes**: The self-lockout guard stops an operator editing their own way out of the console they are signed in to; recovering would need shell access. Escalation is blocked server-side — a hand-crafted POST carrying `is_superuser` is ignored, because Django excludes read-only fields from the form entirely.
+
+## Function: CustomerAdmin.has_change_permission / has_delete_permission(self, request, obj=None)
+- **Purpose**: Prevent horizontal privilege escalation through the account screen.
+- **Inputs**:
+  - `request` (`HttpRequest`): The acting administrator's request.
+  - `obj` (`Customer | None`): Target account.
+- **Outputs**: `bool`.
+- **Dependencies**: `BaseUserAdmin`.
+- **Behavior**: Both return False when the target is a superuser and the requester is not. `has_delete_permission` additionally refuses self-deletion.
+- **Side Effects**: None.
+- **DSA Used**: None.
+- **Data Analysis Notes**: None.
+- **Responsive & Accessibility Notes**: Denied actions are absent from the rendered page rather than shown disabled.
+- **Security Notes**: Without the superuser check, a non-superuser administrator could reset the password of the account that outranks them and then sign in as it — the classic escalation through an account-management screen. Object-level checks run on the change view, the delete view, and the changelist action confirmation.
+
+## Function: CustomerAdmin._set_active(self, request, queryset, active)
+- **Purpose**: Back the activate/suspend actions and record each change in the audit trail (FR Admin-02, FR Admin-05).
+- **Inputs**:
+  - `request` (`HttpRequest`): Acting administrator.
+  - `queryset` (`QuerySet[Customer]`): Selected accounts.
+  - `active` (`bool`): Target state.
+- **Outputs**: `None`; messages the operator with a count.
+- **Dependencies**: `ModelAdmin.log_change`, `ModelAdmin.message_user`.
+- **Behavior**: Excludes the acting account, excludes superusers when the requester is not one, then saves each remaining row individually with `update_fields=["is_active"]` and writes a `LogEntry`.
+- **Side Effects**: Updates `is_active`; inserts one `LogEntry` per changed account.
+- **DSA Used**: Two queryset-level exclusions push filtering into SQL; the per-row loop is bounded by the operator's selection.
+- **Data Analysis Notes**: Deliberately not `queryset.update()`. A bulk UPDATE writes no `LogEntry` rows, and a suspension that leaves no trace is precisely the event an audit trail exists to capture. The `.exclude(is_active=active)` filter also keeps the reported count honest — re-suspending an already-suspended account reports 0, not 1.
+- **Responsive & Accessibility Notes**: Result reported through the standard admin messages region.
+- **Security Notes**: Suspension takes effect on the next request, not at the next login: `ModelBackend.get_user` refuses an inactive user, so any live session stops authenticating immediately (FR Customer-21). Self-exclusion means bulk-selecting every row cannot lock the operator out.
+
+## Function: N/A — AuditTrailAdmin read-only contract
+- **Purpose**: Expose Django's `LogEntry` as the administrator console's audit trail (FR Admin-05).
+- **Inputs**:
+  - `LogEntry` rows (`django.contrib.admin.models.LogEntry`): Written automatically by both consoles.
+- **Outputs**: A filterable, searchable, date-hierarchical changelist.
+- **Dependencies**: `django.contrib.admin`, `django.contrib.contenttypes`.
+- **Behavior**: `has_add_permission`, `has_change_permission`, and `has_delete_permission` all return False unconditionally. `list_select_related = ("user", "content_type")` keeps the changelist at a constant query count. `action_description` maps the numeric `action_flag` (1/2/3) to Added/Changed/Deleted.
+- **Side Effects**: None.
+- **DSA Used**: Single join-backed changelist query; the flag-to-word mapping is a dict lookup with a default, so an unknown flag renders "Unknown" instead of raising.
+- **Data Analysis Notes**: Django writes a `LogEntry` for every add, change, and delete performed through either console, so this one screen covers merchant activity as well as administrator activity.
+- **Responsive & Accessibility Notes**: Standard Django admin changelist; the date hierarchy is keyboard navigable.
+- **Security Notes**: Registered on the administrator console only — letting merchants read, edit, or prune the log of their own actions would defeat the point. Read-only for everyone including superusers, giving it the same append-only guarantee `StockMovement` has.
+
+# Module / File: apps/core/admin.py
+
+## Function: ExportCsvMixin.export_as_csv(self, request, queryset)
+- **Purpose**: Stream the selected rows as CSV (FR Merchant-06).
+- **Inputs**:
+  - `request` (`HttpRequest`): Acting staff request.
+  - `queryset` (`QuerySet`): Selected rows.
+- **Outputs**: `HttpResponse` with `text/csv` and a `Content-Disposition` attachment header.
+- **Dependencies**: `csv`, `django.http.HttpResponse`.
+- **Behavior**: Walks `model._meta.fields`, skipping any name listed in `csv_export_exclude`, and writes a header row followed by one row per object.
+- **Side Effects**: None persisted.
+- **DSA Used**: Single pass over the queryset; O(rows x columns).
+- **Data Analysis Notes**: Concrete fields only — reverse relations and many-to-many are not exported, so an order export carries the order, not its line items.
+- **Responsive & Accessibility Notes**: Not applicable; the response is a file download.
+- **Security Notes**: `csv_export_exclude` defaults to `("password",)`. Without it the mixin wrote every selected account's password hash into a downloadable file when used on `CustomerAdmin` — offline-crackable, and a category of personal data the export has no reason to carry (NFR Privacy-11).
+
+# Module / File: apps/accounts/management/commands/sync_console_roles.py
+
+## Function: allowed_actions(model_admin)
+- **Purpose**: Determine which permission verbs a ModelAdmin actually permits.
+- **Inputs**:
+  - `model_admin` (`ModelAdmin`): A registered admin class instance.
+- **Outputs**: `set[str]` drawn from `{"view", "add", "change", "delete"}`.
+- **Dependencies**: `_ProbeRequest`, `_PermissiveUser`.
+- **Behavior**: `view` is unconditional — registering a model on a console states that the console may look at it. The other three are asked of the ModelAdmin using a stub request whose user answers True to every permission check, so the answer reflects the ModelAdmin's own policy with the permission layer taken out of the picture.
+- **Side Effects**: None.
+- **DSA Used**: Set accumulation; four constant-time calls per model.
+- **Data Analysis Notes**: This is why append-only and webhook-owned models come back view-only without being named anywhere in the command: `StockMovement`, `Reservation`, `Payment`, and `LogEntry` all override these hooks to return False.
+- **Responsive & Accessibility Notes**: None.
+- **Security Notes**: The stub grants permissions only to probe the ModelAdmin. It never touches a request path and is never used for authorization.
+
+## Function: permissions_for_site(site)
+- **Purpose**: Resolve one console's registry to concrete `Permission` rows.
+- **Inputs**:
+  - `site` (`AdminSite`): The console to read.
+- **Outputs**: `tuple[list[Permission], list[str]]` — the grants, and any codenames that do not exist yet.
+- **Dependencies**: `ContentType.objects.get_for_model`, `Permission`, `allowed_actions`.
+- **Behavior**: Builds `(content_type_id, codename)` pairs for every registered model times allowed action, queries the two columns with `__in`, then re-pairs the results exactly.
+- **Side Effects**: None.
+- **DSA Used**: One bulk query instead of N per-permission lookups; results are indexed into a dict keyed by the pair, giving O(1) reassembly. `ContentType.objects.get_for_model` is itself cached per process.
+- **Data Analysis Notes**: The exact re-pairing matters — filtering `content_type_id__in` and `codename__in` independently is a cross product and would over-match wherever two models share a codename.
+- **Responsive & Accessibility Notes**: None.
+- **Security Notes**: A codename missing because `post_migrate` has not run yet is reported, not raised on: the remaining grants are still correct and a later `migrate` completes the set. Silently granting nothing would be worse than saying so.
+
+## Function: Command._sync_group(self, role, site, dry_run)
+- **Purpose**: Make one group's permissions equal to its console's derived set.
+- **Inputs**:
+  - `role` (`StaffRole`): Which group to write.
+  - `site` (`AdminSite`): The console to derive from.
+  - `dry_run` (`bool`): Report only.
+- **Outputs**: `None`; prints an added/removed summary.
+- **Dependencies**: `Group`, `permissions_for_site`.
+- **Behavior**: `get_or_create`s the group, then uses `.set(permissions)` rather than `.add(...)`.
+- **Side Effects**: Rewrites `auth_group_permissions` for the two managed groups only.
+- **DSA Used**: Set difference against the existing grants to report the delta without a second query.
+- **Data Analysis Notes**: `.set()` is the whole point — a model that moved to the other console loses its grant here, which a bare `.add()` would never do.
+- **Responsive & Accessibility Notes**: None.
+- **Security Notes**: Only the two groups named in `GROUP_NAMES` are touched; any other group in the database is left completely alone.
+
+## Function: Command._sync_memberships(self, dry_run)
+- **Purpose**: Put every staff account in its console's group, and only that one.
+- **Inputs**:
+  - `dry_run` (`bool`): Report only.
+- **Outputs**: `None`; prints per-group membership deltas.
+- **Dependencies**: `Group`, `Customer`.
+- **Behavior**: Computes target membership per group from `role` plus `is_staff`, diffs it against current membership, and applies additions and removals.
+- **Side Effects**: Writes `auth_user_groups` rows for the two managed groups.
+- **DSA Used**: Two set differences over primary keys pulled with `values_list`, so no model instances are loaded to compute the diff.
+- **Data Analysis Notes**: Non-staff accounts are removed from both groups even when their `role` still says "merchant" — without staff status they open nothing, and a dormant grant is the kind of thing that becomes live again by accident.
+- **Responsive & Accessibility Notes**: None.
+- **Security Notes**: Roles are mutually exclusive, so a re-roled merchant must not keep an Administrators membership from a previous role.
+
+# Module / File: apps/accounts/management/commands/create_console_account.py
+
+## Function: Command.handle(self, *args, **options)
+- **Purpose**: Create or re-role a scoped, non-superuser console account.
+- **Inputs**:
+  - `--role` (`str`): `merchant` or `administrator`.
+  - `--email` (`str`): Login email.
+  - `--name` (`str`): Optional display name; defaults to the email local part.
+  - `--password` (`str | None`): Falls back to `METRODRIP_CONSOLE_PASSWORD`, then an interactive prompt.
+- **Outputs**: `None`; prints the resulting role, console path, and the follow-up `sync_console_roles` reminder.
+- **Dependencies**: `Customer`, `StaffRole`, `validate_password`, `transaction.atomic`.
+- **Behavior**: Normalises and lower-cases the email. Creates the account as `is_staff=True, is_superuser=False` with the requested role, or updates an existing account's role, staff, and active flags. Raises `CommandError` when asked to scope a superuser. The password is written only when one is supplied, so re-running purely to change a role does not require it.
+- **Side Effects**: Inserts or updates one `Customer` row inside one transaction.
+- **DSA Used**: None.
+- **Data Analysis Notes**: Idempotent by email, so it is safe inside a setup script.
+- **Responsive & Accessibility Notes**: None.
+- **Security Notes**: Exists because `createsuperuser` only makes superusers, and a superuser reaches both consoles — using it is the fastest way to accidentally prove nothing about the separation. Passwords go through `AUTH_PASSWORD_VALIDATORS`: console accounts are the highest-value credentials in the system and are not waved through because a management command created them. Scoping an existing superuser is refused rather than silently writing a misleading role.
+
+# Module / File: tests/test_console_separation.py
+
+## Function: N/A — console boundary regression contract
+- **Purpose**: Make the administrator/merchant separation falsifiable.
+- **Inputs**:
+  - `admin.site` and `merchant_site` registries, plus real HTTP sessions via the Django test client.
+- **Outputs**: 65 tests across seven classes.
+- **Dependencies**: pytest, pytest-django, real MySQL.
+- **Behavior**: `TestRegistrySeparation` asserts disjoint ownership per model. `TestConsoleAccess` drives both consoles with real logins, including suspension and staff revocation mid-session. `TestLoginBoundary` pins the wrong-console rejection and the absence of the redirect loop. `TestPrivilegeEscalation` covers the superuser-only privilege tier, the self-lockout guard, audit-trail writing, and password-hash exclusion from CSV. `TestRolePermissionSync` and `TestCreateConsoleAccount` cover the two commands. `TestRoleModel` covers the `console` predicate and the data migration's promotion rule. `TestHomepageCacheIsolation` covers ADR-C-004.
+- **Side Effects**: Creates and destroys test-database rows.
+- **DSA Used**: Set intersection for the disjointness assertion.
+- **Data Analysis Notes**: The guarded failure mode is not "a page 500s" — it is a model quietly appearing on both consoles, or a role check a signed-in merchant walks straight through.
+- **Responsive & Accessibility Notes**: Two tests assert no raw template syntax reaches the browser on the denial page.
+- **Security Notes**: `TestHomepageCacheIsolation` installs a real `LocMemCache` through a fixture, because the suite's settings use `DummyCache`, under which every page-cache assertion passes whether the bug is present or not. All three of its tests were verified to fail with `@vary_on_cookie` removed.
+
+# Module / File: Cycle 2 — console separation
+
+## Function: N/A — Cycle 2 QA gate
+- **Purpose**: Record the post-change acceptance evidence for the administrator/merchant console separation.
+- **Inputs**:
+  - `Cycle 2 change set` (`git worktree`): Two admin sites, `Customer.role` plus migration `accounts.0002`, re-pointed registrations across nine apps, two management commands, the wrong-console page, the storefront console shortcut, and the homepage cache fix.
+  - `local services` (`Docker Desktop, MySQL 8.4`): Real database plus a live `runserver` instance on port 8123.
+- **Outputs**: `QA_PASSED`.
+- **Dependencies**: Python 3.14.4, Django 5.2.16, Ruff, pytest 8.4.2, requests.
+- **Behavior**: 388 tests pass against real MySQL, up from 323. `ruff check` and `ruff format --check` are clean across 106 files; `compileall` is clean; `manage.py check` reports no issues; `makemigrations --check --dry-run` reports no drift; `check --deploy --fail-level WARNING` under staging settings reports no issues, 1 silenced. `accounts.0002_customer_role` was verified forward, reverse, and forward again on a throwaway database, and its data migration was verified against rows inserted at the 0001 schema: a pre-existing `is_staff` row lands on `administrator` and keeps console access, a shopper row stays `customer`. Registry inspection confirms 6 administrator models, 12 merchant models, and an empty intersection. Live-server checks confirm both login pages render their own heading, a merchant reaches all 12 merchant model pages, `/merchant/accounts/customer/` returns 404, `/admin/accounts/customer/` returns 302 then 403 with no customer data in the body, merchant credentials are refused at `/admin/login/` with an explanatory message rather than a redirect loop, and the storefront navbar shows the console shortcut to staff only. The three homepage-cache tests were each confirmed to fail with the fix removed.
+- **Side Effects**: Applied `accounts.0002_customer_role` to the local development database; created the `Merchants` and `Administrators` groups with 36 and 19 permissions and a demo merchant account `seller@metrodrip.test`; created and destroyed throwaway test databases. No public deployment was changed.

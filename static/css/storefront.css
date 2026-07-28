@@ -225,6 +225,29 @@ h5 { font-size: 1rem; }
   color: var(--color-ink);
 }
 
+/* Back-office shortcut, shown only to staff (see base.html `user.console`).
+   Outlined rather than coloured-in so it reads as a different *destination*
+   from the storefront links beside it without competing with the cart for
+   attention. Inherits every .navbar__link rule, including the focus-visible
+   outline and the hover underline. */
+.navbar__link--console {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+}
+
+.navbar__link--console::after {
+  /* The pill already signals hover; the sliding underline would sit outside
+     the border and look detached from it. */
+  content: none;
+}
+
+.navbar__link--console:hover,
+.navbar__link--console:focus-visible {
+  border-color: var(--color-ink);
+  background: var(--color-surface-raised);
+}
+
 /* Cart icon with badge */
 .navbar__cart {
   position: relative;

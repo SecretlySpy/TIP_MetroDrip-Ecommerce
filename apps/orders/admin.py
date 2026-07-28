@@ -1,14 +1,19 @@
-"""Django admin configuration for the orders domain (C-1).
+"""Order administration — **merchant console** (FR Merchant-03/04/05/06).
 
 Order status is displayed but never editable through the admin — all state
 transitions must go through Order.transition_to() per Hard Invariant 5.
 OrderItem is shown inline on the order detail page.
+
+Fulfilment is the seller's work, so orders live only on the merchant console.
+Administrators audit them through the audit trail rather than by holding a
+second copy of this screen (ADR-F-001).
 """
 
 from django.contrib import admin
 
 from apps.core.admin import ExportCsvMixin
 from apps.orders.money import format_centavos
+from config.consoles import merchant_site
 
 from .models import Order, OrderItem
 
@@ -34,7 +39,7 @@ class OrderItemInline(admin.TabularInline):
         return False
 
 
-@admin.register(Order)
+@admin.register(Order, site=merchant_site)
 class OrderAdmin(ExportCsvMixin, admin.ModelAdmin):
     list_display = (
         "order_no",

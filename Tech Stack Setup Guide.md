@@ -47,6 +47,41 @@ flowchart LR
 
 The browser cart is stored under `localStorage["metrodrip_cart"]`. Client prices and availability are display hints; checkout reloads authoritative variants, prices, and stock from MySQL.
 
+### The three front doors
+
+One Django project serves three audiences at three paths. Knowing which one you
+want saves a lot of confusion when a login "does not work" — it usually did
+work, at the wrong door.
+
+```mermaid
+flowchart TD
+    Visitor["Any visitor"]
+    Visitor --> Shop["/ — Storefront<br/>anyone, no account needed"]
+    Visitor --> Merch["/merchant/ — Merchant console<br/>role = merchant"]
+    Visitor --> Adm["/admin/ — Administrator console<br/>role = administrator"]
+
+    Merch --> MerchOwns["Products, categories, variants<br/>Stock and the movement ledger<br/>Orders, payments, shipments<br/>Banners, flat pages, contact messages<br/>Review moderation"]
+    Adm --> AdmOwns["Customer accounts<br/>Roles and groups<br/>Shipping fees<br/>Audit trail"]
+
+    Super["Superuser"] -.->|admitted to both| Merch
+    Super -.->|admitted to both| Adm
+```
+
+Signing in to the wrong console does not fail silently: the page tells you which
+console your account belongs to and links to it. A merchant who guesses an
+administrator URL gets a plain **404**, because that model is not registered on
+their console at all — the URL was never routed there.
+
+| | Storefront | Merchant console | Administrator console |
+|---|---|---|---|
+| **Path** | `/` | `/merchant/` | `/admin/` |
+| **Who** | anyone | `role = merchant` + staff | `role = administrator` + staff |
+| **Sells things** | buys | yes | no |
+| **Sees customer records** | own only | **no** | yes |
+| **Sees the audit trail** | no | no | yes |
+| **Sets shipping fees** | no | no | yes |
+| **Prints invoices** | no | yes | no |
+
 ## 3. Prerequisites
 
 Install these before cloning:
@@ -176,6 +211,47 @@ docker compose up -d db --wait
 
 Rerunning updates stable catalog metadata but does not reset existing stock or duplicate the initial stock ledger.
 
+### Creating console accounts
+
+`seed_demo` creates catalog data, not staff. Make the accounts yourself, and
+make **two** of them — one per console — or you will not be able to see that the
+separation works.
+
+```bash
+# 1. Grant the two console groups their permissions.
+#    Run this after every migrate, and after any change to which console owns a
+#    model. It derives the grants from the consoles themselves.
+python manage.py sync_console_roles
+
+# 2. A merchant. Note: staff, but NOT a superuser.
+python manage.py create_console_account --role merchant \
+    --email seller@metrodrip.test --name "Demo Seller"
+
+# 3. An administrator.
+python manage.py create_console_account --role administrator \
+    --email ops@metrodrip.test --name "Demo Administrator"
+
+# 4. Give the new accounts their group permissions.
+python manage.py sync_console_roles
+```
+
+Each command prompts for a password, or reads `METRODRIP_CONSOLE_PASSWORD`, or
+takes `--password`. Passwords go through Django's normal validators, so
+`password123` is rejected here exactly as it would be for a shopper.
+
+> **Do not use `createsuperuser` for this.** A superuser is admitted to *both*
+> consoles, so testing with one proves nothing about the separation. Keep a
+> superuser for recovery and use scoped accounts for everything else.
+
+Re-running `create_console_account` with an existing email changes that
+account's role without touching its password, which makes it easy to watch an
+account move between consoles.
+
+**If a console looks completely empty after signing in**, you skipped step 4.
+The role gets you through the door; the group permissions decide what is in the
+room. Run `sync_console_roles` and reload — do not "fix" it by granting
+superuser, which removes the boundary entirely.
+
 ### Category hierarchy
 
 Categories are two levels deep: main categories such as **Hoodies**, each with **Men** and **Women** subcategories. Migration `catalog.0003_category_hierarchy` adds those children to whatever main categories a database already holds, and `seed_mock_catalog` re-establishes them for any added later.
@@ -281,7 +357,7 @@ docker compose --env-file deploy/.env.staging.example -f deploy/compose.staging.
 docker build --check .
 ```
 
-Cycle 1 evidence is 276 passing tests against real MySQL. SQLite is unsupported because it cannot prove the InnoDB row-locking contracts.
+Cycle 2 evidence is 388 passing tests against real MySQL. SQLite is unsupported because it cannot prove the InnoDB row-locking contracts.
 
 ## 10. Staging startup flow
 
@@ -342,6 +418,7 @@ Local HTTPS tests using a locally trusted/self-signed certificate prove containe
 | `LOW_STOCK_ALERT_RECIPIENTS` | Empty | Optional comma-separated staff email list |
 | `CONTACT_ALERT_RECIPIENTS` | Empty | Optional comma-separated staff email list |
 | `STAGING_HOST` | Not used | Must match allowed hosts and CSRF-origin hostname |
+| `METRODRIP_CONSOLE_PASSWORD` | Empty; `create_console_account` prompts | Only read by that command; never a runtime setting |
 | `STAGING_SEED_DEMO` | Not used | Exact `0` or `1` |
 | `STAGING_SEED_PREVIEW_ENABLED` | False | Exact `0` or `1` |
 
@@ -392,6 +469,11 @@ Expected: `manage.py` and `entrypoint.sh` at `mode=755 owner=0:0`, `staticfiles`
 [ ] manage.py migrate completes
 [ ] manage.py seed_demo completes
 [ ] manage.py check reports no issues
+[ ] manage.py sync_console_roles reports both groups
 [ ] pytest passes against MySQL
 [ ] http://127.0.0.1:8000/ renders the banner and catalog
+[ ] /merchant/login/ says "Merchant Login"
+[ ] /admin/login/ says "Administrator Login"
+[ ] the merchant account signs in to /merchant/ and sees Products
+[ ] the same account at /admin/ is told it is on the wrong console
 ```

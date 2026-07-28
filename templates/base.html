@@ -67,6 +67,23 @@
           </details>
         </li>
 
+        {% comment %}
+        Console shortcut for back-office staff. `user.console` returns the one
+        console this account may enter, or None — so a shopper never sees this
+        link, and a merchant is never offered the administrator console. It is a
+        convenience only: both consoles re-check the role server-side on every
+        request (config.consoles.ConsoleSite.has_permission), so removing this
+        link would change nothing about who can get in.
+        {% endcomment %}
+        {% if user.console %}
+          <li>
+            {% if user.console == "administrator" %}
+              <a href="{% url 'admin:index' %}" class="navbar__link navbar__link--console">Administration</a>
+            {% else %}
+              <a href="{% url 'merchant:index' %}" class="navbar__link navbar__link--console">Merchant Console</a>
+            {% endif %}
+          </li>
+        {% endif %}
         <li>
           {% if user.is_authenticated %}
             <a href="{% url 'accounts:profile' %}" class="navbar__link">Account</a>
