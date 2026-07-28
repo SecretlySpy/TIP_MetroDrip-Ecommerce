@@ -30,10 +30,14 @@ RUN python -m pip install -r requirements.txt
 
 # Source stays root-owned and read-only to the unprivileged web identity. Only
 # generated static output needs runtime write access for collectstatic.
+#
+# The two executable modes are set explicitly rather than inherited from COPY:
+# a Windows checkout cannot carry a POSIX executable bit, so relying on the
+# build context would make the image's ownership contract host-dependent.
 COPY . .
 RUN mkdir -p /app/staticfiles \
     && chown -R "${APP_UID}:${APP_GID}" /app/staticfiles \
-    && chmod 0755 /app/deploy/entrypoint.sh
+    && chmod 0755 /app/deploy/entrypoint.sh /app/manage.py
 
 USER ${APP_UID}:${APP_GID}
 

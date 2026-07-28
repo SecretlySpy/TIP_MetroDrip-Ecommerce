@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<!--
+  GitHub Pages landing page for TIP_MetroDrip-Ecommerce.
+
+  MetroDrip itself is a Django server application and cannot run on GitHub
+  Pages, which serves static files only. This page exists so the project URL
+  resolves to a real index of the documentation instead of a raw README, and
+  so visitors are told plainly where the running application lives.
+
+  Deliberately self-contained (no build step, no asset pipeline) because Pages
+  publishes the repository root as-is. The palette and type scale mirror
+  static/css/storefront.css so the project site and the storefront read as one
+  brand.
+
+  The empty .nojekyll beside this file disables the Jekyll build. Several tracked
+  Markdown files embed Django template syntax inside code fences, which Liquid can
+  fail to parse — skipping the build removes that failure mode and makes this file
+  the deterministic entry point. Documentation links point at GitHub's blob view
+  rather than the .md files next to them, because Pages would serve those as raw
+  text instead of rendered Markdown.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MetroDrip — B2C E-commerce &amp; Inventory System</title>
+  <meta name="description" content="MetroDrip is a Django 5.2 / MySQL 8 e-commerce and inventory system for a Metro Manila streetwear brand. Project documentation, architecture notes, and deployment guide.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    /* Tokens mirrored from static/css/storefront.css (§14 UI Reference). */
+    :root {
+      --color-base: #F4F4F2;
+      --color-ink: #141414;
+      --color-volt: #C8F031;
+      --color-surface-raised: #FFFFFF;
+      --color-muted: #75756E;
+      --color-border: #E4E4DF;
+
+      --font-display: 'Anton', sans-serif;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'IBM Plex Mono', monospace;
+
+      --space-sm: 0.5rem;
+      --space-md: 1rem;
+      --space-lg: 1.5rem;
+      --space-xl: 2rem;
+      --space-2xl: 3rem;
+      --space-3xl: 4rem;
+
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-pill: 9999px;
+      --container-max: 1000px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      font-size: 16px;
+      -webkit-text-size-adjust: 100%;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      background: var(--color-base);
+      color: var(--color-ink);
+      font-family: var(--font-body);
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: var(--container-max);
+      margin: 0 auto;
+      padding: 0 var(--space-lg);
+    }
+
+    a { color: inherit; }
+
+    /* --- Barcode strip motif --- */
+    .barcode {
+      height: 8px;
+      background: repeating-linear-gradient(
+        90deg,
+        var(--color-ink) 0 3px,
+        transparent 3px 6px,
+        var(--color-ink) 6px 8px,
+        transparent 8px 14px
+      );
+    }
+
+    /* --- Masthead --- */
+    .masthead {
+      background: var(--color-ink);
+      color: var(--color-base);
+      padding: var(--space-3xl) 0 var(--space-2xl);
+    }
+
+    .wordmark {
+      font-family: var(--font-display);
+      font-size: clamp(2.75rem, 9vw, 4.5rem);
+      line-height: 1;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .wordmark span { color: var(--color-volt); }
+
+    .tagline {
+      margin-top: var(--space-md);
+      max-width: 46ch;
+      font-size: 1.0625rem;
+      color: #D6D6D2;
+    }
+
+    .stack {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+      margin-top: var(--space-xl);
+      list-style: none;
+    }
+
+    .stack li {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.3rem 0.7rem;
+      border: 1px solid #3A3A3A;
+      border-radius: var(--radius-pill);
+      color: #D6D6D2;
+    }
+
+    /* --- Notice: why the storefront is not served here --- */
+    .notice {
+      margin: calc(var(--space-2xl) * -1) auto var(--space-2xl);
+      position: relative;
+      background: var(--color-volt);
+      color: var(--color-ink);
+      border-radius: var(--radius-md);
+      padding: var(--space-lg) var(--space-xl);
+      max-width: calc(var(--container-max) - (var(--space-lg) * 2));
+    }
+
+    .notice h2 {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-sm);
+    }
+
+    .notice p { font-size: 0.9375rem; }
+    .notice p + p { margin-top: var(--space-sm); }
+    .notice code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      background: rgba(20, 20, 20, 0.1);
+      padding: 0.1em 0.35em;
+      border-radius: var(--radius-sm);
+    }
+
+    /* --- Sections --- */
+    section { padding-bottom: var(--space-3xl); }
+
+    h2.section-title {
+      font-family: var(--font-display);
+      font-size: 1.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      margin-bottom: var(--space-lg);
+    }
+
+    /* --- Waybill-style document cards --- */
+    .docs {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: var(--space-md);
+      list-style: none;
+    }
+
+    .doc {
+      display: block;
+      background: var(--color-surface-raised);
+      border: 2px dashed var(--color-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-lg);
+      text-decoration: none;
+      transition: border-color 150ms ease, transform 150ms ease;
+    }
+
+    .doc:hover,
+    .doc:focus-visible {
+      border-color: var(--color-ink);
+      transform: translateY(-2px);
+    }
+
+    .doc__label {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: var(--space-sm);
+    }
+
+    .doc__title {
+      font-weight: 600;
+      font-size: 1.0625rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .doc__desc {
+      font-size: 0.875rem;
+      color: var(--color-muted);
+      line-height: 1.5;
+    }
+
+    /* --- Quickstart --- */
+    pre {
+      background: var(--color-ink);
+      color: #E8E8E4;
+      border-radius: var(--radius-md);
+      padding: var(--space-lg);
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      line-height: 1.7;
+    }
+
+    pre .c { color: #8A8A82; }
+    pre .p { color: var(--color-volt); }
+
+    /* --- Footer --- */
+    footer {
+      border-top: 1px solid var(--color-border);
+      padding: var(--space-xl) 0 var(--space-2xl);
+      font-size: 0.875rem;
+      color: var(--color-muted);
+    }
+
+    footer a {
+      color: var(--color-ink);
+      text-decoration-color: var(--color-border);
+      text-underline-offset: 3px;
+    }
+
+    footer a:hover { text-decoration-color: var(--color-ink); }
+
+    :focus-visible {
+      outline: 3px solid var(--color-volt);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="masthead">
+    <div class="container">
+      <h1 class="wordmark">Metro<span>Drip</span></h1>
+      <p class="tagline">
+        B2C e-commerce and inventory system for a Metro&nbsp;Manila streetwear brand —
+        built as a single Django application with a real MySQL&nbsp;8 concurrency model.
+      </p>
+      <ul class="stack">
+        <li>Django 5.2</li>
+        <li>MySQL 8 · InnoDB</li>
+        <li>HTMX</li>
+        <li>Alpine.js</li>
+        <li>Gunicorn</li>
+        <li>Caddy</li>
+        <li>Docker</li>
+      </ul>
+    </div>
+  </header>
+
+  <div class="barcode" role="presentation"></div>
+
+  <div class="container">
+    <div class="notice">
+      <h2>About this page</h2>
+      <p>
+        This is the project documentation site. The MetroDrip storefront itself is a
+        <strong>server-rendered Django application backed by MySQL</strong>, so it cannot be
+        hosted on GitHub Pages — Pages serves static files only and runs no application code.
+      </p>
+      <p>
+        To see the storefront, run it locally with the quickstart below, or deploy the staging
+        stack described in <code>deploy/README.md</code>.
+      </p>
+    </div>
+  </div>
+
+  <main class="container">
+
+    <section>
+      <h2 class="section-title">Documentation</h2>
+      <div class="docs">
+        <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/MetroDrip_AI_Handover.md">
+          <span class="doc__label">Plan</span>
+          <span class="doc__title">Handover Specification</span>
+          <span class="doc__desc">The approved plan: scope, data models, functional requirements, build order, and launch milestones.</span>
+        </a>
+        <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/DECISIONS.md">
+          <span class="doc__label">Log</span>
+          <span class="doc__title">Decisions Log</span>
+          <span class="doc__desc">Implementation choices made during the build, with the reasoning and trade-offs behind each one.</span>
+        </a>
+        <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/AI%20Documentation%20Notes.md">
+          <span class="doc__label">Reference</span>
+          <span class="doc__title">Architecture Notes</span>
+          <span class="doc__desc">Machine-readable notes on every module: function signatures, data flow, dependencies, and side effects.</span>
+        </a>
+        <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/Tech%20Stack%20Setup%20Guide.md">
+          <span class="doc__label">Setup</span>
+          <span class="doc__title">Tech Stack Setup Guide</span>
+          <span class="doc__desc">Beginner-friendly environment setup for macOS, Windows, and Linux, with troubleshooting.</span>
+        </a>
+        <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/deploy/README.md">
+          <span class="doc__label">Operations</span>
+          <span class="doc__title">Staging Deployment</span>
+          <span class="doc__desc">Provider-neutral Caddy / Gunicorn / MySQL stack, environment contract, backups, and acceptance smoke.</span>
+        </a>
+        <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce">
+          <span class="doc__label">Source</span>
+          <span class="doc__title">GitHub Repository</span>
+          <span class="doc__desc">Full source, issue tracker, and the CI pipeline that gates every push on lint, tests, and deployment contracts.</span>
+        </a>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="section-title">Run it locally</h2>
+      <pre><code><span class="c"># 1. Python env (Python 3.14)</span>
+uv venv .venv --python 3.14        <span class="c"># or: python -m venv .venv</span>
+.venv/Scripts/pip install -r requirements.txt
+
+<span class="c"># 2. Secrets</span>
+cp .env.example .env               <span class="c"># defaults match docker-compose</span>
+
+<span class="c"># 3. Database (MySQL 8 in Docker)</span>
+docker compose up -d db
+
+<span class="c"># 4. Schema + demo data</span>
+.venv/Scripts/python manage.py migrate
+.venv/Scripts/python manage.py seed_demo
+
+<span class="c"># 5. Run</span>
+.venv/Scripts/python manage.py runserver
+<span class="p">→ http://127.0.0.1:8000/</span></code></pre>
+    </section>
+
+  </main>
+
+  <footer>
+    <div class="container">
+      MetroDrip · A student capstone project ·
+      <a href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce">SecretlySpy/TIP_MetroDrip-Ecommerce</a>
+    </div>
+  </footer>
+
+</body>
+</html>
