@@ -573,6 +573,10 @@
         <li>Alpine.js</li>
         <li>Docker</li>
       </ul>
+      <p class="tagline" style="font-size:0.875rem;">
+        Last verified against the storefront on 28 July 2026 — including the two-level category
+        navigation and the branded admin.
+      </p>
     </div>
   </header>
 
@@ -1020,6 +1024,50 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           what should happen. Verify with the check in <a href="#verify">Step 9</a>.
         </p>
       </div>
+
+      <h3>Fill the catalogue for category browsing</h3>
+
+      <p>
+        <code>seed_demo</code> gives you five products — enough to prove the app runs, but not enough to
+        exercise the category menu or pagination. A second command adds bulk placeholder stock:
+      </p>
+
+      <div class="only-win">
+        <div class="code"><pre><code><span class="c"># See the plan first — this writes nothing.</span>
+.venv/Scripts/python manage.py seed_mock_catalog --dry-run
+
+<span class="c"># Create 100 placeholders, spread evenly across every subcategory.</span>
+.venv/Scripts/python manage.py seed_mock_catalog</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code><span class="c"># See the plan first — this writes nothing.</span>
+.venv/bin/python manage.py seed_mock_catalog --dry-run
+
+<span class="c"># Create 100 placeholders, spread evenly across every subcategory.</span>
+.venv/bin/python manage.py seed_mock_catalog</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code><span class="c"># See the plan first — this writes nothing.</span>
+.venv/bin/python manage.py seed_mock_catalog --dry-run
+
+<span class="c"># Create 100 placeholders, spread evenly across every subcategory.</span>
+.venv/bin/python manage.py seed_mock_catalog</code></pre></div>
+      </div>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Behaviour</th><th>What it means for you</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>--count</code></td><td>How many <em>placeholders</em> to keep, not the total catalogue. Defaults to 100, so a database with 12 real products ends up with 112.</td></tr>
+            <tr><td>Distribution</td><td>Spread evenly across every subcategory, so no category is left empty.</td></tr>
+            <tr><td>Safe to rerun</td><td>Names are derived from the category and a sequence number, so a second run finds everything already there and writes nothing.</td></tr>
+            <tr><td>Your stock is safe</td><td>Existing quantities, reservations, and thresholds are never reset.</td></tr>
+            <tr><td>Spotting them</td><td>Placeholders are flagged <code>is_mock</code> and filterable in the admin. Otherwise they behave like any other product.</td></tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <!-- ============================== 7. RUN ============================== -->
@@ -1057,13 +1105,41 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
 
       <figure>
         <img src="docs/images/03-storefront-homepage.png"
-             alt="MetroDrip storefront homepage showing the navigation bar and the New Arrivals product grid, with items including Night Route Windbreaker at 2,499 pesos and Platform Twill Overshirt at 1,699 pesos."
+             alt="MetroDrip storefront homepage showing the navigation bar with Home, Shop and Browse Categories, above the New Arrivals product grid with items including Drip Key Chain at 899 pesos and Canvas Card Wallet at 399 pesos."
              loading="lazy" width="1600" height="1075">
         <figcaption>
           The New Arrivals grid on the homepage, served from your own machine. Product cards show a text
-          placeholder because the demo seed ships pricing and stock but no photography.
+          placeholder because the seed ships pricing and stock but no photography.
         </figcaption>
       </figure>
+
+      <h3>Browse by category</h3>
+
+      <p>
+        <strong>Browse Categories</strong> in the navigation bar opens a menu of every main category and its
+        <em>Men</em> and <em>Women</em> subcategories, with a live product count beside each one.
+      </p>
+
+      <figure>
+        <img src="docs/images/04-category-menu.png"
+             alt="The Browse Categories dropdown open on the homepage, showing a grid of main categories such as Accessories, Bottoms, Hoodies and Outerwear. Each has an All link plus Men and Women subcategories with product counts."
+             loading="lazy" width="1600" height="1075">
+        <figcaption>
+          The category menu. It is a plain HTML disclosure, so it opens with a click <em>or</em> the keyboard
+          (Tab to it, then Enter) and closes with Escape. Categories added after the last seed run have no
+          Men/Women split until you run <code>seed_mock_catalog</code> again.
+        </figcaption>
+      </figure>
+
+      <div class="note note--tip">
+        <span class="note__label">How the two levels differ</span>
+        <p>
+          Clicking a <strong>main category</strong> shows everything in that branch — its own products plus
+          every subcategory's. Clicking <strong>Men</strong> or <strong>Women</strong> narrows to just that
+          subcategory. Try <code>/shop/?category=hoodies</code> against
+          <code>/shop/?category=hoodies-men</code> and compare the counts.
+        </p>
+      </div>
     </section>
 
     <!-- ============================== 8. ADMIN ============================== -->
@@ -1118,12 +1194,14 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <figure>
-        <img src="docs/images/04-admin-dashboard.png"
-             alt="Django admin site administration page after logging in, listing the Accounts, Authentication and Authorization, Catalog, CMS, Flat pages, and Inventory sections."
+        <img src="docs/images/06-admin-dashboard.png"
+             alt="The MetroDrip Administration dashboard after logging in, listing the Accounts, Authentication and Authorization, Catalog, CMS, Flat pages, and Inventory sections."
              loading="lazy" width="1600" height="1075">
         <figcaption>
-          The admin dashboard after a successful login. Every app in the system appears here — Catalog for
-          products, Inventory for stock records and movements, and Orders further down the page.
+          The admin dashboard after a successful login. Every app appears here — Catalog for products and
+          categories, Inventory for stock records and movements, and Orders further down the page. The login
+          screen is headed <em>Administrator Login</em>; everything past it is branded
+          <em>MetroDrip Administration</em>.
         </figcaption>
       </figure>
     </section>
@@ -1144,7 +1222,9 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           </thead>
           <tbody>
             <tr><td>Homepage</td><td><code>/</code></td><td>Banner and a grid of products</td></tr>
-            <tr><td>Shop</td><td><code>/shop/</code></td><td>Full catalogue with filters</td></tr>
+            <tr><td>Shop</td><td><code>/shop/</code></td><td>Full catalogue with the category tree and filters</td></tr>
+            <tr><td>Main category</td><td><code>/shop/?category=hoodies</code></td><td>Hoodies plus both its subcategories</td></tr>
+            <tr><td>Subcategory</td><td><code>/shop/?category=hoodies-men</code></td><td>Only Hoodies → Men</td></tr>
             <tr><td>Product detail</td><td><code>/shop/&lt;product-slug&gt;/</code></td><td>Sizes, colours, add-to-cart</td></tr>
             <tr><td>Cart</td><td><code>/cart/</code></td><td>Empty cart, or your items</td></tr>
             <tr><td>Contact</td><td><code>/contact/</code></td><td>Contact form</td></tr>
@@ -1179,9 +1259,22 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
 
       <p>Any count above zero means the catalogue is populated and the storefront has something to show.</p>
 
+      <figure>
+        <img src="docs/images/05-shop-category-tree.png"
+             alt="The shop page filtered to Hoodies, Men. The sidebar shows main categories as chips with indented Men and Women chips beneath, the Men chip highlighted, and the results heading reads 6 products."
+             loading="lazy" width="1600" height="1250">
+        <figcaption>
+          The shop sidebar mirrors the same two levels. The selected chip is highlighted, and the result count
+          matches the number beside it. Changing category keeps your size, colour, price, search, and sort
+          settings — and paging through results keeps them too.
+        </figcaption>
+      </figure>
+
       <h3>Try the shopping flow</h3>
       <ol class="steps">
-        <li>Open <code>/shop/</code> and click any product.</li>
+        <li>Open <strong>Browse Categories</strong> and pick a subcategory, such as Hoodies → Men.</li>
+        <li>Confirm the product count matches the number shown beside that subcategory.</li>
+        <li>Click any product.</li>
         <li>Choose a size and colour, then add it to your cart.</li>
         <li>Open <code>/cart/</code> and confirm the item and price are correct.</li>
         <li>Go to checkout and fill in the delivery details.</li>
@@ -1189,19 +1282,19 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </ol>
 
       <figure>
-        <img src="docs/images/05-cart.png"
-             alt="MetroDrip cart page with one line item: Night Route Windbreaker, XS / Carbon Black / oversized, SKU MD-NRJK-XS-CBLK-OVR, quantity 1, 2,499 pesos. The order summary panel shows an estimated total of 2,499 pesos."
+        <img src="docs/images/07-cart.png"
+             alt="MetroDrip cart page with one line item: Hoodies Men Placeholder 06, M / Bone White / oversized, SKU MD-MOCK-HOODIES-M-006, quantity 1, 549 pesos. The order summary panel shows an estimated total of 549 pesos."
              loading="lazy" width="1600" height="1075">
         <figcaption>
-          The cart after adding one variant. Note the SKU <code>MD-NRJK-XS-CBLK-OVR</code> — size, colour,
+          The cart after adding one variant. Note the SKU <code>MD-MOCK-HOODIES-M-006</code> — size, colour,
           and fit each become part of the variant identity, and stock is tracked per variant rather than per
           product.
         </figcaption>
       </figure>
 
       <figure>
-        <img src="docs/images/06-checkout.png"
-             alt="MetroDrip checkout page with a shipping details form on the left and an order summary on the right carrying the Night Route Windbreaker line item and a 2,499 peso total."
+        <img src="docs/images/08-checkout.png"
+             alt="MetroDrip checkout page with a shipping details form on the left and an order summary on the right carrying the Hoodies Men Placeholder 06 line item and a 549 peso total."
              loading="lazy" width="1600" height="1075">
         <figcaption>
           Checkout carries the same line item through to the order summary. Shipping stays unpriced until a
@@ -1387,7 +1480,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <figure>
-        <img src="docs/images/07-troubleshooting-flowchart.png"
+        <img src="docs/images/09-troubleshooting-flowchart.png"
              alt="Decision flowchart titled 'The page will not load — what to check'. Four questions in sequence: is the runserver terminal still running, is the database container healthy, does /healthz/ready/ return ok, and is the catalogue empty. Each 'no' branches right to a fix command; answering through to the end suggests a hard refresh."
              loading="lazy" width="1175" height="751">
         <figcaption>
@@ -1449,7 +1542,9 @@ docker compose up -d db --wait
             <tr><td><code>docker compose ps</code></td><td>Show whether the container is running and healthy</td></tr>
             <tr><td><code>docker compose logs db</code></td><td>Read the database logs when something is wrong</td></tr>
             <tr><td><code>manage.py migrate</code></td><td>Create or update database tables</td></tr>
-            <tr><td><code>manage.py seed_demo</code></td><td>Load sample products, stock, and pages</td></tr>
+            <tr><td><code>manage.py seed_demo</code></td><td>Load the five sample products, stock, and pages</td></tr>
+            <tr><td><code>manage.py seed_mock_catalog</code></td><td>Fill every subcategory with placeholder products</td></tr>
+            <tr><td><code>manage.py seed_mock_catalog --dry-run</code></td><td>Preview that plan without writing</td></tr>
             <tr><td><code>manage.py runserver</code></td><td>Start the web server on port 8000</td></tr>
             <tr><td><code>manage.py createsuperuser</code></td><td>Create an admin account</td></tr>
             <tr><td><code>manage.py check</code></td><td>Look for configuration problems</td></tr>
@@ -1470,8 +1565,11 @@ docker compose up -d db --wait
 [ ] docker compose ps shows metrodrip-mysql as healthy
 [ ] manage.py migrate finished without errors
 [ ] manage.py seed_demo finished without errors
+[ ] manage.py seed_mock_catalog finished without errors
 [ ] manage.py check reports no issues
 [ ] http://127.0.0.1:8000/ shows the product grid
+[ ] Browse Categories opens and lists Men / Women per category
+[ ] A subcategory link returns the count shown beside it
 [ ] http://127.0.0.1:8000/healthz/ready/ returns {"status": "ok"}
 [ ] Superuser created and /admin/ login works</code></pre></div>
     </section>
