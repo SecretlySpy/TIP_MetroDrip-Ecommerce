@@ -1190,15 +1190,16 @@
 - **Behavior**: Windows checkouts cannot carry a POSIX executable bit, and Docker Desktop's Windows build context reports 0755 for every file, so a mode defect is invisible locally and only appears on a Linux runner. Both files are therefore recorded as `100755` in the Git tree *and* chmodded explicitly in the image build. The chmod is authoritative: the image contract holds even if a future checkout, archive, or export drops the bit.
 - **Side Effects**: None beyond the mode change in the built image layer.
 
-# Module / File: index.html and .nojekyll
+# Module / File: index.html, .nojekyll, and docs/images/
 
-## Function: N/A — GitHub Pages project-site contract
-- **Purpose**: Make the repository's GitHub Pages URL resolve to a maintained documentation index instead of an auto-rendered README.
+## Function: N/A — GitHub Pages onboarding-guide contract
+- **Purpose**: Serve the team's local setup and testing guide at the repository's GitHub Pages URL, replacing the auto-rendered README.
 - **Inputs**:
   - `repository root` (`GitHub Pages publishing source`): Branch `main`, root directory.
-- **Outputs**: A static, self-contained landing page listing project documentation and local-run instructions.
-- **Dependencies**: GitHub Pages static hosting, Google Fonts (Anton, Inter, IBM Plex Mono). No build step, no framework, no local asset references.
-- **Behavior**: Pages serves static files only and executes no application code, so the Django storefront cannot be hosted there; the page states this explicitly rather than implying a broken deployment. Empty `.nojekyll` disables the Jekyll build, which would otherwise pass tracked Markdown containing Django template tags through Liquid. Documentation links target GitHub's blob view because Pages serves sibling `.md` files as raw text. Design tokens are duplicated inline from `static/css/storefront.css` so the project site matches the storefront brand without coupling to Django's static pipeline.
+  - `viewer OS selection` (`radio input state`): Chooses which platform's commands are displayed. Defaults to Windows.
+- **Outputs**: A static, self-contained fifteen-section guide covering toolchain installation, configuration, database startup, migration and seeding, running the server, admin creation, verification, tests, teardown, troubleshooting, and a command cheat sheet.
+- **Dependencies**: GitHub Pages static hosting, Google Fonts (Anton, Inter, IBM Plex Mono). No build step, no framework, no external scripts, no local asset references.
+- **Behavior**: Pages serves static files only and executes no application code, so the Django storefront cannot be hosted there; the guide states this explicitly rather than implying a broken deployment. Empty `.nojekyll` disables the Jekyll build, which would otherwise pass tracked Markdown containing Django template tags through Liquid. Documentation links target GitHub's blob view because Pages serves sibling `.md` files as raw text. Platform-specific commands are switched by one radio group at the top of `.osroot` using CSS sibling selectors, so the guide works without JavaScript; `.only-win|mac|linux` toggle `display:block` and `.only-win-i|mac-i|linux-i` toggle `display:inline` for OS-specific words mid-sentence. Inline `style` attributes must never be used on these classes — they defeat the `display:none` default and reveal all three platforms simultaneously. The single script adds clipboard buttons as progressive enhancement. An inline SVG renders the browser → Django → MySQL topology with a `<title>`/`<desc>` pair for screen readers. Six `<figure>` elements hold dashed placeholders naming their expected `docs/images/` file; `docs/images/README.md` records the capture list, sizing conventions, redaction rules, and the markup swap for replacing a placeholder with a real image.
 - **Side Effects**: Publishes a public page at the repository's Pages URL on push to `main`.
 
 # Module / File: tests/

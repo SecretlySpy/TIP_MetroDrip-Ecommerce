@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <!--
-  GitHub Pages landing page for TIP_MetroDrip-Ecommerce.
+  GitHub Pages site for TIP_MetroDrip-Ecommerce — local setup and testing guide.
 
-  MetroDrip itself is a Django server application and cannot run on GitHub
-  Pages, which serves static files only. This page exists so the project URL
-  resolves to a real index of the documentation instead of a raw README, and
-  so visitors are told plainly where the running application lives.
+  MetroDrip itself is a Django server application and cannot run on GitHub Pages,
+  which serves static files only. This page is the team's onboarding guide: it
+  explains how to install the toolchain, configure the project, run it locally,
+  and verify that it works.
 
-  Deliberately self-contained (no build step, no asset pipeline) because Pages
-  publishes the repository root as-is. The palette and type scale mirror
-  static/css/storefront.css so the project site and the storefront read as one
-  brand.
+  Deliberately self-contained (no build step, no asset pipeline, no external
+  scripts) because Pages publishes the repository root as-is. The palette and
+  type scale mirror static/css/storefront.css so the guide and the storefront
+  read as one brand.
 
   The empty .nojekyll beside this file disables the Jekyll build. Several tracked
   Markdown files embed Django template syntax inside code fences, which Liquid can
@@ -18,13 +18,21 @@
   the deterministic entry point. Documentation links point at GitHub's blob view
   rather than the .md files next to them, because Pages would serve those as raw
   text instead of rendered Markdown.
+
+  OS-specific commands are switched by the radio group at the top of .osroot using
+  pure CSS sibling selectors, so the guide needs no JavaScript to be usable. The
+  only script on the page adds copy-to-clipboard buttons as a progressive
+  enhancement; with JS disabled the code blocks still read and select normally.
+
+  Screenshot placeholders point at docs/images/. See docs/images/README.md for the
+  capture list and naming convention.
 -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MetroDrip — B2C E-commerce &amp; Inventory System</title>
-  <meta name="description" content="MetroDrip is a Django 5.2 / MySQL 8 e-commerce and inventory system for a Metro Manila streetwear brand. Project documentation, architecture notes, and deployment guide.">
+  <title>MetroDrip — Local Setup &amp; Testing Guide</title>
+  <meta name="description" content="Step-by-step guide for setting up and testing the MetroDrip e-commerce system locally. Written for beginners, covering Windows, macOS, and Linux.">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -39,11 +47,14 @@
       --color-surface-raised: #FFFFFF;
       --color-muted: #75756E;
       --color-border: #E4E4DF;
+      --color-danger: #E5484D;
+      --color-success: #30A46C;
 
       --font-display: 'Anton', sans-serif;
       --font-body: 'Inter', sans-serif;
       --font-mono: 'IBM Plex Mono', monospace;
 
+      --space-xs: 0.25rem;
       --space-sm: 0.5rem;
       --space-md: 1rem;
       --space-lg: 1.5rem;
@@ -54,13 +65,15 @@
       --radius-sm: 4px;
       --radius-md: 8px;
       --radius-pill: 9999px;
-      --container-max: 1000px;
+      --container-max: 940px;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html {
       font-size: 16px;
+      scroll-behavior: smooth;
+      scroll-padding-top: 5rem;
       -webkit-text-size-adjust: 100%;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
@@ -70,7 +83,7 @@
       background: var(--color-base);
       color: var(--color-ink);
       font-family: var(--font-body);
-      line-height: 1.6;
+      line-height: 1.65;
     }
 
     .container {
@@ -80,6 +93,11 @@
     }
 
     a { color: inherit; }
+
+    p { margin-bottom: var(--space-md); }
+    p:last-child { margin-bottom: 0; }
+
+    strong { font-weight: 600; }
 
     /* --- Barcode strip motif --- */
     .barcode {
@@ -100,9 +118,18 @@
       padding: var(--space-3xl) 0 var(--space-2xl);
     }
 
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--color-volt);
+      margin-bottom: var(--space-md);
+    }
+
     .wordmark {
       font-family: var(--font-display);
-      font-size: clamp(2.75rem, 9vw, 4.5rem);
+      font-size: clamp(2.5rem, 8vw, 4rem);
       line-height: 1;
       letter-spacing: 0.02em;
       text-transform: uppercase;
@@ -110,9 +137,19 @@
 
     .wordmark span { color: var(--color-volt); }
 
+    .masthead h2 {
+      font-family: var(--font-display);
+      font-weight: 400;
+      font-size: clamp(1.25rem, 3.5vw, 1.75rem);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      margin-top: var(--space-sm);
+      color: #D6D6D2;
+    }
+
     .tagline {
-      margin-top: var(--space-md);
-      max-width: 46ch;
+      margin-top: var(--space-lg);
+      max-width: 56ch;
       font-size: 1.0625rem;
       color: #D6D6D2;
     }
@@ -136,50 +173,328 @@
       color: #D6D6D2;
     }
 
-    /* --- Notice: why the storefront is not served here --- */
-    .notice {
-      margin: calc(var(--space-2xl) * -1) auto var(--space-2xl);
-      position: relative;
-      background: var(--color-volt);
-      color: var(--color-ink);
-      border-radius: var(--radius-md);
-      padding: var(--space-lg) var(--space-xl);
-      max-width: calc(var(--container-max) - (var(--space-lg) * 2));
+    /* --- Sticky section nav --- */
+    .tocbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(244, 244, 242, 0.94);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--color-border);
     }
 
-    .notice h2 {
+    .tocbar nav {
+      display: flex;
+      gap: var(--space-lg);
+      overflow-x: auto;
+      padding: var(--space-sm) var(--space-lg);
+      max-width: var(--container-max);
+      margin: 0 auto;
+      scrollbar-width: thin;
+    }
+
+    .tocbar a {
       font-family: var(--font-mono);
-      font-size: 0.75rem;
-      letter-spacing: 0.08em;
+      font-size: 0.6875rem;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      margin-bottom: var(--space-sm);
+      white-space: nowrap;
+      text-decoration: none;
+      color: var(--color-muted);
+      padding: var(--space-xs) 0;
+      border-bottom: 2px solid transparent;
     }
 
-    .notice p { font-size: 0.9375rem; }
-    .notice p + p { margin-top: var(--space-sm); }
-    .notice code {
-      font-family: var(--font-mono);
-      font-size: 0.875em;
-      background: rgba(20, 20, 20, 0.1);
-      padding: 0.1em 0.35em;
-      border-radius: var(--radius-sm);
-    }
+    .tocbar a:hover { color: var(--color-ink); border-bottom-color: var(--color-volt); }
 
     /* --- Sections --- */
-    section { padding-bottom: var(--space-3xl); }
+    main { padding-top: var(--space-2xl); }
+    section { margin-bottom: var(--space-3xl); }
+
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-md);
+      margin-bottom: var(--space-md);
+      padding-bottom: var(--space-sm);
+      border-bottom: 2px solid var(--color-ink);
+    }
+
+    .step-num {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: var(--color-ink);
+      background: var(--color-volt);
+      padding: 0.2rem 0.55rem;
+      border-radius: var(--radius-sm);
+      white-space: nowrap;
+    }
 
     h2.section-title {
       font-family: var(--font-display);
-      font-size: 1.75rem;
+      font-size: clamp(1.35rem, 4vw, 1.75rem);
       text-transform: uppercase;
       letter-spacing: 0.02em;
-      margin-bottom: var(--space-lg);
+      font-weight: 400;
     }
 
-    /* --- Waybill-style document cards --- */
+    h3 {
+      font-size: 1.0625rem;
+      font-weight: 600;
+      margin: var(--space-xl) 0 var(--space-sm);
+    }
+
+    /* --- Callouts --- */
+    .note {
+      border-left: 4px solid var(--color-ink);
+      background: var(--color-surface-raised);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      padding: var(--space-md) var(--space-lg);
+      margin: var(--space-lg) 0;
+      font-size: 0.9375rem;
+    }
+
+    .note--tip     { border-left-color: var(--color-success); }
+    .note--warn    { border-left-color: var(--color-danger); }
+    .note--volt    { border-left-color: var(--color-volt); }
+
+    .note__label {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: var(--space-xs);
+    }
+
+    /* --- Code blocks --- */
+    .code {
+      position: relative;
+      margin: var(--space-md) 0;
+    }
+
+    .code pre {
+      background: var(--color-ink);
+      color: #E8E8E4;
+      border-radius: var(--radius-md);
+      padding: var(--space-lg);
+      padding-right: 5.5rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      line-height: 1.75;
+      tab-size: 2;
+    }
+
+    .code .c  { color: #8A8A82; }   /* comment */
+    .code .p  { color: var(--color-volt); }  /* prompt / highlight */
+    .code .o  { color: #9FD0F0; }   /* output */
+
+    .copy {
+      position: absolute;
+      top: var(--space-sm);
+      right: var(--space-sm);
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #B8B8B0;
+      background: #262626;
+      border: 1px solid #3A3A3A;
+      border-radius: var(--radius-sm);
+      padding: 0.3rem 0.6rem;
+      cursor: pointer;
+      transition: all 150ms ease;
+    }
+
+    .copy:hover { color: var(--color-ink); background: var(--color-volt); border-color: var(--color-volt); }
+    .copy[data-copied="true"] { color: var(--color-ink); background: var(--color-volt); border-color: var(--color-volt); }
+
+    code:not(pre code) {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      background: #E9E9E5;
+      padding: 0.1em 0.35em;
+      border-radius: var(--radius-sm);
+      word-break: break-word;
+    }
+
+    /* --- Tables --- */
+    .tablewrap { overflow-x: auto; margin: var(--space-md) 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      background: var(--color-surface-raised);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      min-width: 460px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: var(--space-sm) var(--space-md);
+      border-bottom: 1px solid var(--color-border);
+      vertical-align: top;
+    }
+
+    th {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: #EDEDE9;
+    }
+
+    tbody tr:last-child td { border-bottom: none; }
+    td code { white-space: nowrap; }
+
+    /* --- Lists --- */
+    ul.checks, ol.steps { margin: var(--space-md) 0 var(--space-md) var(--space-lg); }
+    ul.checks li, ol.steps li { margin-bottom: var(--space-sm); }
+
+    /* --- OS switcher (pure CSS) --- */
+    .osroot > input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .ostabs {
+      position: sticky;
+      top: 2.6rem;
+      z-index: 15;
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-xs);
+      background: var(--color-base);
+      padding: var(--space-md) 0;
+      margin-bottom: var(--space-md);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .ostabs span {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      align-self: center;
+      margin-right: var(--space-sm);
+    }
+
+    .ostabs label {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.4rem 0.9rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-pill);
+      background: var(--color-surface-raised);
+      cursor: pointer;
+      transition: all 150ms ease;
+      user-select: none;
+    }
+
+    .ostabs label:hover { border-color: var(--color-ink); }
+
+    .only-win, .only-mac, .only-linux { display: none; }
+
+    #os-win:checked   ~ * .only-win,
+    #os-mac:checked   ~ * .only-mac,
+    #os-linux:checked ~ * .only-linux { display: block; }
+
+    /* Inline variants, for OS-specific words inside a sentence. These must not
+       use the block classes above: a display:block override mid-paragraph would
+       break the line, and an inline `style` attribute would defeat the
+       display:none default and reveal all three at once. */
+    .only-win-i, .only-mac-i, .only-linux-i { display: none; }
+
+    #os-win:checked   ~ * .only-win-i,
+    #os-mac:checked   ~ * .only-mac-i,
+    #os-linux:checked ~ * .only-linux-i { display: inline; }
+
+    #os-win:checked   ~ .ostabs label[for="os-win"],
+    #os-mac:checked   ~ .ostabs label[for="os-mac"],
+    #os-linux:checked ~ .ostabs label[for="os-linux"] {
+      background: var(--color-ink);
+      color: var(--color-base);
+      border-color: var(--color-ink);
+    }
+
+    /* Keyboard focus for the visually hidden radios lands on the label. */
+    .osroot > input[type="radio"]:focus-visible ~ .ostabs label { outline: 2px dashed var(--color-muted); outline-offset: 2px; }
+
+    /* --- Figure / screenshot placeholders --- */
+    figure {
+      margin: var(--space-lg) 0;
+      background: var(--color-surface-raised);
+      border: 2px dashed var(--color-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-lg);
+    }
+
+    .ph {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-sm);
+      min-height: 150px;
+      background: repeating-linear-gradient(
+        45deg,
+        #F0F0EC 0 10px,
+        #E9E9E5 10px 20px
+      );
+      border-radius: var(--radius-sm);
+      color: var(--color-muted);
+      text-align: center;
+      padding: var(--space-lg);
+    }
+
+    .ph__icon { font-size: 1.5rem; line-height: 1; }
+
+    .ph__title {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .ph__path {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: #9A9A92;
+    }
+
+    figcaption {
+      margin-top: var(--space-md);
+      font-size: 0.8125rem;
+      color: var(--color-muted);
+      line-height: 1.55;
+    }
+
+    figcaption b { color: var(--color-ink); font-weight: 600; }
+
+    /* --- Architecture diagram --- */
+    .diagram {
+      background: var(--color-surface-raised);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-lg);
+      margin: var(--space-lg) 0;
+      overflow-x: auto;
+    }
+
+    .diagram svg { display: block; width: 100%; min-width: 520px; height: auto; }
+
+    /* --- Doc cards --- */
     .docs {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
       gap: var(--space-md);
       list-style: none;
     }
@@ -194,11 +509,7 @@
       transition: border-color 150ms ease, transform 150ms ease;
     }
 
-    .doc:hover,
-    .doc:focus-visible {
-      border-color: var(--color-ink);
-      transform: translateY(-2px);
-    }
+    .doc:hover, .doc:focus-visible { border-color: var(--color-ink); transform: translateY(-2px); }
 
     .doc__label {
       display: block;
@@ -210,32 +521,8 @@
       margin-bottom: var(--space-sm);
     }
 
-    .doc__title {
-      font-weight: 600;
-      font-size: 1.0625rem;
-      margin-bottom: 0.35rem;
-    }
-
-    .doc__desc {
-      font-size: 0.875rem;
-      color: var(--color-muted);
-      line-height: 1.5;
-    }
-
-    /* --- Quickstart --- */
-    pre {
-      background: var(--color-ink);
-      color: #E8E8E4;
-      border-radius: var(--radius-md);
-      padding: var(--space-lg);
-      overflow-x: auto;
-      font-family: var(--font-mono);
-      font-size: 0.8125rem;
-      line-height: 1.7;
-    }
-
-    pre .c { color: #8A8A82; }
-    pre .p { color: var(--color-volt); }
+    .doc__title { font-weight: 600; font-size: 1.0625rem; margin-bottom: 0.35rem; }
+    .doc__desc  { font-size: 0.875rem; color: var(--color-muted); line-height: 1.5; }
 
     /* --- Footer --- */
     footer {
@@ -245,17 +532,14 @@
       color: var(--color-muted);
     }
 
-    footer a {
-      color: var(--color-ink);
-      text-decoration-color: var(--color-border);
-      text-underline-offset: 3px;
-    }
-
+    footer a { color: var(--color-ink); text-decoration-color: var(--color-border); text-underline-offset: 3px; }
     footer a:hover { text-decoration-color: var(--color-ink); }
 
-    :focus-visible {
-      outline: 3px solid var(--color-volt);
-      outline-offset: 2px;
+    :focus-visible { outline: 3px solid var(--color-volt); outline-offset: 2px; }
+
+    @media (max-width: 640px) {
+      .ostabs { position: static; }
+      .section-head { flex-direction: column; gap: var(--space-xs); }
     }
   </style>
 </head>
@@ -263,18 +547,20 @@
 
   <header class="masthead">
     <div class="container">
+      <p class="eyebrow">Local Setup &amp; Testing Guide</p>
       <h1 class="wordmark">Metro<span>Drip</span></h1>
+      <h2>Run the project on your own machine</h2>
       <p class="tagline">
-        B2C e-commerce and inventory system for a Metro&nbsp;Manila streetwear brand —
-        built as a single Django application with a real MySQL&nbsp;8 concurrency model.
+        MetroDrip is a B2C e-commerce and inventory system for a Metro&nbsp;Manila streetwear brand.
+        This guide takes you from a completely fresh computer to a working storefront in your browser.
+        No prior Django or Docker experience is assumed — every command is explained.
       </p>
       <ul class="stack">
         <li>Django 5.2</li>
-        <li>MySQL 8 · InnoDB</li>
+        <li>Python 3.14</li>
+        <li>MySQL 8.4</li>
         <li>HTMX</li>
         <li>Alpine.js</li>
-        <li>Gunicorn</li>
-        <li>Caddy</li>
         <li>Docker</li>
       </ul>
     </div>
@@ -282,88 +568,995 @@
 
   <div class="barcode" role="presentation"></div>
 
-  <div class="container">
-    <div class="notice">
-      <h2>About this page</h2>
-      <p>
-        This is the project documentation site. The MetroDrip storefront itself is a
-        <strong>server-rendered Django application backed by MySQL</strong>, so it cannot be
-        hosted on GitHub Pages — Pages serves static files only and runs no application code.
-      </p>
-      <p>
-        To see the storefront, run it locally with the quickstart below, or deploy the staging
-        stack described in <code>deploy/README.md</code>.
-      </p>
-    </div>
+  <div class="tocbar">
+    <nav aria-label="Guide sections">
+      <a href="#overview">Overview</a>
+      <a href="#install">1 · Install tools</a>
+      <a href="#clone">2 · Get the code</a>
+      <a href="#venv">3 · Python env</a>
+      <a href="#config">4 · Configure</a>
+      <a href="#database">5 · Database</a>
+      <a href="#migrate">6 · Data</a>
+      <a href="#run">7 · Run</a>
+      <a href="#admin">8 · Admin</a>
+      <a href="#verify">9 · Verify</a>
+      <a href="#tests">10 · Tests</a>
+      <a href="#stop">11 · Stop</a>
+      <a href="#trouble">Troubleshooting</a>
+      <a href="#cheatsheet">Cheat sheet</a>
+      <a href="#docs">Docs</a>
+    </nav>
   </div>
 
-  <main class="container">
+  <main class="container osroot">
 
-    <section>
-      <h2 class="section-title">Documentation</h2>
+    <input type="radio" id="os-win" name="os" checked>
+    <input type="radio" id="os-mac" name="os">
+    <input type="radio" id="os-linux" name="os">
+
+    <div class="ostabs">
+      <span>Your OS:</span>
+      <label for="os-win">Windows</label>
+      <label for="os-mac">macOS</label>
+      <label for="os-linux">Linux</label>
+    </div>
+
+    <!-- ============================== OVERVIEW ============================== -->
+    <section id="overview">
+      <div class="section-head">
+        <span class="step-num">Start here</span>
+        <h2 class="section-title">What you are about to build</h2>
+      </div>
+
+      <p>
+        When you finish this guide you will have <strong>two things running at the same time</strong> on your
+        computer:
+      </p>
+
+      <ol class="steps">
+        <li>A <strong>MySQL database</strong> running inside a Docker container. This stores products, orders, stock, and customers.</li>
+        <li>A <strong>Django web server</strong> running directly on your machine. This serves the storefront at <code>http://127.0.0.1:8000/</code>.</li>
+      </ol>
+
+      <p>
+        Your browser talks to Django, and Django talks to MySQL. That is the whole picture:
+      </p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 720 250" role="img" aria-labelledby="archtitle archdesc">
+          <title id="archtitle">MetroDrip local development architecture</title>
+          <desc id="archdesc">
+            Your browser sends requests to the Django development server on port 8000, running on your host
+            machine. Django reads and writes data over port 3306 to a MySQL 8.4 database running in a Docker
+            container. An optional scheduler process also connects to the same database.
+          </desc>
+
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#141414"/>
+            </marker>
+          </defs>
+
+          <!-- Browser -->
+          <rect x="12" y="70" width="150" height="80" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="87" y="100" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">Your browser</text>
+          <text x="87" y="122" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">Chrome / Edge</text>
+
+          <!-- Django -->
+          <rect x="255" y="55" width="200" height="110" rx="8" fill="#C8F031" stroke="#141414" stroke-width="2"/>
+          <text x="355" y="88" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">Django dev server</text>
+          <text x="355" y="110" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">manage.py runserver</text>
+          <text x="355" y="130" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">127.0.0.1:8000</text>
+          <text x="355" y="150" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#3E4A16">runs on your machine</text>
+
+          <!-- MySQL -->
+          <rect x="545" y="55" width="163" height="110" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="626" y="88" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">MySQL 8.4</text>
+          <text x="626" y="110" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">metrodrip-mysql</text>
+          <text x="626" y="130" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">port 3306</text>
+          <text x="626" y="150" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">Docker container</text>
+
+          <!-- Scheduler (optional) -->
+          <rect x="255" y="192" width="200" height="46" rx="8" fill="#FFFFFF" stroke="#B8B8B0" stroke-width="2" stroke-dasharray="5 4"/>
+          <text x="355" y="211" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#75756E">Scheduler (optional)</text>
+          <text x="355" y="228" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#9A9A92">manage.py run_scheduler</text>
+
+          <!-- Arrows -->
+          <line x1="164" y1="110" x2="248" y2="110" stroke="#141414" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+          <text x="206" y="100" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">HTTP</text>
+
+          <line x1="457" y1="110" x2="538" y2="110" stroke="#141414" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+          <text x="497" y="100" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">SQL</text>
+
+          <path d="M 455 215 L 626 215 L 626 168" fill="none" stroke="#B8B8B0" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+        </svg>
+      </div>
+
+      <div class="note note--volt">
+        <span class="note__label">Why Docker for the database?</span>
+        <p>
+          Installing MySQL directly on your computer is fiddly and different on every operating system.
+          Docker gives everyone on the team the <em>exact same</em> database version and settings with one
+          command, and you can delete it cleanly when you are done. You do not need to learn Docker to
+          follow this guide — just three commands.
+        </p>
+      </div>
+
+      <div class="note">
+        <span class="note__label">Roughly how long this takes</span>
+        <p>
+          <strong>First time on a fresh machine:</strong> 30–45 minutes, mostly waiting for downloads.<br>
+          <strong>Every time after that:</strong> about 30 seconds — see the <a href="#cheatsheet">cheat sheet</a>.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================== 1. INSTALL ============================== -->
+    <section id="install">
+      <div class="section-head">
+        <span class="step-num">Step 1</span>
+        <h2 class="section-title">Install the tools</h2>
+      </div>
+
+      <p>You need four things. Install them in this order, and <strong>restart your terminal after each one</strong> so it picks up the new commands.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Tool</th><th>Version</th><th>What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Git</strong></td><td>any recent</td><td>Downloads the project code from GitHub.</td></tr>
+            <tr><td><strong>Python</strong></td><td>3.14</td><td>The language MetroDrip is written in.</td></tr>
+            <tr><td><strong>Docker Desktop</strong></td><td>28+</td><td>Runs the MySQL database in a container.</td></tr>
+            <tr><td><strong>uv</strong></td><td>any recent</td><td>Creates the Python environment and installs libraries. Much faster than pip.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="only-win">
+        <h3>Windows</h3>
+        <p>Download and run the installers:</p>
+        <ul class="checks">
+          <li><a href="https://git-scm.com/download/win">Git for Windows</a> — accept the defaults.</li>
+          <li><a href="https://www.python.org/downloads/">Python 3.14</a> — <strong>tick “Add python.exe to PATH”</strong> on the first screen. This is the single most common setup mistake.</li>
+          <li><a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a> — restart your computer when it asks.</li>
+        </ul>
+        <p>Then open <strong>PowerShell</strong> and install uv:</p>
+        <div class="code"><pre><code>powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"</code></pre></div>
+      </div>
+
+      <div class="only-mac">
+        <h3>macOS</h3>
+        <p>The easiest route is <a href="https://brew.sh/">Homebrew</a>. Open <strong>Terminal</strong> and run:</p>
+        <div class="code"><pre><code><span class="c"># Install Homebrew first if you do not have it.</span>
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+<span class="c"># Then the tools.</span>
+brew install git python@3.14 uv
+brew install --cask docker</code></pre></div>
+        <p>Open the <strong>Docker</strong> app from your Applications folder once, so it can finish setting itself up.</p>
+      </div>
+
+      <div class="only-linux">
+        <h3>Linux (Debian / Ubuntu)</h3>
+        <div class="code"><pre><code><span class="c"># Git and build basics.</span>
+sudo apt update &amp;&amp; sudo apt install -y git curl
+
+<span class="c"># Docker Engine and the Compose plugin.</span>
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker "$USER"   <span class="c"># then log out and back in</span>
+
+<span class="c"># uv (it can install Python 3.14 for you in the next step).</span>
+curl -LsSf https://astral.sh/uv/install.sh | sh</code></pre></div>
+        <div class="note note--tip">
+          <span class="note__label">Tip</span>
+          <p>The <code>usermod</code> line lets you run Docker without <code>sudo</code>. You must log out and back in for it to take effect.</p>
+        </div>
+      </div>
+
+      <h3>Check everything installed</h3>
+      <p>Close your terminal, open a new one, and run these. Each should print a version number:</p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>git --version
+python --version
+docker --version
+uv --version</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>git --version
+python3 --version
+docker --version
+uv --version</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>git --version
+docker --version
+uv --version</code></pre></div>
+      </div>
+
+      <div class="note note--warn">
+        <span class="note__label">If a command is “not recognised” or “not found”</span>
+        <p>
+          The tool installed but your terminal does not know about it yet. Close <em>every</em> terminal window
+          and open a fresh one. If it still fails on Windows, re-run the Python installer, choose
+          <strong>Modify</strong>, and make sure <strong>“Add Python to environment variables”</strong> is ticked.
+        </p>
+      </div>
+
+      <figure>
+        <div class="ph">
+          <span class="ph__icon" aria-hidden="true">🖼️</span>
+          <span class="ph__title">Screenshot placeholder</span>
+          <span class="ph__path">docs/images/01-docker-desktop-running.png</span>
+        </div>
+        <figcaption>
+          <b>Suggested capture:</b> Docker Desktop open on the Containers tab, with the whale icon in the
+          system tray / menu bar showing the green “running” state. This is what students should see
+          <em>before</em> continuing to Step 5.
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================== 2. CLONE ============================== -->
+    <section id="clone">
+      <div class="section-head">
+        <span class="step-num">Step 2</span>
+        <h2 class="section-title">Get the code</h2>
+      </div>
+
+      <p>
+        Pick a folder you can find again — <code>Documents</code> is fine. Then clone the repository and move
+        into it. Every command from here on assumes you are <strong>inside the project folder</strong>.
+      </p>
+
+      <div class="code"><pre><code>git clone https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce.git
+cd TIP_MetroDrip-Ecommerce</code></pre></div>
+
+      <div class="note note--tip">
+        <span class="note__label">How to know you are in the right place</span>
+        <p>Run <span class="only-win-i"><code>dir</code></span><span class="only-mac-i"><code>ls</code></span><span class="only-linux-i"><code>ls</code></span> and you should see <code>manage.py</code>, <code>requirements.txt</code>, and folders named <code>apps</code> and <code>config</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============================== 3. VENV ============================== -->
+    <section id="venv">
+      <div class="section-head">
+        <span class="step-num">Step 3</span>
+        <h2 class="section-title">Create the Python environment</h2>
+      </div>
+
+      <p>
+        A <strong>virtual environment</strong> is a private folder of Python libraries that belongs to this
+        project only. It stops MetroDrip's libraries from clashing with anything else on your computer.
+        We create one called <code>.venv</code>, then install everything the project needs into it.
+      </p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>uv venv .venv --python 3.14
+uv pip install --python .venv/Scripts/python.exe -r requirements.txt</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>uv venv .venv --python 3.14
+uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>uv venv .venv --python 3.14
+uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
+      </div>
+
+      <p>This downloads Django, the MySQL driver, and the rest. It takes a minute or two the first time.</p>
+
+      <div class="note">
+        <span class="note__label">About the long paths in this guide</span>
+        <p>
+          We write out <span class="only-win-i"><code>.venv/Scripts/python</code></span><span class="only-mac-i"><code>.venv/bin/python</code></span><span class="only-linux-i"><code>.venv/bin/python</code></span> in full instead of “activating” the environment.
+          It is more typing, but it works identically in every terminal and removes a whole category of
+          “it works for me” problems. If you prefer, you can activate it once per terminal session:
+        </p>
+        <div class="only-win">
+          <div class="code"><pre><code>.venv\Scripts\Activate.ps1     <span class="c"># PowerShell</span></code></pre></div>
+        </div>
+        <div class="only-mac">
+          <div class="code"><pre><code>source .venv/bin/activate</code></pre></div>
+        </div>
+        <div class="only-linux">
+          <div class="code"><pre><code>source .venv/bin/activate</code></pre></div>
+        </div>
+        <p>…after which plain <code>python manage.py ...</code> works.</p>
+      </div>
+
+      <h3>Confirm it worked</h3>
+      <div class="only-win">
+        <div class="code"><pre><code>.venv/Scripts/python --version
+<span class="o">Python 3.14.4</span></code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>.venv/bin/python --version
+<span class="o">Python 3.14.4</span></code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>.venv/bin/python --version
+<span class="o">Python 3.14.4</span></code></pre></div>
+      </div>
+    </section>
+
+    <!-- ============================== 4. CONFIG ============================== -->
+    <section id="config">
+      <div class="section-head">
+        <span class="step-num">Step 4</span>
+        <h2 class="section-title">Create your configuration file</h2>
+      </div>
+
+      <p>
+        The project reads its settings — database password, secret key — from a file called <code>.env</code>.
+        That file is <strong>never</strong> committed to Git, because it holds secrets. A safe example is
+        provided, and its defaults already match the Docker database, so you can copy it as-is.
+      </p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>Copy-Item .env.example .env</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>cp .env.example .env</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>cp .env.example .env</code></pre></div>
+      </div>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Setting</th><th>Local value</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>DJANGO_SECRET_KEY</code></td><td>provided</td><td>Signs cookies and sessions. Fine for local use; a real deployment needs its own.</td></tr>
+            <tr><td><code>MYSQL_DATABASE</code></td><td><code>metrodrip</code></td><td>Name of the database Django connects to.</td></tr>
+            <tr><td><code>MYSQL_USER</code></td><td><code>metrodrip</code></td><td>Database username.</td></tr>
+            <tr><td><code>MYSQL_PASSWORD</code></td><td><code>metrodrip</code></td><td>Database password.</td></tr>
+            <tr><td><code>MYSQL_HOST</code></td><td><code>127.0.0.1</code></td><td>Your own machine — the Docker container publishes MySQL here.</td></tr>
+            <tr><td><code>MYSQL_PORT</code></td><td><code>3306</code></td><td>The standard MySQL port.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--warn">
+        <span class="note__label">Never commit this file</span>
+        <p>
+          <code>.env</code> is already listed in <code>.gitignore</code>, so Git will ignore it. Do not force-add it,
+          and never paste real passwords or API keys into a public repository or a group chat.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================== 5. DATABASE ============================== -->
+    <section id="database">
+      <div class="section-head">
+        <span class="step-num">Step 5</span>
+        <h2 class="section-title">Start the database</h2>
+      </div>
+
+      <p>
+        Make sure <strong>Docker Desktop is open and running</strong> first — look for the whale icon.
+        Then start the MySQL container:
+      </p>
+
+      <div class="code"><pre><code>docker compose up -d db --wait</code></pre></div>
+
+      <p>Reading that command:</p>
+      <ul class="checks">
+        <li><code>up</code> — create and start the container</li>
+        <li><code>-d</code> — “detached”, meaning it runs in the background and gives your terminal back</li>
+        <li><code>db</code> — only the database service (the web app runs on your machine, not in Docker)</li>
+        <li><code>--wait</code> — pause until MySQL reports that it is genuinely ready for connections</li>
+      </ul>
+
+      <p>You should see it finish with <code>Healthy</code>:</p>
+
+      <div class="code"><pre><code><span class="o">Container metrodrip-mysql  Started</span>
+<span class="o">Container metrodrip-mysql  Waiting</span>
+<span class="o">Container metrodrip-mysql  Healthy</span></code></pre></div>
+
+      <div class="note note--tip">
+        <span class="note__label">The first run is the slow one</span>
+        <p>
+          Docker has to download the MySQL image (a few hundred MB) and initialise the database. Give it a
+          couple of minutes. Every start after that is nearly instant.
+        </p>
+      </div>
+
+      <figure>
+        <div class="ph">
+          <span class="ph__icon" aria-hidden="true">🖼️</span>
+          <span class="ph__title">Screenshot placeholder</span>
+          <span class="ph__path">docs/images/02-mysql-container-healthy.png</span>
+        </div>
+        <figcaption>
+          <b>Suggested capture:</b> the terminal output above showing <code>metrodrip-mysql  Healthy</code>,
+          or the Docker Desktop Containers tab with <code>metrodrip-mysql</code> green and running.
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================== 6. MIGRATE ============================== -->
+    <section id="migrate">
+      <div class="section-head">
+        <span class="step-num">Step 6</span>
+        <h2 class="section-title">Build the tables and load demo data</h2>
+      </div>
+
+      <p>
+        The database is running but completely empty. Two commands fix that:
+        <strong>migrate</strong> creates the tables, and <strong>seed_demo</strong> fills them with sample
+        products so there is something to look at.
+      </p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>.venv/Scripts/python manage.py migrate
+.venv/Scripts/python manage.py seed_demo</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>.venv/bin/python manage.py migrate
+.venv/bin/python manage.py seed_demo</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>.venv/bin/python manage.py migrate
+.venv/bin/python manage.py seed_demo</code></pre></div>
+      </div>
+
+      <div class="note note--warn">
+        <span class="note__label">Do not panic if seed_demo prints all zeros</span>
+        <p>
+          On a second run you will see
+          <code>Demo seed complete: categories=0, products=0, variants=0…</code>.
+          That is <strong>not</strong> an error. The seed is <em>idempotent</em> — it only reports how many rows it
+          <em>newly created</em>. Zero means the data was already there from a previous run, which is exactly
+          what should happen. Verify with the check in <a href="#verify">Step 9</a>.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================== 7. RUN ============================== -->
+    <section id="run">
+      <div class="section-head">
+        <span class="step-num">Step 7</span>
+        <h2 class="section-title">Run the server</h2>
+      </div>
+
+      <div class="only-win">
+        <div class="code"><pre><code>.venv/Scripts/python manage.py runserver</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>.venv/bin/python manage.py runserver</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>.venv/bin/python manage.py runserver</code></pre></div>
+      </div>
+
+      <p>Leave that terminal open — the server runs until you stop it. Now open:</p>
+
+      <div class="code"><pre><code><span class="p">http://127.0.0.1:8000/</span></code></pre></div>
+
+      <p>
+        You should see the MetroDrip storefront with a product grid. 🎉
+      </p>
+
+      <div class="note note--tip">
+        <span class="note__label">Good to know</span>
+        <p>
+          The dev server <strong>auto-reloads</strong>. Edit a template or a view, save, refresh the browser, and your
+          change is live — no restart needed. Press <strong>Ctrl+C</strong> in that terminal to stop it.
+        </p>
+      </div>
+
+      <figure>
+        <div class="ph">
+          <span class="ph__icon" aria-hidden="true">🖼️</span>
+          <span class="ph__title">Screenshot placeholder</span>
+          <span class="ph__path">docs/images/03-storefront-homepage.png</span>
+        </div>
+        <figcaption>
+          <b>Suggested capture:</b> the storefront homepage at <code>http://127.0.0.1:8000/</code> with the
+          navigation bar and product grid visible. This is the “it worked” payoff image — put it near the
+          top of any presentation.
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================== 8. ADMIN ============================== -->
+    <section id="admin">
+      <div class="section-head">
+        <span class="step-num">Step 8</span>
+        <h2 class="section-title">Create an admin account</h2>
+      </div>
+
+      <p>
+        The storefront is the customer's view. The <strong>admin site</strong> is the staff view, where you manage
+        products, stock, and orders. You need to create a superuser before you can log in.
+      </p>
+
+      <p>Open a <strong>second terminal</strong> in the same folder (leave the server running) and run:</p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>.venv/Scripts/python manage.py createsuperuser</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>.venv/bin/python manage.py createsuperuser</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>.venv/bin/python manage.py createsuperuser</code></pre></div>
+      </div>
+
+      <p>
+        It asks for an <strong>email address</strong> (not a username — MetroDrip uses email to log in), a
+        <strong>name</strong>, and a password. The password is invisible as you type; that is normal.
+      </p>
+
+      <p>Then log in at:</p>
+      <div class="code"><pre><code><span class="p">http://127.0.0.1:8000/admin/</span></code></pre></div>
+
+      <div class="note">
+        <span class="note__label">Scripted version</span>
+        <p>If you want to create it without answering prompts — handy for a demo machine — both <code>--email</code> and <code>--name</code> are required:</p>
+        <div class="only-win">
+          <div class="code"><pre><code>$env:DJANGO_SUPERUSER_PASSWORD="admin12345"
+.venv/Scripts/python manage.py createsuperuser --noinput `
+  --email admin@metrodrip.test --name "Local Admin"</code></pre></div>
+        </div>
+        <div class="only-mac">
+          <div class="code"><pre><code>DJANGO_SUPERUSER_PASSWORD=admin12345 .venv/bin/python manage.py createsuperuser \
+  --noinput --email admin@metrodrip.test --name "Local Admin"</code></pre></div>
+        </div>
+        <div class="only-linux">
+          <div class="code"><pre><code>DJANGO_SUPERUSER_PASSWORD=admin12345 .venv/bin/python manage.py createsuperuser \
+  --noinput --email admin@metrodrip.test --name "Local Admin"</code></pre></div>
+        </div>
+        <p>Use a throwaway password like this only on your own machine.</p>
+      </div>
+
+      <figure>
+        <div class="ph">
+          <span class="ph__icon" aria-hidden="true">🖼️</span>
+          <span class="ph__title">Screenshot placeholder</span>
+          <span class="ph__path">docs/images/04-admin-dashboard.png</span>
+        </div>
+        <figcaption>
+          <b>Suggested capture:</b> the Django admin dashboard after logging in, showing the Catalog,
+          Inventory, and Orders sections. Useful for demonstrating the staff-side features.
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================== 9. VERIFY ============================== -->
+    <section id="verify">
+      <div class="section-head">
+        <span class="step-num">Step 9</span>
+        <h2 class="section-title">Check that everything works</h2>
+      </div>
+
+      <p>Click through these pages in your browser. All of them should load without an error page:</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Page</th><th>Address</th><th>What you should see</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Homepage</td><td><code>/</code></td><td>Banner and a grid of products</td></tr>
+            <tr><td>Shop</td><td><code>/shop/</code></td><td>Full catalogue with filters</td></tr>
+            <tr><td>Product detail</td><td><code>/shop/&lt;product-slug&gt;/</code></td><td>Sizes, colours, add-to-cart</td></tr>
+            <tr><td>Cart</td><td><code>/cart/</code></td><td>Empty cart, or your items</td></tr>
+            <tr><td>Contact</td><td><code>/contact/</code></td><td>Contact form</td></tr>
+            <tr><td>Login</td><td><code>/accounts/login/</code></td><td>Customer sign-in form</td></tr>
+            <tr><td>Register</td><td><code>/accounts/register/</code></td><td>Customer sign-up form</td></tr>
+            <tr><td>Admin</td><td><code>/admin/</code></td><td>Staff login, then the dashboard</td></tr>
+            <tr><td>Health check</td><td><code>/healthz/ready/</code></td><td><code>{"status": "ok"}</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--tip">
+        <span class="note__label">Fastest confidence check</span>
+        <p>
+          Visit <code>/healthz/ready/</code>. If it returns <code>{"status": "ok"}</code>, then Django started
+          <em>and</em> reached the database successfully. That single page proves both halves of the system.
+        </p>
+      </div>
+
+      <h3>Confirm the demo data actually loaded</h3>
+      <p>Because <code>seed_demo</code> can report zeros, count the rows directly:</p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>.venv/Scripts/python manage.py shell -c "from apps.catalog.models import Product, ProductVariant; print('products:', Product.objects.count(), '| variants:', ProductVariant.objects.count())"</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>.venv/bin/python manage.py shell -c "from apps.catalog.models import Product, ProductVariant; print('products:', Product.objects.count(), '| variants:', ProductVariant.objects.count())"</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>.venv/bin/python manage.py shell -c "from apps.catalog.models import Product, ProductVariant; print('products:', Product.objects.count(), '| variants:', ProductVariant.objects.count())"</code></pre></div>
+      </div>
+
+      <p>Any count above zero means the catalogue is populated and the storefront has something to show.</p>
+
+      <h3>Try the shopping flow</h3>
+      <ol class="steps">
+        <li>Open <code>/shop/</code> and click any product.</li>
+        <li>Choose a size and colour, then add it to your cart.</li>
+        <li>Open <code>/cart/</code> and confirm the item and price are correct.</li>
+        <li>Go to checkout and fill in the delivery details.</li>
+        <li>In a second tab, open <code>/admin/</code> and find the new order under <strong>Orders</strong>.</li>
+      </ol>
+
+      <figure>
+        <div class="ph">
+          <span class="ph__icon" aria-hidden="true">🖼️</span>
+          <span class="ph__title">Screenshot placeholder</span>
+          <span class="ph__path">docs/images/05-cart-and-checkout.png</span>
+        </div>
+        <figcaption>
+          <b>Suggested capture:</b> a two-panel image — the cart with one item on the left, the checkout form
+          on the right. Good evidence of a working end-to-end purchase flow for your report.
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================== 10. TESTS ============================== -->
+    <section id="tests">
+      <div class="section-head">
+        <span class="step-num">Step 10</span>
+        <h2 class="section-title">Run the automated tests</h2>
+      </div>
+
+      <p>
+        The project ships with a full test suite. It runs against the <strong>real MySQL database</strong>, not a
+        simplified stand-in, because some tests deliberately check what happens when two people buy the last
+        item at the same moment — behaviour that only a real database reproduces.
+      </p>
+
+      <div class="note note--warn">
+        <span class="note__label">Docker must be running</span>
+        <p>The database container has to be up (<a href="#database">Step 5</a>) or every test will fail with a connection error.</p>
+      </div>
+
+      <div class="only-win">
+        <div class="code"><pre><code>.venv/Scripts/pytest</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>.venv/bin/pytest</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>.venv/bin/pytest</code></pre></div>
+      </div>
+
+      <h3>Other quality checks</h3>
+      <p>These are the same checks that run automatically on GitHub when you push:</p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>.venv/Scripts/ruff check .            <span class="c"># find code problems</span>
+.venv/Scripts/ruff format --check .   <span class="c"># confirm formatting</span>
+.venv/Scripts/python manage.py check  <span class="c"># Django's own health check</span></code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>.venv/bin/ruff check .            <span class="c"># find code problems</span>
+.venv/bin/ruff format --check .   <span class="c"># confirm formatting</span>
+.venv/bin/python manage.py check  <span class="c"># Django's own health check</span></code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>.venv/bin/ruff check .            <span class="c"># find code problems</span>
+.venv/bin/ruff format --check .   <span class="c"># confirm formatting</span>
+.venv/bin/python manage.py check  <span class="c"># Django's own health check</span></code></pre></div>
+      </div>
+
+      <h3>Optional: the background scheduler</h3>
+      <p>
+        Some jobs — such as releasing stock that a customer reserved but never paid for — run on a timer in a
+        separate process. <code>runserver</code> does <em>not</em> start it. To test that behaviour, open a third
+        terminal:
+      </p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>.venv/Scripts/python manage.py run_scheduler</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>.venv/bin/python manage.py run_scheduler</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>.venv/bin/python manage.py run_scheduler</code></pre></div>
+      </div>
+    </section>
+
+    <!-- ============================== 11. STOP ============================== -->
+    <section id="stop">
+      <div class="section-head">
+        <span class="step-num">Step 11</span>
+        <h2 class="section-title">Stopping and cleaning up</h2>
+      </div>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Goal</th><th>Command</th><th>Effect on your data</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Stop the web server</td><td><code>Ctrl + C</code> in its terminal</td><td>None</td></tr>
+            <tr><td>Stop the database, keep data</td><td><code>docker compose stop</code></td><td>Kept</td></tr>
+            <tr><td>Remove containers, keep data</td><td><code>docker compose down</code></td><td>Kept</td></tr>
+            <tr><td>Delete everything, start fresh</td><td><code>docker compose down -v</code></td><td><strong>Permanently deleted</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--warn">
+        <span class="note__label">Read before typing docker compose down -v</span>
+        <p>
+          The <code>-v</code> flag deletes the storage volume — every product, order, and account in your local
+          database goes with it, and there is no undo. It is genuinely useful when you want a clean slate,
+          but only use it deliberately. Afterwards, re-run <a href="#migrate">Step 6</a> to rebuild.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================== TROUBLESHOOTING ============================== -->
+    <section id="trouble">
+      <div class="section-head">
+        <span class="step-num">Help</span>
+        <h2 class="section-title">Troubleshooting</h2>
+      </div>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>What you see</th><th>Why</th><th>Fix</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>Cannot connect to the Docker daemon</code></td>
+              <td>Docker Desktop is not running</td>
+              <td>Open Docker Desktop, wait for the whale icon to settle, then run <code>docker info</code> to confirm.</td>
+            </tr>
+            <tr>
+              <td><code>Can't connect to MySQL server on '127.0.0.1'</code></td>
+              <td>The container is stopped or still starting</td>
+              <td><code>docker compose up -d db --wait</code>, then <code>docker compose ps</code> and <code>docker compose logs db</code>.</td>
+            </tr>
+            <tr>
+              <td><code>port 3306 already allocated</code></td>
+              <td>Another MySQL is already using that port</td>
+              <td>Stop the other MySQL service, or change the port in <em>both</em> <code>docker-compose.yml</code> and <code>.env</code>.</td>
+            </tr>
+            <tr>
+              <td><code>Unknown database 'metrodrip'</code></td>
+              <td>Container setup did not finish, or <code>.env</code> disagrees with Compose</td>
+              <td>Compare <code>.env</code> against <code>.env.example</code>, check <code>docker compose logs db</code>, then restart the container.</td>
+            </tr>
+            <tr>
+              <td><code>No module named pip</code> inside <code>.venv</code></td>
+              <td>uv builds environments without bundled pip</td>
+              <td>Always install via <code>uv pip install --python &lt;venv-python&gt; ...</code> as shown in Step 3.</td>
+            </tr>
+            <tr>
+              <td><code>Access denied</code> when pytest creates <code>test_metrodrip</code></td>
+              <td>An old database volume predates the test-user grants</td>
+              <td>Back up anything you need, then <code>docker compose down -v</code> and redo Step 6.</td>
+            </tr>
+            <tr>
+              <td><code>You must use --name with --noinput</code></td>
+              <td>The custom user model needs a name as well as an email</td>
+              <td>Add <code>--name "Local Admin"</code> to the command.</td>
+            </tr>
+            <tr>
+              <td><code>seed_demo</code> reports all zeros</td>
+              <td>Not an error — the data already exists</td>
+              <td>Count the rows using the check in <a href="#verify">Step 9</a>.</td>
+            </tr>
+            <tr>
+              <td><code>python</code> or <code>uv</code> not recognised</td>
+              <td>Your terminal has a stale PATH</td>
+              <td>Close every terminal and open a new one. On Windows, re-run the Python installer and tick “Add to PATH”.</td>
+            </tr>
+            <tr>
+              <td>Pages load but look unstyled</td>
+              <td>Static files were not found</td>
+              <td>Confirm you are running <code>runserver</code> with <code>DEBUG</code> on, and hard-refresh with <code>Ctrl+Shift+R</code>.</td>
+            </tr>
+            <tr>
+              <td>A test or migration seems frozen</td>
+              <td>Two processes are competing for the same database rows</td>
+              <td>Close any duplicate <code>pytest</code> or <code>run_scheduler</code> processes and run one suite at a time.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <span class="note__label">Still stuck?</span>
+        <p>
+          Copy the <strong>last 20 lines</strong> of the error and the command you ran, and share both with the team.
+          A screenshot of a single red line is rarely enough to diagnose anything.
+        </p>
+      </div>
+
+      <figure>
+        <div class="ph">
+          <span class="ph__icon" aria-hidden="true">🗺️</span>
+          <span class="ph__title">Diagram placeholder</span>
+          <span class="ph__path">docs/images/06-troubleshooting-flowchart.png</span>
+        </div>
+        <figcaption>
+          <b>Suggested diagram:</b> a decision flowchart — “Page will not load?” → “Is the server terminal
+          still running?” → “Is Docker running?” → “Does <code>/healthz/ready/</code> respond?” → likely cause.
+          Draw it in draw.io or Figma and export as PNG.
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================== CHEAT SHEET ============================== -->
+    <section id="cheatsheet">
+      <div class="section-head">
+        <span class="step-num">Daily</span>
+        <h2 class="section-title">Cheat sheet</h2>
+      </div>
+
+      <p>Once the one-time setup is done, this is all you need each day:</p>
+
+      <div class="only-win">
+        <div class="code"><pre><code><span class="c"># 1. Start the database (Docker Desktop must be open).</span>
+docker compose up -d db --wait
+
+<span class="c"># 2. Start the web server.</span>
+.venv/Scripts/python manage.py runserver
+
+<span class="c"># 3. Open the storefront.</span>
+<span class="p">http://127.0.0.1:8000/</span></code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code><span class="c"># 1. Start the database (Docker must be running).</span>
+docker compose up -d db --wait
+
+<span class="c"># 2. Start the web server.</span>
+.venv/bin/python manage.py runserver
+
+<span class="c"># 3. Open the storefront.</span>
+<span class="p">http://127.0.0.1:8000/</span></code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code><span class="c"># 1. Start the database.</span>
+docker compose up -d db --wait
+
+<span class="c"># 2. Start the web server.</span>
+.venv/bin/python manage.py runserver
+
+<span class="c"># 3. Open the storefront.</span>
+<span class="p">http://127.0.0.1:8000/</span></code></pre></div>
+      </div>
+
+      <h3>Full command reference</h3>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Command</th><th>What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>docker compose up -d db --wait</code></td><td>Start MySQL and wait until it is ready</td></tr>
+            <tr><td><code>docker compose ps</code></td><td>Show whether the container is running and healthy</td></tr>
+            <tr><td><code>docker compose logs db</code></td><td>Read the database logs when something is wrong</td></tr>
+            <tr><td><code>manage.py migrate</code></td><td>Create or update database tables</td></tr>
+            <tr><td><code>manage.py seed_demo</code></td><td>Load sample products, stock, and pages</td></tr>
+            <tr><td><code>manage.py runserver</code></td><td>Start the web server on port 8000</td></tr>
+            <tr><td><code>manage.py createsuperuser</code></td><td>Create an admin account</td></tr>
+            <tr><td><code>manage.py check</code></td><td>Look for configuration problems</td></tr>
+            <tr><td><code>manage.py run_scheduler</code></td><td>Start the background job runner</td></tr>
+            <tr><td><code>manage.py shell</code></td><td>Open an interactive Python session with the project loaded</td></tr>
+            <tr><td><code>pytest</code></td><td>Run the full test suite</td></tr>
+            <tr><td><code>ruff check .</code></td><td>Lint the code</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Your setup checklist</h3>
+      <div class="code"><pre><code>[ ] git, python, docker, and uv all print a version
+[ ] Docker Desktop is running
+[ ] Repository cloned, terminal is inside the project folder
+[ ] .venv created and requirements installed
+[ ] .env exists (copied from .env.example)
+[ ] docker compose ps shows metrodrip-mysql as healthy
+[ ] manage.py migrate finished without errors
+[ ] manage.py seed_demo finished without errors
+[ ] manage.py check reports no issues
+[ ] http://127.0.0.1:8000/ shows the product grid
+[ ] http://127.0.0.1:8000/healthz/ready/ returns {"status": "ok"}
+[ ] Superuser created and /admin/ login works</code></pre></div>
+    </section>
+
+    <!-- ============================== DOCS ============================== -->
+    <section id="docs">
+      <div class="section-head">
+        <span class="step-num">More</span>
+        <h2 class="section-title">Project documentation</h2>
+      </div>
+
+      <p>Deeper reference material, all in the repository:</p>
+
       <div class="docs">
+        <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/Tech%20Stack%20Setup%20Guide.md">
+          <span class="doc__label">Setup</span>
+          <span class="doc__title">Tech Stack Setup Guide</span>
+          <span class="doc__desc">The long-form version of this page, with the full environment-variable map and staging startup flow.</span>
+        </a>
         <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/MetroDrip_AI_Handover.md">
           <span class="doc__label">Plan</span>
           <span class="doc__title">Handover Specification</span>
-          <span class="doc__desc">The approved plan: scope, data models, functional requirements, build order, and launch milestones.</span>
+          <span class="doc__desc">Scope, data models, functional requirements, build order, and launch milestones.</span>
         </a>
         <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/DECISIONS.md">
           <span class="doc__label">Log</span>
           <span class="doc__title">Decisions Log</span>
-          <span class="doc__desc">Implementation choices made during the build, with the reasoning and trade-offs behind each one.</span>
+          <span class="doc__desc">Implementation choices made during the build, with the reasoning behind each one.</span>
         </a>
         <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/AI%20Documentation%20Notes.md">
           <span class="doc__label">Reference</span>
           <span class="doc__title">Architecture Notes</span>
-          <span class="doc__desc">Machine-readable notes on every module: function signatures, data flow, dependencies, and side effects.</span>
-        </a>
-        <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/Tech%20Stack%20Setup%20Guide.md">
-          <span class="doc__label">Setup</span>
-          <span class="doc__title">Tech Stack Setup Guide</span>
-          <span class="doc__desc">Beginner-friendly environment setup for macOS, Windows, and Linux, with troubleshooting.</span>
+          <span class="doc__desc">Module-by-module notes: function signatures, data flow, dependencies, and side effects.</span>
         </a>
         <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/deploy/README.md">
           <span class="doc__label">Operations</span>
           <span class="doc__title">Staging Deployment</span>
-          <span class="doc__desc">Provider-neutral Caddy / Gunicorn / MySQL stack, environment contract, backups, and acceptance smoke.</span>
+          <span class="doc__desc">The Caddy / Gunicorn / MySQL production-style stack, backups, and acceptance smoke tests.</span>
         </a>
         <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce">
           <span class="doc__label">Source</span>
           <span class="doc__title">GitHub Repository</span>
-          <span class="doc__desc">Full source, issue tracker, and the CI pipeline that gates every push on lint, tests, and deployment contracts.</span>
+          <span class="doc__desc">Full source code, issues, and the CI pipeline that checks every push.</span>
         </a>
       </div>
-    </section>
 
-    <section>
-      <h2 class="section-title">Run it locally</h2>
-      <pre><code><span class="c"># 1. Python env (Python 3.14)</span>
-uv venv .venv --python 3.14        <span class="c"># or: python -m venv .venv</span>
-.venv/Scripts/pip install -r requirements.txt
-
-<span class="c"># 2. Secrets</span>
-cp .env.example .env               <span class="c"># defaults match docker-compose</span>
-
-<span class="c"># 3. Database (MySQL 8 in Docker)</span>
-docker compose up -d db
-
-<span class="c"># 4. Schema + demo data</span>
-.venv/Scripts/python manage.py migrate
-.venv/Scripts/python manage.py seed_demo
-
-<span class="c"># 5. Run</span>
-.venv/Scripts/python manage.py runserver
-<span class="p">→ http://127.0.0.1:8000/</span></code></pre>
+      <div class="note note--volt">
+        <span class="note__label">Why the storefront is not hosted on this address</span>
+        <p>
+          This page is served by GitHub Pages, which can only deliver static files — it runs no application
+          code and has no database. MetroDrip is a Django application backed by MySQL, so it has to run on
+          your own machine (this guide) or on a real server (see the staging deployment docs).
+        </p>
+      </div>
     </section>
 
   </main>
 
   <footer>
     <div class="container">
-      MetroDrip · A student capstone project ·
+      MetroDrip · System Project in Systems Integration and Architecture 1 ·
       <a href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce">SecretlySpy/TIP_MetroDrip-Ecommerce</a>
     </div>
   </footer>
+
+  <script>
+    // Progressive enhancement only: without JS the code blocks still read and
+    // select normally, so the guide loses nothing essential.
+    document.querySelectorAll('.code > pre').forEach(function (pre) {
+      var button = document.createElement('button');
+      button.className = 'copy';
+      button.type = 'button';
+      button.textContent = 'Copy';
+      button.setAttribute('aria-label', 'Copy code to clipboard');
+
+      button.addEventListener('click', function () {
+        navigator.clipboard.writeText(pre.innerText).then(function () {
+          button.textContent = 'Copied';
+          button.dataset.copied = 'true';
+          setTimeout(function () {
+            button.textContent = 'Copy';
+            delete button.dataset.copied;
+          }, 1600);
+        }).catch(function () {
+          button.textContent = 'Press Ctrl+C';
+          setTimeout(function () { button.textContent = 'Copy'; }, 1600);
+        });
+      });
+
+      pre.parentNode.insertBefore(button, pre);
+    });
+  </script>
 
 </body>
 </html>
