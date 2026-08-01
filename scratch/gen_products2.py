@@ -1,4 +1,3 @@
-import json
 import random
 
 categories = [
@@ -28,7 +27,7 @@ for i in range(45): # Generate 45 products to be safe
     pref = random.choice(prefixes)
     noun = random.choice(nouns)
     name = f"{pref} {noun} {i+1}"
-    
+
     if "Tee" in noun: cat = categories[0]
     elif "Hoodie" in noun: cat = categories[1]
     elif "Cargo" in noun or "Shorts" in noun: cat = categories[2]
@@ -58,7 +57,7 @@ for i in range(45): # Generate 45 products to be safe
 
 # Read file, find end of PRODUCT_SEEDS, insert products
 filepath = "apps/catalog/management/commands/seed_demo.py"
-with open(filepath, "r", encoding="utf-8") as f:
+with open(filepath, encoding="utf-8") as f:
     content = f.read()
 
 target = '        "colors": (("Neon Lime", "NLIM"), ("Carbon Black", "CBLK")),\n    },'

@@ -1,13 +1,14 @@
 import asyncio
+import datetime
 import json
 import logging
-import datetime
 import os
+
 import redis.asyncio as redis
 from sqlalchemy.future import select
 
 from .database import AsyncSessionLocal
-from .models import Reservation, ReservationStatus, StockRecord, StockMovement, MovementReason
+from .models import MovementReason, Reservation, ReservationStatus, StockMovement, StockRecord
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ async def process_event(event_type: str, data: dict):
             # Commit reservations, deduct qty_on_hand
             res_ids = data.get("reservations", [])
             order_id = data.get("order_id")
-            
+
             for res_id in res_ids:
                 stmt = select(Reservation).where(Reservation.id == res_id).with_for_update()
                 result = await db.execute(stmt)
@@ -35,15 +36,15 @@ async def process_event(event_type: str, data: dict):
                     res.status = ReservationStatus.COMMITTED
                     res.order_id = order_id
                     res.ended_at = datetime.datetime.utcnow()
-                    
+
                     # Update stock
                     stmt2 = select(StockRecord).where(StockRecord.variant_id == res.variant_id).with_for_update()
                     rec = (await db.execute(stmt2)).scalars().first()
-                    
+
                     if rec:
                         rec.qty_reserved -= res.qty
                         rec.qty_on_hand -= res.qty
-                        
+
                         # create audit log
                         movement = StockMovement(
                             variant_id=res.variant_id,
@@ -54,9 +55,9 @@ async def process_event(event_type: str, data: dict):
                             reference=f"order:{order_id}"
                         )
                         db.add(movement)
-            
+
             await db.commit()
-            
+
         elif event_type == "CheckoutCancelled":
             # reservations
             # Release reservations
@@ -68,7 +69,7 @@ async def process_event(event_type: str, data: dict):
                 if res and res.status == ReservationStatus.ACTIVE:
                     res.status = ReservationStatus.RELEASED
                     res.ended_at = datetime.datetime.utcnow()
-                    
+
                     stmt2 = select(StockRecord).where(StockRecord.variant_id == res.variant_id).with_for_update()
                     rec = (await db.execute(stmt2)).scalars().first()
                     if rec:
@@ -80,7 +81,7 @@ async def listen():
     global pubsub
     await pubsub.subscribe("inventory_events")
     logger.info("Subscribed to inventory_events channel")
-    
+
     try:
         async for message in pubsub.listen():
             if message["type"] == "message":

@@ -151,7 +151,7 @@ class OrderAdmin(ExportCsvMixin, admin.ModelAdmin):
 
         from apps.orders.models import IllegalTransition, OrderStatus
         from apps.shipping.providers import get_shipping_provider
-        
+
         provider = get_shipping_provider()
         from apps.shipping.models import Shipment
 

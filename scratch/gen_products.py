@@ -1,4 +1,3 @@
-import json
 import random
 
 categories = [
@@ -28,7 +27,7 @@ for i in range(40):
     pref = random.choice(prefixes)
     noun = random.choice(nouns)
     name = f"{pref} {noun} {i+1}"
-    
+
     if "Tee" in noun: cat = categories[0]
     elif "Hoodie" in noun: cat = categories[1]
     elif "Cargo" in noun or "Shorts" in noun: cat = categories[2]

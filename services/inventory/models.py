@@ -1,7 +1,7 @@
 import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Enum, CheckConstraint, ForeignKey, Index
-from sqlalchemy.orm import relationship
 import enum
+
+from sqlalchemy import CheckConstraint, Column, DateTime, Enum, ForeignKey, Index, Integer, String
 
 from .database import Base
 
@@ -31,7 +31,7 @@ class StockRecord(Base):
         table_args
     )
 
-    # We don't have the catalog ProductVariant model here, so we store the variant_id 
+    # We don't have the catalog ProductVariant model here, so we store the variant_id
     # directly as an integer.
     variant_id = Column(Integer, primary_key=True, autoincrement=False)
     qty_on_hand = Column(Integer, default=0, nullable=False)
@@ -56,10 +56,10 @@ class Reservation(Base):
     qty = Column(Integer, nullable=False)
     status = Column(Enum(ReservationStatus), default=ReservationStatus.ACTIVE, nullable=False)
     session_key = Column(String(64), default="", nullable=False)
-    
+
     # We just store order_id here without foreign key because orders are in a different DB
     order_id = Column(Integer, nullable=True)
-    
+
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     ended_at = Column(DateTime, nullable=True)
@@ -81,6 +81,6 @@ class StockMovement(Base):
     resulting_on_hand = Column(Integer, nullable=False)
     reference = Column(String(64), default="", nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
-    
+
     # Correlate via abstract ID
     user_id = Column(Integer, nullable=True)

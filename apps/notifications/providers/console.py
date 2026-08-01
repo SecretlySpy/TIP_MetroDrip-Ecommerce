@@ -2,8 +2,9 @@
 
 import logging
 
-from . import NotificationProvider, register_provider
 from apps.orders.money import format_centavos
+
+from . import NotificationProvider, register_provider
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class ConsoleNotificationProvider(NotificationProvider):
             f"threshold {record.low_stock_threshold})"
             for record in records
         ]
-        logger.info(f"CONSOLE EMAIL (Low Stock Alert):\n" + "\n".join(lines))
+        logger.info("CONSOLE EMAIL (Low Stock Alert):\n" + "\n".join(lines))
         return len(records)
 
     def send_sms(self, phone_number, message):

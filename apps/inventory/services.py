@@ -5,12 +5,12 @@ Django acts as a client, either via synchronous HTTP (for reads/holds)
 or async Redis Pub/Sub events (for commits/releases).
 """
 
-import logging
-import requests
-import os
 import json
+import logging
+import os
+
 import redis
-from django.conf import settings
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ def reserve_stock(*, variant_id, qty, session_key="", order=None):
         data = response.json()
         # Returns dummy reservation so caller can track reservation IDs
         return DummyReservation(data["reservations"][0])
-    except requests.HTTPError as e:
+    except requests.HTTPError:
         if response.status_code == 400 and "Insufficient stock" in response.text:
             raise InsufficientStock(f"variant {variant_id} is short on stock")
         raise ValueError(f"Inventory service error: {response.text}")
@@ -126,6 +126,6 @@ def get_stock_record(variant_id):
         return DummyStockRecord(response.json())
     except requests.HTTPError:
         raise ValueError(f"variant {variant_id} missing in inventory service")
-    except Exception as e:
+    except Exception:
         # Fallback to zero availability if service is down
         return DummyStockRecord({"variant_id": variant_id, "available": 0})

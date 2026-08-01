@@ -15,8 +15,8 @@ from apps.inventory.services import (
     reserve_stock,
 )
 from apps.orders.models import OrderStatus
-from ..models import Payment, PaymentMethod, PaymentStatus
 
+from ..models import Payment, PaymentMethod, PaymentStatus
 from . import PaymentProvider, register_provider
 
 logger = logging.getLogger(__name__)
