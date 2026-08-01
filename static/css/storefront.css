@@ -77,6 +77,16 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* --- Accessibility: Global Focus Styles --- */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-volt);
+  outline-offset: 2px;
+}
+
 body {
   font-family: var(--font-body);
   font-size: 1rem;
@@ -1076,6 +1086,32 @@ h5 { font-size: 1rem; }
 .empty-state__text {
   color: var(--color-muted);
   margin-bottom: var(--space-lg);
+}
+
+.loading-state, .error-state {
+  text-align: center;
+  padding: var(--space-3xl) var(--space-lg);
+}
+
+.loading-state__spinner {
+  display: inline-block;
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(0,0,0,0.1);
+  border-radius: 50%;
+  border-top-color: var(--color-primary);
+  animation: spin 1s ease-in-out infinite;
+  margin-bottom: var(--space-md);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-state__icon {
+  font-size: 3rem;
+  margin-bottom: var(--space-md);
+  color: var(--color-danger);
 }
 
 /* --- Hero Section --- */

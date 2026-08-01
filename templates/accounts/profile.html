@@ -72,7 +72,7 @@
             <div style="border: 1px solid var(--color-border); border-radius: 4px; overflow: hidden; display: flex; flex-direction: column;">
               <a href="{% url 'storefront:product-detail' item.product.slug %}" style="flex-grow: 1;">
                 {% if item.product.images %}
-                  <img src="{{ item.product.images.0.url }}" alt="{{ item.product.name }}" style="width: 100%; aspect-ratio: 4/5; object-fit: cover; display: block;">
+                  <img src="{{ item.product.images.0 }}" alt="{{ item.product.name }}" style="width: 100%; aspect-ratio: 4/5; object-fit: cover; display: block;">
                 {% else %}
                   <div style="width: 100%; aspect-ratio: 4/5; background: #f3f4f6; display: flex; align-items: center; justify-content: center; color: var(--color-muted);">No image</div>
                 {% endif %}

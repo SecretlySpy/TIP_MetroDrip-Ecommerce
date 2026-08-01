@@ -17,14 +17,15 @@ uv venv .venv --python 3.14        # or: python -m venv .venv
 # 2. Secrets
 cp .env.example .env               # defaults match docker-compose
 
-# 3. Database (MySQL 8 in Docker)
-docker compose up -d db
+# 3. Infrastructure (MySQL 8 & Redis in Docker)
+docker compose up -d
 
 # 4. Schema + demo data
 .venv/Scripts/python manage.py migrate
 .venv/Scripts/python manage.py seed_demo
 
-# 5. Run
+# 5. Run FastAPI microservice & Django monolith
+uvicorn services.inventory.main:app --reload --port 8000 &
 .venv/Scripts/python manage.py runserver
 ```
 

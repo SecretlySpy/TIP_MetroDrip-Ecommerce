@@ -150,7 +150,9 @@ class OrderAdmin(ExportCsvMixin, admin.ModelAdmin):
         from django.contrib.contenttypes.models import ContentType
 
         from apps.orders.models import IllegalTransition, OrderStatus
-        from apps.shipping.jnt import book_shipment
+        from apps.shipping.providers import get_shipping_provider
+        
+        provider = get_shipping_provider()
         from apps.shipping.models import Shipment
 
         success, failed = 0, 0
@@ -159,7 +161,7 @@ class OrderAdmin(ExportCsvMixin, admin.ModelAdmin):
                 order.transition_to(OrderStatus.PACKED)
                 # E-2: Create/Book shipment
                 shipment, _ = Shipment.objects.get_or_create(order=order)
-                book_shipment(shipment)
+                provider.book_shipment(shipment)
 
                 # F-2: Audit log
                 LogEntry.objects.log_action(

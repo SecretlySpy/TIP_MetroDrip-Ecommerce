@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Our Team{% endblock %}
+{% block meta_description %}Meet the developers behind MetroDrip — a five-person team building Metro Manila's next streetwear platform.{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top: var(--space-3xl); padding-bottom: var(--space-3xl);">
+
+  {# --- Section Header --- #}
+  <div style="text-align: center; margin-bottom: var(--space-3xl);">
+    <h1 style="font-family: var(--font-display); font-size: clamp(2rem, 5vw, 3.5rem); text-transform: uppercase; letter-spacing: 0.04em;">
+      THE TEAM
+    </h1>
+    <p style="color: var(--color-muted); max-width: 520px; margin: var(--space-md) auto 0; line-height: 1.6;">
+      MetroDrip is built by a five-person development team from the Technological Institute of the Philippines — IT 009: Systems Integration &amp; Architecture 1.
+    </p>
+  </div>
+
+  {# --- Team Grid --- #}
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-xl); max-width: 1000px; margin: 0 auto;">
+    {% for member in team %}
+    <div style="background: var(--color-surface-raised); border: var(--border-thin); border-radius: var(--radius-md); overflow: hidden; display: flex; flex-direction: column; transition: box-shadow var(--transition-base), transform var(--transition-base);"
+         onmouseover="this.style.boxShadow='var(--shadow-lg)'; this.style.transform='translateY(-4px)';"
+         onmouseout="this.style.boxShadow='none'; this.style.transform='translateY(0)';">
+
+      {# Avatar #}
+      <div style="width: 100%; aspect-ratio: 1; background: linear-gradient(135deg, var(--color-ink) 0%, #2a2a2a 100%); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
+        {# Decorative initials as placeholder until real photos are placed in static/img/team/ #}
+        <span style="font-family: var(--font-display); font-size: 3rem; color: var(--color-volt); text-transform: uppercase; letter-spacing: 0.08em; user-select: none;">
+          {{ member.name|truncatewords:1|first }}{{ member.name|cut:","|truncatewords:1|make_list|last }}
+        </span>
+        {# Contribution badge #}
+        <span style="position: absolute; bottom: var(--space-sm); right: var(--space-sm); font-family: var(--font-mono); font-size: 0.65rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-ink); background: var(--color-volt); padding: 0.2rem 0.6rem; border-radius: var(--radius-pill);">
+          {{ member.contribution }}
+        </span>
+      </div>
+
+      {# Info #}
+      <div style="padding: var(--space-lg); flex-grow: 1; display: flex; flex-direction: column;">
+        <h2 style="font-family: var(--font-body); font-size: 1.1rem; font-weight: 600; line-height: 1.3; margin-bottom: var(--space-xs);">
+          {{ member.name }}
+        </h2>
+        <span style="font-family: var(--font-mono); font-size: 0.75rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-muted); margin-bottom: var(--space-md);">
+          {{ member.role }}
+        </span>
+        <p style="color: var(--color-muted); font-size: 0.875rem; line-height: 1.6; flex-grow: 1;">
+          {{ member.bio }}
+        </p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

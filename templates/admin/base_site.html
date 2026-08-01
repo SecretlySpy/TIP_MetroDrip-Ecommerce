@@ -1,0 +1,46 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{{ title }} | MetroDrip Admin{% endblock %}
+
+{% block branding %}
+<h1 id="site-name"><a href="{% url 'admin:index' %}">MetroDrip Admin</a></h1>
+{% endblock %}
+
+{% block nav-global %}{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    /* MetroDrip brand overrides for Django admin */
+    :root {
+      --primary: #121212;
+      --secondary: #2c2c2c;
+      --link-fg: #0d6efd;
+      --button-bg: #121212;
+      --button-hover-bg: #2c2c2c;
+      --header-bg: #121212;
+      --header-color: #ffffff;
+      --header-link-color: #ffffff;
+    }
+    #header {
+      background: var(--header-bg);
+      color: var(--header-color);
+    }
+    #branding h1 {
+      color: var(--header-color);
+    }
+    a:link, a:visited {
+      color: var(--link-fg);
+    }
+    .button, input[type=submit], input[type=button], .submit-row input, a.button {
+      background: var(--button-bg);
+      border-radius: 4px;
+    }
+    .button:hover, input[type=submit]:hover, input[type=button]:hover {
+      background: var(--button-hover-bg);
+    }
+    .module h2, .module caption, .inline-group h2 {
+      background: var(--primary);
+    }
+  </style>
+{% endblock %}

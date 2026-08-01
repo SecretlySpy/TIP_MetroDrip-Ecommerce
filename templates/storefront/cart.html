@@ -37,8 +37,26 @@
   <section class="section">
     <h1>Your Cart</h1>
 
+    {# --- Loading State --- #}
+    <template x-if="loading">
+      <div class="loading-state">
+        <div class="loading-state__spinner"></div>
+        <p>Loading your cart...</p>
+      </div>
+    </template>
+    
+    {# --- Error State --- #}
+    <template x-if="error">
+      <div class="error-state">
+        <div class="error-state__icon">⚠️</div>
+        <h3>Something went wrong</h3>
+        <p class="empty-state__text" x-text="error"></p>
+        <button class="btn btn--secondary" @click="init()">Try Again</button>
+      </div>
+    </template>
+
     {# --- Empty State --- #}
-    <template x-if="items.length === 0 && !loading">
+    <template x-if="items.length === 0 && !loading && !error">
       <div class="empty-state">
         <div class="empty-state__icon">🛒</div>
         <h3>Your cart is empty</h3>
@@ -50,7 +68,7 @@
     </template>
 
     {# --- Cart with Items --- #}
-    <template x-if="items.length > 0">
+    <template x-if="items.length > 0 && !loading && !error">
       <div class="cart-layout">
         {# Cart Table #}
         <div>
@@ -69,7 +87,12 @@
                   <td>
                     <div class="cart-item__product">
                       <div class="cart-item__thumb">
-                        {# Placeholder thumb — product images come from CDN later #}
+                        <template x-if="item.image">
+                          <img :src="item.image" :alt="item.productName" style="width: 100%; height: 100%; object-fit: cover;">
+                        </template>
+                        <template x-if="!item.image">
+                          <div style="width: 100%; height: 100%; background: #f3f4f6; display: flex; align-items: center; justify-content: center; color: var(--color-muted); font-size: 0.75rem; text-align: center;">No image</div>
+                        </template>
                       </div>
                       <div>
                         <div class="cart-item__name" x-text="item.productName"></div>

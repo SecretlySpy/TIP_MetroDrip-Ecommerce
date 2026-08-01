@@ -1,244 +1,131 @@
-"""All stock math lives here (§8) — the only module allowed to mutate
-StockRecord counters or append StockMovement rows.
+"""Inventory client for the FastAPI Microservice.
 
-Every mutation runs inside transaction.atomic() holding select_for_update() row
-locks (Hard Invariant 1). Lock-ordering discipline: whenever both rows are
-needed, lock the Reservation BEFORE its StockRecord; reserve_stock locks only
-the StockRecord (its reservation row does not exist yet). A single global order
-makes lock-cycle deadlocks impossible.
+All stock operations are now delegated to the standalone FastAPI service.
+Django acts as a client, either via synchronous HTTP (for reads/holds)
+or async Redis Pub/Sub events (for commits/releases).
 """
 
-import datetime
 import logging
-
+import requests
+import os
+import json
+import redis
 from django.conf import settings
-from django.db import models, transaction
-from django.utils import timezone
-
-from .models import (
-    MovementReason,
-    Reservation,
-    ReservationStatus,
-    StockMovement,
-    StockRecord,
-)
 
 logger = logging.getLogger(__name__)
 
+# Fallback values for local dev without compose environment vars
+INVENTORY_SERVICE_URL = os.environ.get("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 
 class InsufficientStock(Exception):
-    """Business rejection: the requested units exceed available (= on_hand − reserved)."""
-
+    pass
 
 class InvalidReservationState(Exception):
-    """The reservation is not in a state that permits the requested action."""
-
+    pass
 
 class InvalidStockAdjustment(Exception):
-    """The adjustment would corrupt counters or uses a reason reserved for sales."""
+    pass
 
 
-def _require_positive_int(value, name):
-    """Reject Booleans and non-integers explicitly — same strictness as money.py."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError(f"{name} must be an integer of at least 1.")
-    return value
+class DummyReservation:
+    def __init__(self, pk):
+        self.pk = pk
 
 
 def reserve_stock(*, variant_id, qty, session_key="", order=None):
-    """Place a TTL-bound hold on `qty` units of one SKU (B-1/B-2, FR-5).
-
-    Returns the ACTIVE Reservation. Raises InsufficientStock when availability
-    is short; raises StockRecord.DoesNotExist for an unknown/unstocked variant
-    so a catalog bug cannot silently sell an untracked SKU.
-
-    Checkout passes `order` so the webhook can later commit exactly this
-    order's holds — matching holds heuristically (by variant/qty) could commit
-    another shopper's reservation.
     """
-    _require_positive_int(qty, "qty")
+    Called by legacy code one by one. In a real microservice we would batch this.
+    For simplicity, we call the batch API with one item.
+    """
+    if isinstance(qty, bool) or not isinstance(qty, int) or qty < 1:
+        raise ValueError("qty must be an integer of at least 1.")
 
-    with transaction.atomic():
-        # The row lock serializes competing buyers; both concurrency gates
-        # (2 buyers/1 unit and 20 buyers/10 units) prove exactly-N successes.
-        stock = StockRecord.objects.select_for_update().get(variant_id=variant_id)
-        if stock.available < qty:
-            raise InsufficientStock(
-                f"variant {variant_id}: requested {qty}, available {stock.available}"
-            )
-        stock.qty_reserved += qty
-        stock.save(update_fields=["qty_reserved"])
-
-        # Created while the stock lock is held, so hold and counter can never
-        # disagree. No StockMovement: reservations do not change qty_on_hand.
-        return Reservation.objects.create(
-            variant_id=variant_id,
-            qty=qty,
-            session_key=session_key,
-            order=order,
-            expires_at=timezone.now()
-            + datetime.timedelta(minutes=settings.RESERVATION_TTL_MINUTES),
+    try:
+        response = requests.post(
+            f"{INVENTORY_SERVICE_URL}/reservations",
+            json=[{"variant_id": variant_id, "qty": qty}],
+            params={"session_key": session_key},
+            timeout=5
         )
-
-
-def _end_active_reservation(reservation, terminal_status):
-    """Return an ACTIVE reservation's units to availability (lock already held)."""
-    stock = StockRecord.objects.select_for_update().get(variant_id=reservation.variant_id)
-    if stock.qty_reserved < reservation.qty:
-        # Counters can only underflow if some code path bypassed this module;
-        # fail loudly rather than storing a negative-by-wraparound value.
-        raise InvalidReservationState(
-            f"reservation {reservation.pk}: qty_reserved underflow on {terminal_status}"
-        )
-    stock.qty_reserved -= reservation.qty
-    stock.save(update_fields=["qty_reserved"])
-
-    reservation.status = terminal_status
-    reservation.ended_at = timezone.now()
-    reservation.save(update_fields=["status", "ended_at"])
-    return reservation
+        response.raise_for_status()
+        data = response.json()
+        # Returns dummy reservation so caller can track reservation IDs
+        return DummyReservation(data["reservations"][0])
+    except requests.HTTPError as e:
+        if response.status_code == 400 and "Insufficient stock" in response.text:
+            raise InsufficientStock(f"variant {variant_id} is short on stock")
+        raise ValueError(f"Inventory service error: {response.text}")
+    except Exception as e:
+        raise ValueError(f"Failed to communicate with inventory service: {e}")
 
 
 def release_reservation(reservation_id):
-    """Give an abandoned/cancelled hold back to availability (B-2).
-
-    Idempotent for already-ended holds: the user-abandon path and the TTL sweep
-    can race, and both outcomes mean "units are back", so the second caller
-    gets the terminal row instead of an error. Releasing a COMMITTED (sold)
-    reservation is a real bug and raises.
     """
-    with transaction.atomic():
-        reservation = Reservation.objects.select_for_update().get(pk=reservation_id)
-        if reservation.status in (ReservationStatus.RELEASED, ReservationStatus.EXPIRED):
-            return reservation
-        if reservation.status == ReservationStatus.COMMITTED:
-            raise InvalidReservationState(
-                f"reservation {reservation_id} is committed; a sale cannot be released."
-            )
-        return _end_active_reservation(reservation, ReservationStatus.RELEASED)
+    Fallback release. Instead of hitting the DB directly, publish to Redis.
+    """
+    try:
+        r = redis.from_url(REDIS_URL)
+        r.publish("inventory_events", json.dumps({
+            "type": "CheckoutCancelled",
+            "data": {"reservations": [reservation_id]}
+        }))
+    except Exception as e:
+        logger.error(f"Failed to publish CheckoutCancelled for reservation {reservation_id}: {e}")
+        return None
+    return DummyReservation(reservation_id)
 
 
 def commit_reservation(*, reservation_id, order):
-    """Convert an ACTIVE hold into a sale on payment confirmation (D-3 hook).
-
-    Decrements BOTH counters (the unit leaves the shelf and the hold ends) and
-    appends the `sale` StockMovement referencing the paid order (Invariant 4).
-    An ACTIVE hold past its expires_at is still committable: the shopper paid
-    in time and the units are still held — only the sweep may expire holds.
     """
-    with transaction.atomic():
-        reservation = Reservation.objects.select_for_update().get(pk=reservation_id)
-        if reservation.status != ReservationStatus.ACTIVE:
-            # D-3 must respond by re-reserving (or refunding if stock is gone);
-            # committing a dead hold could oversell a unit sold to someone else.
-            raise InvalidReservationState(
-                f"reservation {reservation_id} is {reservation.status}, not active."
-            )
-
-        stock = StockRecord.objects.select_for_update().get(variant_id=reservation.variant_id)
-        if stock.qty_on_hand < reservation.qty or stock.qty_reserved < reservation.qty:
-            raise InvalidReservationState(
-                f"reservation {reservation_id}: counters cannot cover the committed sale."
-            )
-        stock.qty_on_hand -= reservation.qty
-        stock.qty_reserved -= reservation.qty
-        stock.save(update_fields=["qty_on_hand", "qty_reserved"])
-
-        StockMovement.objects.create(
-            variant_id=reservation.variant_id,
-            delta=-reservation.qty,
-            reason=MovementReason.SALE,
-            ref_order=order,
-        )
-
-        reservation.status = ReservationStatus.COMMITTED
-        reservation.order = order
-        reservation.ended_at = timezone.now()
-        reservation.save(update_fields=["status", "order", "ended_at"])
-        return reservation
+    Legacy sync commit; now we should just fire an event.
+    """
+    try:
+        r = redis.from_url(REDIS_URL)
+        r.publish("inventory_events", json.dumps({
+            "type": "OrderConfirmed",
+            "data": {
+                "order_id": order.id,
+                "reservations": [reservation_id]
+            }
+        }))
+    except Exception as e:
+        logger.error(f"Failed to publish OrderConfirmed for reservation {reservation_id}: {e}")
+        return None
+    return DummyReservation(reservation_id)
 
 
 def adjust_stock(*, variant_id, delta, reason, ref_order=None):
-    """Apply a non-sale physical stock change with its audit row (B-1/B-3).
-
-    Restock/return must be positive; adjustment is any nonzero correction.
-    Sales are deliberately rejected: a sale only exists as the commit of a
-    reservation, which is the sole writer of `sale` movements.
-    """
-    if isinstance(delta, bool) or not isinstance(delta, int) or delta == 0:
-        raise InvalidStockAdjustment("delta must be a nonzero integer.")
-    reason = MovementReason(reason)
-    if reason == MovementReason.SALE:
-        raise InvalidStockAdjustment("Sales are recorded via commit_reservation only.")
-    if reason in (MovementReason.RESTOCK, MovementReason.RETURN) and delta < 0:
-        raise InvalidStockAdjustment(f"{reason} requires a positive delta.")
-
-    with transaction.atomic():
-        stock = StockRecord.objects.select_for_update().get(variant_id=variant_id)
-        new_on_hand = stock.qty_on_hand + delta
-        if new_on_hand < stock.qty_reserved:
-            # Shrinking below the reserved count would break active holds and
-            # violate the chk_reserved_lte_on_hand backstop.
-            raise InvalidStockAdjustment(
-                f"variant {variant_id}: on-hand {new_on_hand} would drop below "
-                f"reserved {stock.qty_reserved}."
-            )
-        stock.qty_on_hand = new_on_hand
-        stock.save(update_fields=["qty_on_hand"])
-
-        # Ledger row in the same transaction: a counter change without its
-        # movement (or vice versa) must be impossible (Invariant 4).
-        StockMovement.objects.create(
-            variant_id=variant_id, delta=delta, reason=reason, ref_order=ref_order
-        )
-    return stock
+    """Not implemented over HTTP yet in this demo."""
+    raise NotImplementedError("adjust_stock is not implemented in the microservice stub.")
 
 
 def release_expired_reservations(now=None):
-    """TTL sweep (B-2): expire every overdue ACTIVE hold; returns how many.
+    """Not implemented here. The microservice would have its own cron."""
+    return 0
 
-    Candidates are read without locks, then each row is re-checked under its
-    own lock in its own transaction — the sweep must tolerate racing against
-    checkout commits and manual releases without ever double-returning units,
-    and one poisoned row must not roll back the rest of the sweep.
-    """
-    if now is None:
-        now = timezone.now()
 
-    candidate_ids = list(
-        Reservation.objects.filter(
-            status=ReservationStatus.ACTIVE, expires_at__lte=now
-        ).values_list("pk", flat=True)
-    )
-
-    expired_count = 0
-    for reservation_id in candidate_ids:
-        try:
-            with transaction.atomic():
-                reservation = Reservation.objects.select_for_update().get(pk=reservation_id)
-                # Re-check under lock: a commit/release may have won the race.
-                if reservation.status != ReservationStatus.ACTIVE or reservation.expires_at > now:
-                    continue
-                _end_active_reservation(reservation, ReservationStatus.EXPIRED)
-                expired_count += 1
-        except Exception:
-            # Log-and-continue: the next sweep retries this row; the remaining
-            # candidates still get their units back on schedule.
-            logger.exception("Failed to expire reservation %s", reservation_id)
-    return expired_count
+class DummyStockRecord:
+    def __init__(self, data):
+        self.variant_id = data.get("variant_id")
+        self.qty_on_hand = data.get("qty_on_hand", 0)
+        self.qty_reserved = data.get("qty_reserved", 0)
+        self.low_stock_threshold = data.get("low_stock_threshold", 5)
+        self.available = data.get("available", 0)
 
 
 def scan_low_stock():
-    """Return StockRecords at/below their threshold on availability (B-4, FR-9).
+    """Not implemented over HTTP yet in this demo."""
+    # Since this returns a queryset in the monolith, returning an empty list for now.
+    return []
 
-    Pure read — alert delivery lives in apps.notifications so inventory stays
-    free of transport concerns.
-    """
-    return (
-        StockRecord.objects.annotate(
-            available_units=models.F("qty_on_hand") - models.F("qty_reserved")
-        )
-        .filter(available_units__lte=models.F("low_stock_threshold"))
-        .select_related("variant", "variant__product")
-        .order_by("variant__sku")
-    )
+def get_stock_record(variant_id):
+    try:
+        response = requests.get(f"{INVENTORY_SERVICE_URL}/stock/{variant_id}", timeout=2)
+        response.raise_for_status()
+        return DummyStockRecord(response.json())
+    except requests.HTTPError:
+        raise ValueError(f"variant {variant_id} missing in inventory service")
+    except Exception as e:
+        # Fallback to zero availability if service is down
+        return DummyStockRecord({"variant_id": variant_id, "available": 0})

@@ -148,8 +148,9 @@ def product_detail(request, slug):
     variants_data = []
     for variant in product.variants.all():
         try:
-            available = variant.stock.available
-        except StockRecord.DoesNotExist:
+            from apps.inventory.services import get_stock_record
+            available = get_stock_record(variant.pk).available
+        except Exception:
             # An unstocked variant renders as sold out rather than sellable.
             available = 0
         variants_data.append(
@@ -224,13 +225,14 @@ def cart_availability(request):
     if not variant_ids or len(variant_ids) > 50:
         return JsonResponse({"error": "Provide 1–50 variant IDs"}, status=400)
 
-    availability = {
-        str(stock.variant_id): stock.available
-        for stock in StockRecord.objects.filter(variant_id__in=variant_ids)
-    }
+    from apps.inventory.services import get_stock_record
+    availability = {}
     for variant_id in variant_ids:
-        # Unknown/unstocked IDs read as zero so stale carts self-correct.
-        availability.setdefault(str(variant_id), 0)
+        try:
+            rec = get_stock_record(variant_id)
+            availability[str(variant_id)] = rec.available
+        except Exception:
+            availability[str(variant_id)] = 0
 
     return JsonResponse({"availability": availability})
 
@@ -394,10 +396,10 @@ def checkout_success(request, token):
     except Order.DoesNotExist:
         raise Http404 from None
 
-    # Development-only sandbox completion (ADR: MOCK_PAYMENTS). Production and
-    # staging refuse to boot with this flag on; the webhook is the only real
+    # Development-only sandbox completion (simulated provider). Production and
+    # staging refuse to boot with this provider on; the webhook is the only real
     # confirmation path (Invariant 3).
-    if settings.MOCK_PAYMENTS and request.GET.get("mock") == "1":
+    if getattr(settings, "PAYMENT_PROVIDER", "paymongo") == "simulated" and request.GET.get("mock") == "1":
         if confirm_order_paid(order=order):
             order.refresh_from_db()
             try:
@@ -519,3 +521,63 @@ def staging_seed_preview(request):
             "total_variants": sum(product.variant_count for product in products),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Developers / Team Profile (FR-20, course instruction #8)
+# ---------------------------------------------------------------------------
+
+TEAM_MEMBERS = [
+    {
+        "name": "Navarro, Arshad Edwin",
+        "role": "Project Leader",
+        "bio": "Full-stack architect responsible for systems integration strategy, "
+        "sprint planning, and cross-team coordination. Leads the enterprise "
+        "architecture alignment with course deliverables.",
+        "contribution": "Architecture & Integration",
+        "avatar": "team/navarro.jpg",
+    },
+    {
+        "name": "Pameroyan, Archim Paul C.",
+        "role": "Backend Developer",
+        "bio": "Designed and implemented the inventory management system, checkout "
+        "saga, and payment gateway integration. Owns the stock reservation "
+        "engine and concurrency-safe transaction flows.",
+        "contribution": "Inventory & Payments",
+        "avatar": "team/pameroyan.jpg",
+    },
+    {
+        "name": "De Borja, John Meickann M.",
+        "role": "Frontend Developer",
+        "bio": "Built the storefront UI using the MetroDrip design system with "
+        "Django Templates, HTMX, and Alpine.js. Responsible for responsive "
+        "layouts and WCAG AA accessibility compliance.",
+        "contribution": "Storefront & UI/UX",
+        "avatar": "team/deborja.jpg",
+    },
+    {
+        "name": "Carlos, Reuel L.",
+        "role": "QA & DevOps Engineer",
+        "bio": "Manages the CI/CD pipeline, Docker containerization, and deployment "
+        "infrastructure. Authors the test suite covering concurrency gates, "
+        "checkout flows, and migration integrity.",
+        "contribution": "Testing & Deployment",
+        "avatar": "team/carlos.jpg",
+    },
+    {
+        "name": "Nogoy, Marcus Dylan",
+        "role": "Database & Security Engineer",
+        "bio": "Designed the MySQL 8 schema with InnoDB invariants, wrote the "
+        "migration verification suite, and implemented webhook signature "
+        "verification and CSRF protections across all endpoints.",
+        "contribution": "Database & Security",
+        "avatar": "team/nogoy.jpg",
+    },
+]
+
+
+@require_GET
+def developers_page(request):
+    """Render the team profile page (FR-20, course instruction #8)."""
+    return render(request, "storefront/developers.html", {"team": TEAM_MEMBERS})
+

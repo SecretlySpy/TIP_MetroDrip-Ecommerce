@@ -215,7 +215,31 @@ function initAutocomplete() {
         const cityInput = document.getElementById('co-city');
         if (cityInput) {
           cityInput.value = component.long_name;
-          cityInput.dispatchEvent(new Event('input'));
+          cityInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+      if (type === "administrative_area_level_1") {
+        const region = component.long_name.toLowerCase();
+        let zoneMatch = "";
+        if (region.includes("ncr") || region.includes("national capital") || region.includes("metro manila")) {
+          zoneMatch = "NCR";
+        } else if (region.includes("visayas") || region.includes("mindanao") || region.includes("davao") || region.includes("zamboanga") || region.includes("caraga") || region.includes("soccsksargen") || region.includes("bangsamoro") || region.includes("cebu") || region.includes("bohol") || region.includes("leyte") || region.includes("samar") || region.includes("negros") || region.includes("panay")) {
+          zoneMatch = "VisMin";
+        } else {
+          // Default to Luzon for other PH provinces
+          zoneMatch = "Luzon";
+        }
+        
+        if (zoneMatch) {
+          const zoneSelect = document.getElementById('co-zone');
+          if (zoneSelect) {
+            Array.from(zoneSelect.options).forEach(opt => {
+              if (opt.text.includes(zoneMatch)) {
+                zoneSelect.value = opt.value;
+                zoneSelect.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+            });
+          }
         }
       }
     }

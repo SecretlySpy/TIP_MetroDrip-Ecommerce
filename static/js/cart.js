@@ -31,10 +31,14 @@ function cartPage() {
   return {
     items: [],
     loading: true,
+    error: null,
 
     init() {
       this.loadCart();
-      this.loading = false;
+      // Brief loading state for better UX feedback, simulating component hydration
+      setTimeout(() => {
+        this.loading = false;
+      }, 500);
       // Listen for updates from other tabs or components.
       window.addEventListener('cart-updated', () => this.loadCart());
       window.addEventListener('storage', (e) => {

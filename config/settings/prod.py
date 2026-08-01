@@ -152,9 +152,17 @@ def _required_password_environment(name):
 
 # Mock payment completion must never exist outside development (Invariant 3:
 # webhooks are the only payment truth in any deployed environment).
-if os.environ.get("MOCK_PAYMENTS", "").strip() == "1":
-    raise ImproperlyConfigured("MOCK_PAYMENTS cannot be enabled in production or staging.")
-MOCK_PAYMENTS = False
+if os.environ.get("PAYMENT_PROVIDER", "").strip() == "simulated":
+    raise ImproperlyConfigured("Simulated payments cannot be enabled in production or staging.")
+PAYMENT_PROVIDER = "paymongo"
+
+if os.environ.get("SHIPPING_PROVIDER", "").strip() == "simulated":
+    raise ImproperlyConfigured("Simulated shipping cannot be enabled in production or staging.")
+SHIPPING_PROVIDER = "jnt"
+
+if os.environ.get("NOTIFICATION_PROVIDER", "").strip() == "console":
+    raise ImproperlyConfigured("Console notifications cannot be enabled in production or staging.")
+NOTIFICATION_PROVIDER = "email_sms"
 
 # Fail fast rather than silently using development credentials or hosts.
 SECRET_KEY = _required_secret_environment("DJANGO_SECRET_KEY")

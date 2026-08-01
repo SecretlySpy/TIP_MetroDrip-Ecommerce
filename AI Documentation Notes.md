@@ -2067,3 +2067,12 @@
 - **Dependencies**: Python 3.14.4, Django 5.2.16, Ruff, pytest 8.4.2, requests.
 - **Behavior**: 388 tests pass against real MySQL, up from 323. `ruff check` and `ruff format --check` are clean across 106 files; `compileall` is clean; `manage.py check` reports no issues; `makemigrations --check --dry-run` reports no drift; `check --deploy --fail-level WARNING` under staging settings reports no issues, 1 silenced. `accounts.0002_customer_role` was verified forward, reverse, and forward again on a throwaway database, and its data migration was verified against rows inserted at the 0001 schema: a pre-existing `is_staff` row lands on `administrator` and keeps console access, a shopper row stays `customer`. Registry inspection confirms 6 administrator models, 12 merchant models, and an empty intersection. Live-server checks confirm both login pages render their own heading, a merchant reaches all 12 merchant model pages, `/merchant/accounts/customer/` returns 404, `/admin/accounts/customer/` returns 302 then 403 with no customer data in the body, merchant credentials are refused at `/admin/login/` with an explanatory message rather than a redirect loop, and the storefront navbar shows the console shortcut to staff only. The three homepage-cache tests were each confirmed to fail with the fix removed.
 - **Side Effects**: Applied `accounts.0002_customer_role` to the local development database; created the `Merchants` and `Administrators` groups with 36 and 19 permissions and a demo merchant account `seller@metrodrip.test`; created and destroyed throwaway test databases. No public deployment was changed.
+
+## Function: N/A — Sprint P3/P4 capabilities updates
+- **Purpose**: Log the changes made during the P3 and P4 sprint execution.
+- **Inputs**: None
+- **Outputs**: None
+- **Dependencies**: Redis, FastAPI
+- **Behavior**: The inventory service was successfully extracted to a standalone FastAPI microservice using the Strangler Fig pattern. Read/write operations from Django are bridged over HTTP and Redis Pub/Sub events. The UI design system (colors, focus states) was made consistent and accessible (WCAG AA). Missing loading and error states for the AlpineJS cart component were implemented, and the missing product images were correctly wired from the catalog through the JS cart representation.
+- **Side Effects**: Reduced monolithic complexity, decoupled the catalog from inventory management in anticipation of separate scaling characteristics.
+

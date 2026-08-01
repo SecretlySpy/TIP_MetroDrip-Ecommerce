@@ -19,6 +19,12 @@ services:
       - dbdata:/var/lib/mysql
       # Grants the app user rights over pytest's test_* databases.
       - ./docker/mysql-init.sql:/docker-entrypoint-initdb.d/grants.sql:ro
+  
+  redis:
+    image: redis:7-alpine
+    container_name: metrodrip-redis
+    ports:
+      - "6379:6379"
 
 volumes:
   dbdata:

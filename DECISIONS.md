@@ -268,3 +268,11 @@
   - Anonymous visitors have no session cookie until something writes to the session, so they still share one cache entry — the NFR-1 benefit is kept for the traffic that dominates this page. Signed-in visitors each get their own entry.
   - Asserting `Vary: Cookie` on the response is **not** a regression test for this: the header is present with or without the fix. Only the cached body distinguishes the two states, so the tests compare rendered content across sessions.
   - The suite's settings use `DummyCache`, which makes every page-cache assertion vacuous. The three tests that cover this install a real `LocMemCache` through a fixture and clear it on both sides.
+
+## ADR-P3-001 — Microservice refactor (Strangler Fig)
+
+- **Status:** Accepted
+- **Decision:** The inventory domain logic has been extracted into a standalone FastAPI microservice. The Django monolith now uses HTTP calls to interact with inventory during synchronous requests (e.g., checkout reservations) and Redis Pub/Sub events for asynchronous updates (e.g., checkout completion/cancellation).
+- **Rationale:** Separates the catalog read-heavy workload from the write-heavy inventory ledger while preserving Hard Invariant 1 (No overselling).
+- **Consequences:** The \pps.inventory\ models remain in Django for now but are no longer directly queried by storefront views for live stock availability. Local dev requires running the FastAPI service and a Redis instance (added to docker-compose).
+

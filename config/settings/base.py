@@ -164,7 +164,12 @@ PAYMONGO_SECRET_KEY = os.environ.get("PAYMONGO_SECRET_KEY", "")
 PAYMONGO_WEBHOOK_SECRET = os.environ.get("PAYMONGO_WEBHOOK_SECRET", "")
 # Sandbox-only simulated payment completion for demos without PayMongo keys.
 # dev.py may enable it; prod.py refuses to boot with it on (fail closed).
-MOCK_PAYMENTS = False
+# Payment provider registry key (simulated | paymongo)
+PAYMENT_PROVIDER = "paymongo"
+# Shipping provider registry key (simulated | jnt)
+SHIPPING_PROVIDER = "jnt"
+# Notification provider registry key (console | email_sms)
+NOTIFICATION_PROVIDER = "email_sms"
 
 # --- Enhancement-tier APIs (§7 rule: never on the critical checkout path) ---
 SEMAPHORE_API_KEY = os.environ.get("SEMAPHORE_API_KEY", "")

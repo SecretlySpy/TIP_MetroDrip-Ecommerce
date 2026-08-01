@@ -71,7 +71,7 @@ def _post_checkout(client, variant, zone, qty=2):
 
 
 @pytest.mark.django_db
-@override_settings(MOCK_PAYMENTS=True)
+@override_settings(PAYMENT_PROVIDER="simulated")
 def test_checkout_creates_order_holds_and_payment(client):
     # Override price proves checkout charges the effective variant price,
     # never the raw base price.
@@ -109,7 +109,7 @@ def test_checkout_creates_order_holds_and_payment(client):
 
 
 @pytest.mark.django_db
-@override_settings(MOCK_PAYMENTS=True)
+@override_settings(PAYMENT_PROVIDER="simulated")
 def test_checkout_insufficient_stock_rolls_back_everything(client):
     variant = _make_variant(on_hand=1)
     zone = _make_zone()
@@ -126,7 +126,7 @@ def test_checkout_insufficient_stock_rolls_back_everything(client):
 
 
 @pytest.mark.django_db
-@override_settings(MOCK_PAYMENTS=True)
+@override_settings(PAYMENT_PROVIDER="simulated")
 def test_checkout_rejects_bad_payloads(client):
     variant = _make_variant()
     zone = _make_zone()
@@ -155,7 +155,7 @@ def test_checkout_rejects_bad_payloads(client):
 
 
 @pytest.mark.django_db
-@override_settings(MOCK_PAYMENTS=True)
+@override_settings(PAYMENT_PROVIDER="simulated")
 def test_mock_success_page_confirms_payment_idempotently(client):
     variant = _make_variant()
     zone = _make_zone()
@@ -189,11 +189,11 @@ def test_mock_success_page_confirms_payment_idempotently(client):
 
 
 @pytest.mark.django_db
-@override_settings(MOCK_PAYMENTS=False)
+@override_settings(PAYMENT_PROVIDER="paymongo")
 def test_success_page_never_confirms_when_mock_disabled(client):
     variant = _make_variant()
     zone = _make_zone()
-    with override_settings(MOCK_PAYMENTS=True):
+    with override_settings(PAYMENT_PROVIDER="simulated"):
         checkout_url = _post_checkout(client, variant, zone).json()["checkout_url"]
 
     client.get(checkout_url)  # mock=1 present, but the gate is off
@@ -236,7 +236,7 @@ def _signature_for(body, timestamp="1700000000", secret=WEBHOOK_SECRET):
 
 
 def _paid_order(client, variant, zone):
-    with override_settings(MOCK_PAYMENTS=True):
+    with override_settings(PAYMENT_PROVIDER="simulated"):
         _post_checkout(client, variant, zone, qty=1)
     return Order.objects.latest("created_at")
 
@@ -345,7 +345,7 @@ def test_webhook_acknowledges_unknown_order_without_processing(client):
 
 
 @pytest.mark.django_db
-@override_settings(MOCK_PAYMENTS=True)
+@override_settings(PAYMENT_PROVIDER="simulated")
 def test_order_status_page_renders_via_token(client):
     variant = _make_variant()
     order = _paid_order(client, variant, _make_zone())
