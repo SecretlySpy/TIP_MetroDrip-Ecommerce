@@ -33,12 +33,18 @@ class ConsoleNotificationProvider(NotificationProvider):
             f"\n  Total:    {format_centavos(order.total)}"
             f"\n\nTrack your order any time:\n{status_url}\n"
         )
-        logger.info(f"CONSOLE EMAIL to {email}:\nSubject: MetroDrip order {order.order_no} confirmed\n\n{body}")
+        logger.info(
+            f"CONSOLE EMAIL to {email}:\n"
+            f"Subject: MetroDrip order {order.order_no} confirmed\n\n"
+            f"{body}"
+        )
         return True
 
     def send_contact_alert(self, contact_message):
         logger.info(
-            f"CONSOLE EMAIL (Contact Alert):\nFrom: {contact_message.name} <{contact_message.email}>\n\n{contact_message.message}"
+            f"CONSOLE EMAIL (Contact Alert):\n"
+            f"From: {contact_message.name} <{contact_message.email}>\n\n"
+            f"{contact_message.message}"
         )
         return True
 

@@ -53,7 +53,12 @@ class PayMongoPaymentProvider(PaymentProvider):
         ]
         if order.shipping_fee > 0:
             line_items.append(
-                {"name": "Shipping Fee", "quantity": 1, "amount": order.shipping_fee, "currency": "PHP"}
+                {
+                    "name": "Shipping Fee",
+                    "quantity": 1,
+                    "amount": order.shipping_fee,
+                    "currency": "PHP",
+                }
             )
 
         payload = {
@@ -84,7 +89,9 @@ class PayMongoPaymentProvider(PaymentProvider):
             timeout=10,
         )
         if response.status_code != 200:
-            raise PayMongoError(f"PayMongo checkout session failed with HTTP {response.status_code}")
+            raise PayMongoError(
+                f"PayMongo checkout session failed with HTTP {response.status_code}"
+            )
 
         data = response.json().get("data", {})
         session_id = data.get("id")
@@ -132,7 +139,9 @@ class PayMongoPaymentProvider(PaymentProvider):
                 if shortfall <= 0:
                     continue
                 try:
-                    replacement = reserve_stock(variant_id=item.variant_id, qty=shortfall, order=order)
+                    replacement = reserve_stock(
+                        variant_id=item.variant_id, qty=shortfall, order=order
+                    )
                     commit_reservation(reservation_id=replacement.pk, order=order)
                 except InsufficientStock:
                     logger.critical(

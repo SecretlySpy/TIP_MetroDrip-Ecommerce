@@ -11,9 +11,49 @@ categories = [
     ("Footwear", "footwear"),
 ]
 
-prefixes = ["Urban", "Metro", "District", "Neon", "Core", "Shift", "Grid", "Vertex", "Pulse", "Sector", "Void", "Drift"]
-nouns = ["Tee", "Hoodie", "Cargo", "Jacket", "Cap", "Beanie", "Socks", "Sneakers", "Bag", "Windbreaker", "Vest", "Shorts"]
-colors = ["Black", "White", "Gray", "Navy", "Olive", "Rust", "Sand", "Slate", "Crimson", "Cobalt", "Neon", "Bone"]
+prefixes = [
+    "Urban",
+    "Metro",
+    "District",
+    "Neon",
+    "Core",
+    "Shift",
+    "Grid",
+    "Vertex",
+    "Pulse",
+    "Sector",
+    "Void",
+    "Drift",
+]
+nouns = [
+    "Tee",
+    "Hoodie",
+    "Cargo",
+    "Jacket",
+    "Cap",
+    "Beanie",
+    "Socks",
+    "Sneakers",
+    "Bag",
+    "Windbreaker",
+    "Vest",
+    "Shorts",
+]
+colors = [
+    "Black",
+    "White",
+    "Gray",
+    "Navy",
+    "Olive",
+    "Rust",
+    "Sand",
+    "Slate",
+    "Crimson",
+    "Cobalt",
+    "Neon",
+    "Bone",
+]
+
 
 def gen_code(name):
     # take first letter of first word + first 3 of last word
@@ -22,20 +62,29 @@ def gen_code(name):
         return (words[0][0] + words[-1][:3]).upper()
     return name[:4].upper()
 
+
 products = []
-for i in range(45): # Generate 45 products to be safe
+for i in range(45):  # Generate 45 products to be safe
     pref = random.choice(prefixes)
     noun = random.choice(nouns)
-    name = f"{pref} {noun} {i+1}"
+    name = f"{pref} {noun} {i + 1}"
 
-    if "Tee" in noun: cat = categories[0]
-    elif "Hoodie" in noun: cat = categories[1]
-    elif "Cargo" in noun or "Shorts" in noun: cat = categories[2]
-    elif "Jacket" in noun or "Windbreaker" in noun: cat = categories[4]
-    elif "Cap" in noun or "Beanie" in noun: cat = categories[5]
-    elif "Socks" in noun or "Bag" in noun: cat = categories[6]
-    elif "Sneakers" in noun: cat = categories[7]
-    else: cat = categories[3]
+    if "Tee" in noun:
+        cat = categories[0]
+    elif "Hoodie" in noun:
+        cat = categories[1]
+    elif "Cargo" in noun or "Shorts" in noun:
+        cat = categories[2]
+    elif "Jacket" in noun or "Windbreaker" in noun:
+        cat = categories[4]
+    elif "Cap" in noun or "Beanie" in noun:
+        cat = categories[5]
+    elif "Socks" in noun or "Bag" in noun:
+        cat = categories[6]
+    elif "Sneakers" in noun:
+        cat = categories[7]
+    else:
+        cat = categories[3]
 
     c1 = random.choice(colors)
     c2 = random.choice([c for c in colors if c != c1])
@@ -46,7 +95,7 @@ for i in range(45): # Generate 45 products to be safe
     p = f"""    {{
         "code": "{gen_code(name)}",
         "name": "{name}",
-        "slug": "{name.lower().replace(' ', '-')}",
+        "slug": "{name.lower().replace(" ", "-")}",
         "description": "Essential {cat[0].lower()} for the urban environment.",
         "category_name": "{cat[0]}",
         "category_slug": "{cat[1]}",

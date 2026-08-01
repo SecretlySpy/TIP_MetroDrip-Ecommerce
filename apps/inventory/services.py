@@ -18,11 +18,14 @@ logger = logging.getLogger(__name__)
 INVENTORY_SERVICE_URL = os.environ.get("INVENTORY_SERVICE_URL", "http://127.0.0.1:8000")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 
+
 class InsufficientStock(Exception):
     pass
 
+
 class InvalidReservationState(Exception):
     pass
+
 
 class InvalidStockAdjustment(Exception):
     pass
@@ -46,7 +49,7 @@ def reserve_stock(*, variant_id, qty, session_key="", order=None):
             f"{INVENTORY_SERVICE_URL}/reservations",
             json=[{"variant_id": variant_id, "qty": qty}],
             params={"session_key": session_key},
-            timeout=5
+            timeout=5,
         )
         response.raise_for_status()
         data = response.json()
@@ -54,10 +57,10 @@ def reserve_stock(*, variant_id, qty, session_key="", order=None):
         return DummyReservation(data["reservations"][0])
     except requests.HTTPError:
         if response.status_code == 400 and "Insufficient stock" in response.text:
-            raise InsufficientStock(f"variant {variant_id} is short on stock")
-        raise ValueError(f"Inventory service error: {response.text}")
+            raise InsufficientStock(f"variant {variant_id} is short on stock") from None
+        raise ValueError(f"Inventory service error: {response.text}") from None
     except Exception as e:
-        raise ValueError(f"Failed to communicate with inventory service: {e}")
+        raise ValueError(f"Failed to communicate with inventory service: {e}") from e
 
 
 def release_reservation(reservation_id):
@@ -66,10 +69,10 @@ def release_reservation(reservation_id):
     """
     try:
         r = redis.from_url(REDIS_URL)
-        r.publish("inventory_events", json.dumps({
-            "type": "CheckoutCancelled",
-            "data": {"reservations": [reservation_id]}
-        }))
+        r.publish(
+            "inventory_events",
+            json.dumps({"type": "CheckoutCancelled", "data": {"reservations": [reservation_id]}}),
+        )
     except Exception as e:
         logger.error(f"Failed to publish CheckoutCancelled for reservation {reservation_id}: {e}")
         return None
@@ -82,13 +85,15 @@ def commit_reservation(*, reservation_id, order):
     """
     try:
         r = redis.from_url(REDIS_URL)
-        r.publish("inventory_events", json.dumps({
-            "type": "OrderConfirmed",
-            "data": {
-                "order_id": order.id,
-                "reservations": [reservation_id]
-            }
-        }))
+        r.publish(
+            "inventory_events",
+            json.dumps(
+                {
+                    "type": "OrderConfirmed",
+                    "data": {"order_id": order.id, "reservations": [reservation_id]},
+                }
+            ),
+        )
     except Exception as e:
         logger.error(f"Failed to publish OrderConfirmed for reservation {reservation_id}: {e}")
         return None
@@ -119,13 +124,14 @@ def scan_low_stock():
     # Since this returns a queryset in the monolith, returning an empty list for now.
     return []
 
+
 def get_stock_record(variant_id):
     try:
         response = requests.get(f"{INVENTORY_SERVICE_URL}/stock/{variant_id}", timeout=2)
         response.raise_for_status()
         return DummyStockRecord(response.json())
     except requests.HTTPError:
-        raise ValueError(f"variant {variant_id} missing in inventory service")
+        raise ValueError(f"variant {variant_id} missing in inventory service") from None
     except Exception:
         # Fallback to zero availability if service is down
         return DummyStockRecord({"variant_id": variant_id, "available": 0})

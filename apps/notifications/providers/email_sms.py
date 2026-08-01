@@ -61,7 +61,8 @@ class EmailSmsNotificationProvider(NotificationProvider):
         send_mail(
             subject=f"[MetroDrip] Contact form: {contact_message.name}",
             message=(
-                f"From: {contact_message.name} <{contact_message.email}>\n\n{contact_message.message}"
+                f"From: {contact_message.name} <{contact_message.email}>\n\n"
+                f"{contact_message.message}"
             ),
             from_email=None,
             recipient_list=recipients,

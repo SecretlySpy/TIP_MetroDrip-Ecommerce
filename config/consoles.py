@@ -131,7 +131,7 @@ class ConsoleSite(admin.AdminSite):
         if own_console and own_console != self.console_role:
             try:
                 own_url = reverse(f"{CONSOLE_NAMESPACE[own_console]}:index")
-            except (NoReverseMatch, KeyError):  # pragma: no cover - defensive
+            except NoReverseMatch, KeyError:  # pragma: no cover - defensive
                 own_url = None
         return render(
             request,

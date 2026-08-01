@@ -15,11 +15,10 @@ DATABASE_URL = f"mysql+aiomysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MY
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 
-AsyncSessionLocal = async_sessionmaker(
-    engine, expire_on_commit=False
-)
+AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 Base = declarative_base()
+
 
 # Dependency
 async def get_db():

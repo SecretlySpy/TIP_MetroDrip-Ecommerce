@@ -148,6 +148,7 @@ def product_detail(request, slug):
     for variant in product.variants.all():
         try:
             from apps.inventory.services import get_stock_record
+
             available = get_stock_record(variant.pk).available
         except Exception:
             # An unstocked variant renders as sold out rather than sellable.
@@ -216,7 +217,7 @@ def cart_availability(request):
             body = json.loads(request.body)
             variant_ids = [int(x) for x in body.get("ids", [])]
         # All malformed JSON/list conversions share one public validation response.
-        except (json.JSONDecodeError, ValueError, TypeError):
+        except json.JSONDecodeError, ValueError, TypeError:
             return JsonResponse({"error": "Invalid request body"}, status=400)
     else:
         return HttpResponseNotAllowed(["GET", "POST"])
@@ -225,6 +226,7 @@ def cart_availability(request):
         return JsonResponse({"error": "Provide 1–50 variant IDs"}, status=400)
 
     from apps.inventory.services import get_stock_record
+
     availability = {}
     for variant_id in variant_ids:
         try:
@@ -257,7 +259,7 @@ def _parse_checkout_items(raw_items):
             variant_id = int(line["variant_id"])
             qty = int(line["qty"])
         # Every malformed line maps to the same public validation error.
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             raise ValueError("Each cart line needs a variant_id and qty.") from None
         if not 1 <= qty <= MAX_LINE_QTY:
             raise ValueError(f"Quantities must be between 1 and {MAX_LINE_QTY}.")
@@ -295,7 +297,7 @@ def checkout_page(request):
     try:
         zone = ShippingZone.objects.get(id=data.get("zone_id"), is_active=True)
     # Missing and malformed identifiers are both invalid customer input.
-    except (ShippingZone.DoesNotExist, ValueError, TypeError):
+    except ShippingZone.DoesNotExist, ValueError, TypeError:
         return JsonResponse({"error": "Choose a valid shipping zone."}, status=400)
 
     # Guests need a session so their holds can be traced before the order pays.
@@ -398,7 +400,10 @@ def checkout_success(request, token):
     # Development-only sandbox completion (simulated provider). Production and
     # staging refuse to boot with this provider on; the webhook is the only real
     # confirmation path (Invariant 3).
-    if getattr(settings, "PAYMENT_PROVIDER", "paymongo") == "simulated" and request.GET.get("mock") == "1":
+    if (
+        getattr(settings, "PAYMENT_PROVIDER", "paymongo") == "simulated"
+        and request.GET.get("mock") == "1"
+    ):
         if confirm_order_paid(order=order):
             order.refresh_from_db()
             try:
@@ -579,4 +584,3 @@ TEAM_MEMBERS = [
 def developers_page(request):
     """Render the team profile page (FR-20, course instruction #8)."""
     return render(request, "storefront/developers.html", {"team": TEAM_MEMBERS})
-

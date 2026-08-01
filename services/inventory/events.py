@@ -38,7 +38,11 @@ async def process_event(event_type: str, data: dict):
                     res.ended_at = datetime.datetime.utcnow()
 
                     # Update stock
-                    stmt2 = select(StockRecord).where(StockRecord.variant_id == res.variant_id).with_for_update()
+                    stmt2 = (
+                        select(StockRecord)
+                        .where(StockRecord.variant_id == res.variant_id)
+                        .with_for_update()
+                    )
                     rec = (await db.execute(stmt2)).scalars().first()
 
                     if rec:
@@ -52,7 +56,7 @@ async def process_event(event_type: str, data: dict):
                             qty=res.qty,
                             is_addition=0,
                             resulting_on_hand=rec.qty_on_hand,
-                            reference=f"order:{order_id}"
+                            reference=f"order:{order_id}",
                         )
                         db.add(movement)
 
@@ -70,7 +74,11 @@ async def process_event(event_type: str, data: dict):
                     res.status = ReservationStatus.RELEASED
                     res.ended_at = datetime.datetime.utcnow()
 
-                    stmt2 = select(StockRecord).where(StockRecord.variant_id == res.variant_id).with_for_update()
+                    stmt2 = (
+                        select(StockRecord)
+                        .where(StockRecord.variant_id == res.variant_id)
+                        .with_for_update()
+                    )
                     rec = (await db.execute(stmt2)).scalars().first()
                     if rec:
                         rec.qty_reserved -= res.qty

@@ -3,6 +3,7 @@
 Handles stock reservations and stock queries.
 Sync with orders is handled via Redis Pub/Sub in events.py.
 """
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -30,6 +31,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="MetroDrip Inventory Service", lifespan=lifespan)
 
 app.include_router(api.router)
+
 
 @app.get("/health")
 async def health_check():

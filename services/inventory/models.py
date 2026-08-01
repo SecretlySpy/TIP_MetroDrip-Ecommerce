@@ -7,18 +7,20 @@ from .database import Base
 
 # Must replicate the invariants of the Django app: InnoDB, utf8mb4, utf8mb4_0900_ai_ci.
 table_args = {
-    'mysql_engine': 'InnoDB',
-    'mysql_charset': 'utf8mb4',
-    'mysql_collate': 'utf8mb4_0900_ai_ci'
+    "mysql_engine": "InnoDB",
+    "mysql_charset": "utf8mb4",
+    "mysql_collate": "utf8mb4_0900_ai_ci",
 }
 
-class ReservationStatus(str, enum.Enum):
+
+class ReservationStatus(enum.StrEnum):
     ACTIVE = "active"
     COMMITTED = "committed"
     RELEASED = "released"
     EXPIRED = "expired"
 
-class MovementReason(str, enum.Enum):
+
+class MovementReason(enum.StrEnum):
     SALE = "sale"
     RESTOCK = "restock"
     ADJUSTMENT = "adjustment"
@@ -27,8 +29,8 @@ class MovementReason(str, enum.Enum):
 class StockRecord(Base):
     __tablename__ = "inventory_stockrecord"
     __table_args__ = (
-        CheckConstraint('qty_reserved <= qty_on_hand', name='chk_reserved_lte_on_hand'),
-        table_args
+        CheckConstraint("qty_reserved <= qty_on_hand", name="chk_reserved_lte_on_hand"),
+        table_args,
     )
 
     # We don't have the catalog ProductVariant model here, so we store the variant_id
@@ -47,12 +49,14 @@ class Reservation(Base):
     __tablename__ = "inventory_reservation"
     __table_args__ = (
         Index("idx_res_status_expiry", "status", "expires_at"),
-        CheckConstraint('qty >= 1', name='chk_reservation_qty_min1'),
-        table_args
+        CheckConstraint("qty >= 1", name="chk_reservation_qty_min1"),
+        table_args,
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    variant_id = Column(Integer, ForeignKey("inventory_stockrecord.variant_id", ondelete="RESTRICT"), nullable=False)
+    variant_id = Column(
+        Integer, ForeignKey("inventory_stockrecord.variant_id", ondelete="RESTRICT"), nullable=False
+    )
     qty = Column(Integer, nullable=False)
     status = Column(Enum(ReservationStatus), default=ReservationStatus.ACTIVE, nullable=False)
     session_key = Column(String(64), default="", nullable=False)
@@ -67,16 +71,15 @@ class Reservation(Base):
 
 class StockMovement(Base):
     __tablename__ = "inventory_stockmovement"
-    __table_args__ = (
-        CheckConstraint('qty > 0', name='chk_stockmovement_qty_min1'),
-        table_args
-    )
+    __table_args__ = (CheckConstraint("qty > 0", name="chk_stockmovement_qty_min1"), table_args)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    variant_id = Column(Integer, ForeignKey("inventory_stockrecord.variant_id", ondelete="RESTRICT"), nullable=False)
+    variant_id = Column(
+        Integer, ForeignKey("inventory_stockrecord.variant_id", ondelete="RESTRICT"), nullable=False
+    )
     reason = Column(Enum(MovementReason), nullable=False)
     qty = Column(Integer, nullable=False)
-    is_addition = Column(Integer, nullable=False) # boolean basically
+    is_addition = Column(Integer, nullable=False)  # boolean basically
     # Snapshot fields
     resulting_on_hand = Column(Integer, nullable=False)
     reference = Column(String(64), default="", nullable=False)

@@ -85,7 +85,9 @@ class SimulatedPaymentProvider(PaymentProvider):
                 if shortfall <= 0:
                     continue
                 try:
-                    replacement = reserve_stock(variant_id=item.variant_id, qty=shortfall, order=order)
+                    replacement = reserve_stock(
+                        variant_id=item.variant_id, qty=shortfall, order=order
+                    )
                     commit_reservation(reservation_id=replacement.pk, order=order)
                 except InsufficientStock:
                     logger.critical(

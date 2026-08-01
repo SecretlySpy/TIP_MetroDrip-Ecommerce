@@ -11,7 +11,7 @@ router = APIRouter()
 
 
 @router.get("/stock/{variant_id}")
-async def get_stock(variant_id: int, db: AsyncSession = Depends(get_db)):
+async def get_stock(variant_id: int, db: AsyncSession = Depends(get_db)):  # noqa: B008
     record = await db.get(StockRecord, variant_id)
     if not record:
         raise HTTPException(status_code=404, detail="StockRecord not found")
@@ -20,12 +20,14 @@ async def get_stock(variant_id: int, db: AsyncSession = Depends(get_db)):
         "qty_on_hand": record.qty_on_hand,
         "qty_reserved": record.qty_reserved,
         "low_stock_threshold": record.low_stock_threshold,
-        "available": record.available
+        "available": record.available,
     }
 
 
 @router.post("/reservations")
-async def create_reservations(items: list[dict[str, int]], session_key: str = "", db: AsyncSession = Depends(get_db)):
+async def create_reservations(
+    items: list[dict[str, int]], session_key: str = "", db: AsyncSession = Depends(get_db)  # noqa: B008
+):
     """Reserve stock for multiple variants. Atomic."""
     created = []
     expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
@@ -58,7 +60,7 @@ async def create_reservations(items: list[dict[str, int]], session_key: str = ""
                 qty=qty,
                 session_key=session_key,
                 expires_at=expires_at,
-                status=ReservationStatus.ACTIVE
+                status=ReservationStatus.ACTIVE,
             )
             db.add(res)
             created.append(res)
@@ -68,7 +70,7 @@ async def create_reservations(items: list[dict[str, int]], session_key: str = ""
 
     except ValueError as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
