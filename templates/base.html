@@ -5,7 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MetroDrip{% endblock %} — MetroDrip Streetwear</title>
   <meta name="description" content="{% block meta_description %}Metro Manila streetwear — shop tees, hoodies, pants, and outerwear. Free shipping on select orders.{% endblock %}">
-
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function() {
+      try {
+        var theme = localStorage.getItem('theme');
+        if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      } catch (e) {}
+    })();
+  </script>
   {# Google Fonts: Anton (display), Inter (body), IBM Plex Mono (prices/SKUs) per §14 #}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -130,6 +142,7 @@
           <li><a href="{% url 'storefront:contact' %}" class="footer__link">Contact</a></li>
           <li><a href="/pages/privacy/" class="footer__link">Privacy</a></li>
           <li><a href="{% url 'storefront:developers' %}" class="footer__link">Developers</a></li>
+          <li><button type="button" class="footer__link" style="background:none;border:none;cursor:pointer;padding:0;" onclick="toggleTheme()">Theme</button></li>
         </ul>
         <p class="footer__copy">&copy; {% now "Y" %} MetroDrip. All rights reserved. Metro Manila, Philippines.</p>
       </div>
@@ -163,6 +176,13 @@
           }
         }
       };
+    }
+
+    function toggleTheme() {
+      var currentTheme = document.documentElement.getAttribute('data-theme');
+      var newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
     }
   </script>
 

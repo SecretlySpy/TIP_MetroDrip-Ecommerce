@@ -11,18 +11,26 @@
 /* --- CSS Custom Properties (Design Tokens) --- */
 :root {
   /* Colors */
-  --color-base: #F4F4F2;
-  --color-ink: #141414;
-  --color-volt: #C8F031;
-  --color-volt-hover: #b5d82c;
-  --color-surface: #F4F4F2;
-  --color-surface-raised: #FFFFFF;
-  --color-muted: #75756E;
-  --color-border: #E4E4DF;
-  --color-danger: #E5484D;
-  --color-danger-hover: #d13438;
-  --color-success: #30A46C;
-  --color-overlay: rgba(20, 20, 20, 0.5);
+  --color-base:            #F4F4F2;
+  --color-ink:             #141414;
+  --color-paper:           #FFFFFF;
+  --color-surface:         #F4F4F2;
+  --color-surface-raised:  #FFFFFF;
+  --color-border:          #E4E4DF;
+  --color-success:         #30A46C;
+  --color-overlay:         rgba(20, 20, 20, 0.5);
+
+  --color-volt:            #C8F031;
+  --color-volt-hover:      #B5D82C;
+
+  --color-muted:           #63635C;
+  --color-danger:          #C2282D;
+  --color-danger-hover:    #A81F24;
+
+  --color-on-volt:         #141414;
+  --color-accent-text:     #5C6B12;
+  --color-elevated:        #F4F4F2;
+  --color-muted-on-dark:   #A8A8A0;
 
   /* Typography */
   --font-display: 'Anton', sans-serif;
@@ -195,7 +203,7 @@ h5 { font-size: 1rem; }
 }
 
 .navbar__brand span {
-  color: var(--color-volt);
+  color: var(--color-accent-text);
 }
 
 .navbar__links {
@@ -274,7 +282,7 @@ h5 { font-size: 1rem; }
   top: -8px;
   right: -10px;
   background: var(--color-volt);
-  color: var(--color-ink);
+  color: var(--color-on-volt);
   font-family: var(--font-mono);
   font-size: 0.625rem;
   font-weight: 700;
@@ -350,14 +358,14 @@ h5 { font-size: 1rem; }
 
 .btn--primary {
   background: var(--color-volt);
-  color: var(--color-ink);
+  color: var(--color-on-volt);
   border-color: var(--color-volt);
 }
 
 .btn--primary:hover {
   background: var(--color-volt-hover);
   border-color: var(--color-volt-hover);
-  color: var(--color-ink);
+  color: var(--color-on-volt);
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
 }
@@ -605,7 +613,7 @@ h5 { font-size: 1rem; }
 
 .badge--volt {
   background: var(--color-volt);
-  color: var(--color-ink);
+  color: var(--color-on-volt);
 }
 
 .badge--muted {
@@ -846,6 +854,7 @@ h5 { font-size: 1rem; }
 .variant-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+  color: var(--color-muted);
   text-decoration: line-through;
 }
 
@@ -1135,6 +1144,19 @@ h5 { font-size: 1rem; }
 }
 
 .hero__accent {
+  color: var(--color-accent-text);
+}
+
+.hero--dark {
+  background: var(--color-ink);
+  color: var(--color-base);
+}
+
+.hero--dark .hero__subtitle {
+  color: var(--color-muted-on-dark);
+}
+
+.hero--dark .hero__accent {
   color: var(--color-volt);
 }
 
@@ -1481,7 +1503,7 @@ h5 { font-size: 1rem; }
   padding: 0.25rem 0.9rem;
   border: 2px solid var(--color-ink);
   background: var(--color-volt);
-  color: var(--color-ink);
+  color: var(--color-on-volt);
 }
 .status-badge--pending { background: var(--color-surface); }
 .status-badge--cancelled, .status-badge--refunded { background: var(--color-danger); color: #fff; }
@@ -1505,7 +1527,7 @@ h5 { font-size: 1rem; }
 }
 .order-step:first-child { border-left: 1px solid var(--color-border); }
 .order-step--done { background: var(--color-ink); color: var(--color-volt); border-color: var(--color-ink); }
-.order-step--current { background: var(--color-volt); color: var(--color-ink); font-weight: 700; border-color: var(--color-ink); }
+.order-step--current { background: var(--color-volt); color: var(--color-on-volt); font-weight: 700; border-color: var(--color-ink); }
 
 /* --- Account pages --- */
 .account-grid {
@@ -1743,4 +1765,57 @@ h5 { font-size: 1rem; }
   .category-menu__link {
     transition: none;
   }
+}
+
+/* --- Dark Mode Overrides --- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-base:           #0F0F0F;
+    --color-paper:          #0F0F0F;
+    --color-surface:        #1A1A1A;
+    --color-surface-raised: #1A1A1A;
+    --color-elevated:       #252524;
+    --color-ink:            #F2F2EF;
+    --color-volt:           #D4FF3F;
+    --color-volt-hover:     #C2F02B;
+    --color-muted:          #A3A39A;
+    --color-muted-on-dark:  #A3A39A;
+    --color-border:         #2E2E2C;
+    --color-danger:         #FF7B7E;
+    --color-danger-hover:   #FF9497;
+    --color-on-volt:        #141414;
+    --color-accent-text:    #D4FF3F;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-base:           #0F0F0F;
+  --color-paper:          #0F0F0F;
+  --color-surface:        #1A1A1A;
+  --color-surface-raised: #1A1A1A;
+  --color-elevated:       #252524;
+  --color-ink:            #F2F2EF;
+  --color-volt:           #D4FF3F;
+  --color-volt-hover:     #C2F02B;
+  --color-muted:          #A3A39A;
+  --color-muted-on-dark:  #A3A39A;
+  --color-border:         #2E2E2C;
+  --color-danger:         #FF7B7E;
+  --color-danger-hover:   #FF9497;
+  --color-on-volt:        #141414;
+  --color-accent-text:    #D4FF3F;
+}
+
+/* Fix Trap A for bands that stay dark in light mode */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hero--dark,
+  :root:not([data-theme="light"]) .footer {
+    background: var(--color-elevated);
+    color: var(--color-ink);
+  }
+}
+:root[data-theme="dark"] .hero--dark,
+:root[data-theme="dark"] .footer {
+  background: var(--color-elevated);
+  color: var(--color-ink);
 }

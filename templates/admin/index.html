@@ -1,0 +1,62 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="console-header">
+  <div>
+    <h1 class="console-title">Administrator Dashboard</h1>
+    <div class="console-meta">/admin/ &middot; METRODRIP CORE</div>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <div class="console-panel">
+    <h3>User Accounts</h3>
+    <table class="console-table">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Role</th>
+          <th>Last Login</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>archim</td>
+          <td>Admin</td>
+          <td>Today, 10:00 AM</td>
+        </tr>
+        <tr>
+          <td>seller_mnl</td>
+          <td>Merchant</td>
+          <td>Yesterday</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="console-panel">
+    <h3>Audit Trail</h3>
+    <table class="console-table">
+      <thead>
+        <tr>
+          <th>Action</th>
+          <th>User</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Created product 'Cargo Pants'</td>
+          <td>seller_mnl</td>
+          <td>2 hours ago</td>
+        </tr>
+        <tr>
+          <td>Deleted order #1024</td>
+          <td>archim</td>
+          <td>1 day ago</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

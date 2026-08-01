@@ -162,6 +162,7 @@ class AdministratorSite(ConsoleSite):
     site_header = "MetroDrip Administration"
     site_title = "MetroDrip Administration"
     index_title = "Platform administration"
+    index_template = "admin/index.html"
 
 
 class MerchantSite(ConsoleSite):
@@ -174,6 +175,7 @@ class MerchantSite(ConsoleSite):
     site_header = "MetroDrip Merchant Console"
     site_title = "MetroDrip Merchant Console"
     index_title = "Store management"
+    index_template = "merchant/index.html"
 
 
 #: The administrator console. `AdminConfig.default_site` points at

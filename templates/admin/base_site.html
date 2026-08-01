@@ -1,46 +1,234 @@
 {% extends "admin/base.html" %}
+{% load static %}
 
-{% block title %}{{ title }} | MetroDrip Admin{% endblock %}
-
-{% block branding %}
-<h1 id="site-name"><a href="{% url 'admin:index' %}">MetroDrip Admin</a></h1>
-{% endblock %}
-
-{% block nav-global %}{% endblock %}
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
 
 {% block extrastyle %}
-  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'css/storefront.css' %}">
   <style>
-    /* MetroDrip brand overrides for Django admin */
-    :root {
-      --primary: #121212;
-      --secondary: #2c2c2c;
-      --link-fg: #0d6efd;
-      --button-bg: #121212;
-      --button-hover-bg: #2c2c2c;
-      --header-bg: #121212;
-      --header-color: #ffffff;
-      --header-link-color: #ffffff;
+    /* Reset and grid layout */
+    html, body { height: 100vh; margin: 0; padding: 0; overflow: hidden; font-family: var(--font-body); }
+    #container {
+      display: grid;
+      grid-template-columns: 232px 1fr;
+      height: 100vh;
+      width: 100vw;
     }
-    #header {
-      background: var(--header-bg);
-      color: var(--header-color);
+    #header { display: none; } /* Hide default Django header */
+    
+    /* Console Sidebar */
+    .console-sidebar {
+      background: var(--color-ink);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
     }
-    #branding h1 {
-      color: var(--header-color);
+    .console-sidebar__brand {
+      padding: 24px;
+      font-size: 1.5rem;
+      font-family: var(--font-display);
+      line-height: 1;
     }
-    a:link, a:visited {
-      color: var(--link-fg);
+    .console-sidebar__brand-meta {
+      color: var(--color-volt);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      margin-top: 8px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
     }
-    .button, input[type=submit], input[type=button], .submit-row input, a.button {
-      background: var(--button-bg);
-      border-radius: 4px;
+    .console-sidebar__nav {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
     }
-    .button:hover, input[type=submit]:hover, input[type=button]:hover {
-      background: var(--button-hover-bg);
+    .console-sidebar__link {
+      display: block;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--color-muted-on-dark);
+      text-decoration: none;
+      border-radius: var(--radius-sm);
+    }
+    .console-sidebar__link:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--color-ink); /* becomes light on dark panel */
+    }
+    .console-sidebar__link.selected {
+      background: var(--color-elevated);
+      color: #F2F2EF; /* light equivalent of ink on dark panel */
+    }
+    .console-sidebar__user {
+      padding: 16px;
+      border-top: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .console-sidebar__avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--color-volt);
+      color: var(--color-on-volt);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-family: var(--font-body);
+    }
+    .console-sidebar__user-name {
+      color: var(--color-paper);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .console-sidebar__user-meta {
+      color: var(--color-muted-on-dark);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+    
+    /* Main Content Area */
+    #main {
+      background: var(--color-surface);
+      height: 100vh;
+      overflow-y: auto;
+      display: block;
+    }
+    .content {
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .console-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+    .console-title {
+      font-family: var(--font-display);
+      font-size: 30px;
+      margin: 0 0 4px 0;
+      color: var(--color-ink);
+    }
+    .console-meta {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--color-muted);
+    }
+    
+    /* Dashboard Specific Overrides */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .console-panel {
+      background: var(--color-surface-raised);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      padding: 24px;
+    }
+    .console-panel h3 {
+      font-family: var(--font-body);
+      font-weight: 600;
+      font-size: 16px;
+      margin: 0 0 16px 0;
+      color: var(--color-ink);
+    }
+    .console-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--color-ink);
+    }
+    .console-table th {
+      text-align: left;
+      color: var(--color-muted);
+      font-weight: 400;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .console-table td {
+      padding: 12px 0;
+      border-bottom: 1px dashed var(--color-border);
+    }
+    .console-table tr:last-child td {
+      border-bottom: none;
+    }
+    
+    /* Overrides for Django Admin Default tables */
+    #content h1 {
+      font-family: var(--font-display);
+      font-size: 30px;
+      margin-bottom: 20px;
+      color: var(--color-ink);
     }
     .module h2, .module caption, .inline-group h2 {
-      background: var(--primary);
+      background: var(--color-ink);
+      color: var(--color-surface);
     }
+    a:link, a:visited {
+      color: var(--color-ink);
+      text-decoration: underline;
+    }
+    .button, input[type=submit], input[type=button], .submit-row input, a.button {
+      background: var(--color-ink);
+      color: var(--color-surface);
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 10px 20px;
+      font-weight: 600;
+    }
+    .button:hover, input[type=submit]:hover, input[type=button]:hover {
+      opacity: 0.9;
+    }
+    /* Hide breadcrumbs since we have a different header */
+    .breadcrumbs { display: none; }
   </style>
+{% endblock %}
+
+{% block nav-sidebar %}
+  <aside class="console-sidebar">
+    <div class="console-sidebar__brand">
+      <span style="color: var(--color-paper)">Metro</span><span style="color: var(--color-volt)">Drip</span>
+      <div class="console-sidebar__brand-meta">
+        {% if site_header == 'MetroDrip Administration' %}ADMINISTRATOR CONSOLE{% else %}MERCHANT / SELLER CONSOLE{% endif %}
+      </div>
+    </div>
+    
+    <nav class="console-sidebar__nav">
+      <a href="{% if site_header == 'MetroDrip Administration' %}{% url 'admin:index' %}{% else %}{% url 'merchant:index' %}{% endif %}" class="console-sidebar__link {% if request.path == '/admin/' or request.path == '/merchant/' %}selected{% endif %}">
+        Dashboard
+      </a>
+      {% if available_apps %}
+        {% for app in available_apps %}
+          {% for model in app.models %}
+            <a href="{{ model.admin_url }}" class="console-sidebar__link {% if model.admin_url in request.path %}selected{% endif %}">
+              {{ model.name }}
+            </a>
+          {% endfor %}
+        {% endfor %}
+      {% endif %}
+    </nav>
+    
+    <div class="console-sidebar__user">
+      <div class="console-sidebar__avatar">
+        {{ user.username|make_list|first|upper }}
+      </div>
+      <div>
+        <div class="console-sidebar__user-name">{{ user.get_full_name|default:user.username }}</div>
+        <div class="console-sidebar__user-meta">
+          {% if site_header == 'MetroDrip Administration' %}ADMINISTRATOR{% else %}MERCHANT{% endif %} &middot; 2FA ON
+        </div>
+      </div>
+    </div>
+  </aside>
 {% endblock %}
