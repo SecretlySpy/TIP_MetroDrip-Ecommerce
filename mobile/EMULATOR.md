@@ -123,7 +123,38 @@ If step 3 fails with a network error, the API binding is wrong — see above.
 | Expo opens the *wrong* emulator | Expo CLI takes the first `adb` device and ignores `ANDROID_SERIAL` | Boot only the MetroDrip AVD, or install Expo Go manually and deep-link: `adb -s <serial> shell am start -a android.intent.action.VIEW -d 'exp://10.0.2.2:8090' host.exp.exponent` |
 | `adb devices` shows `offline` forever; qemu is running and the log stops after "Windows Hypervisor Platform accelerator is operational" | `config.ini` has empty `target` / `tag.ids` — the emulator cannot resolve its own system image, and fails silently rather than erroring | Re-run `scripts/setup-android-emulator.ps1` (it now writes those keys explicitly), or set `target=android-35`, `tag.id=google_apis`, `tag.ids=google_apis` by hand and boot with `-wipe-data` |
 | Emulator dies the moment the launching shell exits | The emulator is a child of that shell's process group | Launch it detached — the IDE task does this; from a script use `cmd /c start "" /MIN <batch that runs emulator.exe>` |
-| *Every* AVD suddenly hangs at `offline` or exits silently right after the log line "Windows Hypervisor Platform accelerator is operational" — including AVDs that booted fine earlier | Windows Hypervisor Platform gets into a bad state, typically after an emulator process is `taskkill`/`Stop-Process -Force`ed several times. Docker Desktop's WSL2 VM shares the same hypervisor and can aggravate it | **Reboot the host.** Nothing short of that reliably clears it. Afterwards, stop emulators with `adb -s <serial> emu kill` rather than killing the process, and prefer running the emulator and Docker one at a time on a machine with limited RAM |
+| *Every* AVD stalls at `offline` — the emulator log stops after "Windows Hypervisor Platform accelerator is operational" and the guest kernel never prints anything — including AVDs that booted minutes earlier | **Unresolved on this machine.** See the note below | See below |
+
+### Unresolved: guest kernel never starts (2026-08-02)
+
+On this host (Windows 10 19045, WHPX, emulator 37.1.11.0) every AVD stopped
+booting partway through a session, after having worked. The emulator process
+starts, reports the hypervisor is operational, and then the guest produces no
+console output at all; `adb` shows the device permanently `offline`.
+
+Ruled out by testing, so **don't spend time on these**:
+
+- Not the AVD — a brand-new correctly-configured AVD and a previously-working
+  third-party AVD both fail identically.
+- Not the API level — API 34 and API 35 fail the same way.
+- Not a wedged hypervisor — a full host reboot did **not** fix it.
+- Not Docker/WSL contention — fully stopping Docker Desktop and running
+  `wsl --shutdown` changed nothing.
+- Not stale `*.lock` artifacts left by force-killed emulators — removing
+  `hardware-qemu.ini.lock` and `multiinstance.lock` changed nothing.
+- Not `-wipe-data`, snapshots, or the GPU mode (`auto`, `off`,
+  `swiftshader_indirect` all behave identically).
+- Not the emulator binary — unchanged at 37.1.11.0 throughout.
+
+Still untried, in rough order of promise: launching the AVD from Android
+Studio's Device Manager (it sets up an environment the bare CLI does not),
+reinstalling the `emulator` SDK package, checking whether a Windows update or
+endpoint-security product began blocking WHPX, and `emulator -avd <name>
+-verbose -show-kernel` on a machine where you can watch the window directly.
+
+The app itself is known good: it was verified rendering M01 on an API 35
+emulator during the same session, so treat this as host infrastructure rather
+than an application defect.
 
 ---
 
