@@ -27,6 +27,11 @@ cp .env.example .env        # point EXPO_PUBLIC_API_URL at your backend
 npm start                   # then press i / a, or scan with Expo Go
 ```
 
+> **Running it on an Android emulator in Antigravity IDE?** See
+> [EMULATOR.md](EMULATOR.md) — one script installs the SDK and creates the
+> AVD, and `.vscode/tasks.json` boots the whole stack from
+> *Terminal → Run Task… → MetroDrip: Full mobile stack*.
+
 `EXPO_PUBLIC_API_URL` defaults to `http://10.0.2.2:8080/api/mobile/v1`
 (the Android emulator's alias for the host machine). For a physical device use
 your LAN IP, e.g. `http://192.168.1.10:8080/api/mobile/v1`.

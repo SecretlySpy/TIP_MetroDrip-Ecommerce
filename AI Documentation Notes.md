@@ -2223,3 +2223,21 @@
 | Web route sweep | 13 public routes probed on a live server | All 200 |
 | Mobile API journey | register to checkout to track, live server | 23/23 |
 | Fulfillment lifecycle | pack, ship, out-for-delivery, deliver, refund, CSV, invoice | 13/13 |
+
+### Gap inventory — amended after Sprint I (2026-08-02)
+
+Closed by this sprint (previously listed as outstanding):
+
+- Second inbound webhook (section 7): `/api/webhooks/courier/` now exists, signature-verified and idempotent.
+- FR-19 in full: packing slip (merchant) and customer-facing invoice (tokenized) both ship; line totals are exact centavos.
+- FR-9 dashboard leg: low-stock filter and OUT/LOW/OK badge on the merchant stock list.
+
+Still outstanding, unchanged:
+
+- Email verification on registration and web password reset (the **mobile** reset flow is complete; the web one is not).
+- Saved-address CRUD and checkout prefill; the `addresses` JSON field exists and is returned by the API but has no editing UI.
+- Geocoded zone auto-detection (FR-13): Places autocomplete fills address/city, but the zone remains a manual dropdown.
+- Admin 2FA and login rate limiting (F-2). DRF throttling covers the mobile API only.
+- Real PayMongo and J&T credentials: both live-API branches are written against documented contracts but unverified against real endpoints.
+- Public staging evidence (M1): host, DNS, and trusted certificate remain operator actions.
+- Catalog data quality: `seed_assignment.py` / `seed_more.py` have padded the dev database to ~156 products with placeholder copy. `seed_demo` (the canonical five, ADR-A-012) is unaffected, but a demo database should be reseeded from `seed_demo` alone.

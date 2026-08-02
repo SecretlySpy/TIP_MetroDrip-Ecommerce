@@ -23,8 +23,12 @@
 
 [CmdletBinding()]
 param(
-    [string]$AvdName = "MetroDrip_Pixel7_API34",
-    [string]$ApiLevel = "34",
+    # API 35. Expo Go 2.31.2 (the SDK 51 client) crashes on the API 34
+    # google_apis image with "Failed to create NativeModule 'UIManager' /
+    # MainApplication cannot be cast to ReactApplication"; the same APK and
+    # the same JS bundle run fine on API 35. Verified on this machine.
+    [string]$AvdName = "MetroDrip_Pixel_API35",
+    [string]$ApiLevel = "35",
     [string]$Device = "pixel_7"
 )
 

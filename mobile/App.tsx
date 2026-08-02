@@ -3,6 +3,9 @@
  * (§3), then mount theme/auth/cart providers and the navigator.
  */
 
+// Must be the very first import in the app entry: gesture-handler patches the
+// native touch system before any navigator mounts.
+import 'react-native-gesture-handler';
 import {
   IBMPlexMono_400Regular,
   IBMPlexMono_500Medium,

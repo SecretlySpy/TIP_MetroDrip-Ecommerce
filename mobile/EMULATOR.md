@@ -19,10 +19,18 @@ The script is idempotent — re-run it safely if a step fails. It:
 1. Installs the Android command-line tools to `%LOCALAPPDATA%\Android\Sdk`
 2. Sets `ANDROID_HOME` / `ANDROID_SDK_ROOT` and extends your user `Path`
 3. Accepts the SDK licences
-4. Installs `platform-tools`, `emulator`, `platforms;android-34`, and the
+4. Installs `platform-tools`, `emulator`, `platforms;android-35`, and the
    `google_apis;x86_64` system image
-5. Creates the **`MetroDrip_Pixel7_API34`** AVD and tunes it to 2 GB RAM /
+5. Creates the **`MetroDrip_Pixel_API35`** AVD and tunes it to 2 GB RAM /
    6 GB data / hardware keyboard
+
+> **Why API 35 and not 34.** Expo Go 2.31.2 — the client for SDK 51, which
+> this app targets — crashes on boot on the `android-34;google_apis` image
+> with `Failed to create NativeModule 'UIManager'` and
+> `host.exp.exponent.MainApplication cannot be cast to
+> com.facebook.react.ReactApplication`. The identical APK and JS bundle run
+> fine on API 35. Verified on this machine; don't "simplify" the script back
+> to 34.
 
 **Restart Antigravity afterwards** so it inherits `ANDROID_HOME`.
 
@@ -54,7 +62,7 @@ $env:PAYMENT_PROVIDER="simulated"
 .venv\Scripts\python.exe manage.py runserver 0.0.0.0:8080
 
 # 2. Emulator
-emulator -avd MetroDrip_Pixel7_API34
+emulator -avd MetroDrip_Pixel_API35
 
 # 3. App
 cd mobile
@@ -110,6 +118,9 @@ If step 3 fails with a network error, the API binding is wrong — see above.
 | `HTTP 400 missing_client_version` | Request bypassed the API client | All calls must go through `src/api/client.ts` |
 | Metro cache weirdness after edits | Stale bundler cache | `npx expo start -c` |
 | `adb devices` empty | Emulator not booted yet | Wait for the home screen, then re-run |
+| Expo Go dies instantly; logcat shows `Failed to create NativeModule 'UIManager'` | Running an API 34 image, or `react-native-reanimated/plugin` missing from `babel.config.js` | Use the API 35 AVD; keep the Reanimated plugin **last** in the Babel plugin list |
+| "Expo Go isn't responding" (ANR) | Two emulators competing for CPU | Run one at a time: `adb -s emulator-XXXX emu kill` |
+| Expo opens the *wrong* emulator | Expo CLI takes the first `adb` device and ignores `ANDROID_SERIAL` | Boot only the MetroDrip AVD, or install Expo Go manually and deep-link: `adb -s <serial> shell am start -a android.intent.action.VIEW -d 'exp://10.0.2.2:8090' host.exp.exponent` |
 
 ---
 

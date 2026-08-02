@@ -31,12 +31,12 @@
     },
     {
       "label": "MetroDrip: Start Android emulator",
-      "detail": "Boots the MetroDrip_Pixel7_API34 AVD created by scripts/setup-android-emulator.ps1.",
+      "detail": "Boots the MetroDrip_Pixel_API35 AVD created by scripts/setup-android-emulator.ps1.",
       "type": "shell",
       "windows": {
-        "command": "& \"$env:LOCALAPPDATA\\Android\\Sdk\\emulator\\emulator.exe\" -avd MetroDrip_Pixel7_API34 -netdelay none -netspeed full"
+        "command": "& \"$env:LOCALAPPDATA\\Android\\Sdk\\emulator\\emulator.exe\" -avd MetroDrip_Pixel_API35 -netdelay none -netspeed full"
       },
-      "command": "$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel7_API34 -netdelay none -netspeed full",
+      "command": "$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API35 -netdelay none -netspeed full",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated" }
