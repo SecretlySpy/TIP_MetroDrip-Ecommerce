@@ -2236,8 +2236,48 @@ Still outstanding, unchanged:
 
 - Email verification on registration and web password reset (the **mobile** reset flow is complete; the web one is not).
 - Saved-address CRUD and checkout prefill; the `addresses` JSON field exists and is returned by the API but has no editing UI.
-- Geocoded zone auto-detection (FR-13): Places autocomplete fills address/city, but the zone remains a manual dropdown.
+- Geocoded zone auto-detection (FR-13): Places fills address/city; server mapper auto-selects zone (dropdown remains fallback). See apps/shipping/zones.py.
 - Admin 2FA and login rate limiting (F-2). DRF throttling covers the mobile API only.
 - Real PayMongo and J&T credentials: both live-API branches are written against documented contracts but unverified against real endpoints.
 - Public staging evidence (M1): host, DNS, and trusted certificate remain operator actions.
 - Catalog data quality: `seed_assignment.py` / `seed_more.py` have padded the dev database to ~156 products with placeholder copy. `seed_demo` (the canonical five, ADR-A-012) is unaffected, but a demo database should be reseeded from `seed_demo` alone.
+
+
+# Module / File: services/notifications/main.py
+## Function: FastAPI notifications delivery service
+- **Purpose**: Opt-in outbound email/SMS/push delivery sidecar (Phase 3 strangler).
+- **Inputs**: POST /v1/email|sms|push JSON DTOs + optional Bearer token
+- **Outputs**: {delivered, mode}; /healthz/live and /healthz/ready
+- **Dependencies**: requests, SMTP/Semaphore/Expo when configured
+- **Behavior**: simulated when credentials absent; auth default-deny when NOTIFICATION_SERVICE_TOKEN set
+- **Side Effects**: external network I/O when configured
+- **DSA Used**: n/a
+- **Data Analysis Notes**: no DB — inbox stays in Django
+- **Responsive & Accessibility Notes**: n/a
+- **Security Notes**: service token; no card/PII beyond email/phone in payload
+
+# Module / File: apps/notifications/providers/http.py
+## Function: HttpNotificationProvider
+- **Purpose**: Django adapter posting DTOs to notifications service when NOTIFICATION_PROVIDER=http
+- **Inputs**: same facade as email_sms/console
+- **Outputs**: bool success; never raises
+- **Dependencies**: requests, NOTIFICATION_SERVICE_URL/TOKEN, correlation id
+- **Behavior**: log+False on transport/4xx/5xx so checkout is never blocked
+- **Side Effects**: HTTP POST
+- **DSA Used**: n/a
+- **Data Analysis Notes**: n/a
+- **Responsive & Accessibility Notes**: n/a
+- **Security Notes**: Bearer token; enhancement-tier only
+
+# Module / File: static/css/storefront.css
+## Function: design tokens (Phase 5)
+- **Purpose**: WCAG AA palette + dark mode; volt/on-volt/accent-text rules
+- **Inputs**: data-theme, prefers-color-scheme
+- **Outputs**: CSS custom properties
+- **Dependencies**: templates/base.html theme toggle
+- **Behavior**: light tokens + dark overrides; ink bands → elevated in dark
+- **Side Effects**: none
+- **DSA Used**: n/a
+- **Data Analysis Notes**: muted #63635C, danger #C2282D contrast on white
+- **Responsive & Accessibility Notes**: theme toggle ≥44×44; focus-visible volt ring
+- **Security Notes**: n/a

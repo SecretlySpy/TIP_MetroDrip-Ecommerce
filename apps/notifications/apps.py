@@ -6,5 +6,6 @@ class NotificationsConfig(AppConfig):
     name = "apps.notifications"
 
     def ready(self):
-        import apps.notifications.providers.console  # noqa
-        import apps.notifications.providers.email_sms  # noqa
+        import apps.notifications.providers.console  # noqa: F401
+        import apps.notifications.providers.email_sms  # noqa: F401
+        import apps.notifications.providers.http  # noqa: F401

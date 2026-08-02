@@ -31,6 +31,7 @@ urlpatterns = [
         name="checkout-confirm-simulated",
     ),
     path("shipping/zones/", views.ZoneListView.as_view(), name="zone-list"),
+    path("shipping/zones/resolve/", views.ZoneResolveView.as_view(), name="zone-resolve"),
     # H-5: orders
     path("orders/", views.OrderListView.as_view(), name="order-list"),
     path("orders/track/<str:token>/", views.OrderTrackView.as_view(), name="order-track"),

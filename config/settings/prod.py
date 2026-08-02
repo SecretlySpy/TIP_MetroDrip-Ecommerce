@@ -203,29 +203,5 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 # Persistent DB connections for cheap-tier hosting (NFR-5).
 DATABASES["default"]["CONN_MAX_AGE"] = 60  # noqa: F405
 
-# Container platforms collect stdout/stderr. Keeping structured logger wiring in
-# settings avoids untracked filesystem logs and lets the host rotate output.
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "standard": {
-            "format": "{levelname} {asctime} {name} {message}",
-            "style": "{",
-        },
-    },
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-            "formatter": "standard",
-        },
-    },
-    "root": {"handlers": ["console"], "level": "INFO"},
-    "loggers": {
-        "django.request": {
-            "handlers": ["console"],
-            "level": "WARNING",
-            "propagate": False,
-        },
-    },
-}
+# LOGGING is defined in base.py (correlation-id filter + cid=… format).
+# Container platforms collect stdout/stderr; do not override here.

@@ -339,3 +339,42 @@
 - **Decision:** FR-19 ships two documents. The **packing slip** (merchant console, `/merchant/orders/order/<id>/packing-slip/`) is a warehouse pick list: SKU, attributes, quantity, tick boxes, waybill — and deliberately **no prices**. The **invoice** exists twice: the merchant copy and a customer-facing copy at `/order/<token>/invoice/`, authorized by the same signed token as the status page (ADR-D-004).
 - **Rationale:** They serve different readers. A picker needs SKUs and counts; putting prices in the box is how gift orders leak their cost. The customer needs a financial record they can print or save as PDF.
 - **Consequences:** The customer invoice is a standalone print document — it does not extend `base.html`, because a navbar and cart badge have no place on an invoice. It is reachable from both order history and the tokenized status page, so guests get it too.
+
+## ADR-P2-001 — Server-side shipping zone resolution (FR-13)
+
+- **Status:** Accepted
+- **Decision:** Province/city → `ShippingZone` mapping lives in `apps/shipping/zones.py` and is the single source of truth. Web Places autocomplete and `GET /api/mobile/v1/shipping/zones/resolve/` both call it. The zone `<select>` / picker remains visible and authoritative as graceful degradation.
+- **Rationale:** Client-only heuristics diverged between surfaces and could not be tested in pytest. A Cebu address must always select VisMin with the seeded fee on every client.
+- **Consequences:** Adding a province means updating the token sets (or a future DB-backed map). Empty/unknown input returns null suggestion; checkout still requires an explicit `zone_id`.
+
+## ADR-P2-002 — Correlation IDs on every request (SI FR-05 / NFR-12)
+
+- **Status:** Accepted
+- **Decision:** `CorrelationIdMiddleware` mints or propagates `X-Correlation-ID`, binds it via contextvar for logging (`cid=…` in the shared LOGGING format), echoes it on every response, and includes it in mobile error envelopes and storefront JSON errors.
+- **Rationale:** One checkout must be greppable end-to-end without a service mesh or broker.
+- **Consequences:** Inbound ids must match `[A-Za-z0-9._-]{8,128}` or they are replaced. Clients may send their own id; none is required.
+
+## ADR-P3-003 — Target service map and strangler order (SOA course alignment)
+
+- **Status:** Accepted (migration in progress — do not claim microservices as shipped)
+- **Decision:** Regroup the modular monolith into five logical services. Free-tier constraint: **one MySQL 8 instance**, separate logical databases when split. Synchronous versioned REST/JSON only. No broker, mesh, or Kubernetes.
+
+| Service | Absorbs (apps) | Schema (target) | Status |
+|---|---|---|---|
+| Identity | `accounts` | `db_identity` | monolith |
+| Catalog & Inventory | `catalog`, `inventory` | `db_catalog` | inventory FastAPI experimental; **default `local`** (ADR-P3-002) |
+| Orders & Payments | `orders`, `payments`, `reviews` | `db_orders` | monolith |
+| Fulfillment & Notifications | `shipping`, `notifications` delivery | `db_fulfillment` | **notifications delivery** FastAPI opt-in (`NOTIFICATION_PROVIDER=http`) |
+| Storefront BFF + Mobile API | `storefront`, `cms`, `mobile_api` | `db_content` | monolith |
+
+- **Strangler order:** (1) Notifications **delivery** only — done as opt-in. (2) Fulfillment. (3) Catalog/Inventory out of Orders with stock ownership never leaving Catalog. (4) Schema split + drop cross-service FKs. (5) Checkout saga. (6) Compose/Caddy per service.
+- **Notifications extraction rule:** `Notification` / `DeviceToken` rows and mobile inbox stay in Django until the mobile API is re-pointed. The sidecar accepts email/SMS/push DTOs only. Failures are enhancement-tier (logged, never fail checkout). Default provider remains `console` / `email_sms`.
+- **Rationale:** Course requires an SOA framing; an accurate modular monolith + started strangler defends better than an aspirational "we have microservices" claim that collapses under one question about stock ownership.
+- **Consequences:** README and handover §1 Architecture status describe reality. M2 concurrency gate stays on Catalog/local inventory. Incomplete services must never become the default (lesson from ADR-P3-001/002).
+
+## ADR-P5-001 — Accessibility-hardened storefront palette
+
+- **Status:** Accepted
+- **Decision:** Live tokens in `static/css/storefront.css` are the palette of record: muted `#63635C`, danger `#C2282D`, plus `on-volt`, `accent-text`, `elevated`, `muted-on-dark`. Dark mode via OS preference + manual toggle. Volt is background-only on light; text on volt is always `on-volt`.
+- **Rationale:** Pre-a11y muted/danger failed WCAG AA on white. Handover §14 and `index.html` are updated to match CSS, not the reverse.
+- **Consequences:** New UI must use tokens, never raw hex. Invoice/print templates may keep a minimal local subset for print isolation.

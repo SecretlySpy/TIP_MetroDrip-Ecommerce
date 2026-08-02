@@ -1,0 +1,18 @@
+# Catches the failure at author-time, before it can reach `main`.
+# CI is the backstop; this is the first line of defence.
+repos:
+  - repo: local
+    hooks:
+      - id: compile-python
+        name: Python sources must compile (blocks `except A, B:`)
+        entry: python3 -m compileall -q apps config jobs tests manage.py
+        language: system
+        pass_filenames: false
+        types: [python]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.1
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format

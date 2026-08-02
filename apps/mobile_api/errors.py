@@ -23,9 +23,15 @@ _STATUS_CODES = {
 
 
 def error_payload(code, message, fields=None):
+    from config.middleware import get_correlation_id
+
     body = {"error": {"code": code, "message": message}}
     if fields:
         body["error"]["fields"] = fields
+    # NFR-12: every error body carries the same id the response header echoes.
+    cid = get_correlation_id()
+    if cid:
+        body["error"]["correlation_id"] = cid
     return body
 
 

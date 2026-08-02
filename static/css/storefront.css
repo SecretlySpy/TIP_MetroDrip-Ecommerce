@@ -23,14 +23,26 @@
   --color-volt:            #C8F031;
   --color-volt-hover:      #B5D82C;
 
+  /* WCAG AA text-on-paper (Phase 5): muted 5.6:1, danger 5.3:1 — not the
+     pre-a11y #75756E / #E5484D pair that failed contrast on white. */
   --color-muted:           #63635C;
   --color-danger:          #C2282D;
   --color-danger-hover:    #A81F24;
+  --color-warning:         #8A6D00;
+  --color-warning-bg:      #FDF6E3;
+  --color-success-bg:      #E9F7EF;
+  --color-danger-bg:       #FDECEC;
 
+  /* volt is a BACKGROUND only on light surfaces; text-on-volt is always on-volt
+     (never ink, which inverts in dark mode). accent-text is the volt-family
+     colour safe as body text on paper. border is never a text colour. */
   --color-on-volt:         #141414;
   --color-accent-text:     #5C6B12;
   --color-elevated:        #F4F4F2;
   --color-muted-on-dark:   #A8A8A0;
+  --color-on-danger:       #FFFFFF;
+  --color-on-success:      #FFFFFF;
+  --color-rating:          #8A6D00;
 
   /* Typography */
   --font-display: 'Anton', sans-serif;
@@ -384,7 +396,7 @@ h5 { font-size: 1rem; }
 
 .btn--danger {
   background: var(--color-danger);
-  color: white;
+  color: var(--color-on-danger);
   border-color: var(--color-danger);
 }
 
@@ -623,12 +635,12 @@ h5 { font-size: 1rem; }
 
 .badge--danger {
   background: var(--color-danger);
-  color: white;
+  color: var(--color-on-danger);
 }
 
 .badge--success {
   background: var(--color-success);
-  color: white;
+  color: var(--color-on-success);
 }
 
 /* --- Product Grid --- */
@@ -985,7 +997,7 @@ h5 { font-size: 1rem; }
 }
 
 .stock-indicator__dot--low {
-  background: #F5A623;
+  background: var(--color-warning);
 }
 
 .stock-indicator__dot--out {
@@ -1212,7 +1224,7 @@ h5 { font-size: 1rem; }
 }
 
 .review__stars {
-  color: #F5A623;
+  color: var(--color-rating);
   letter-spacing: 2px;
 }
 
@@ -1446,9 +1458,9 @@ h5 { font-size: 1rem; }
   background: var(--color-surface-raised);
   margin-bottom: var(--space-md);
 }
-.alert--success { border-color: var(--color-success); background: #e9f7ef; }
-.alert--error, .alert--danger { border-color: var(--color-danger); background: #fdecec; }
-.alert--warning { border-color: #b98900; background: #fdf6e3; }
+.alert--success { border-color: var(--color-success); background: var(--color-success-bg); }
+.alert--error, .alert--danger { border-color: var(--color-danger); background: var(--color-danger-bg); }
+.alert--warning { border-color: var(--color-warning); background: var(--color-warning-bg); }
 
 /* --- Generic panel (checkout, order status, auth cards) --- */
 .panel {
@@ -1506,7 +1518,10 @@ h5 { font-size: 1rem; }
   color: var(--color-on-volt);
 }
 .status-badge--pending { background: var(--color-surface); }
-.status-badge--cancelled, .status-badge--refunded { background: var(--color-danger); color: #fff; }
+.status-badge--cancelled, .status-badge--refunded {
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+}
 
 .order-steps {
   display: flex;
@@ -1767,7 +1782,10 @@ h5 { font-size: 1rem; }
   }
 }
 
-/* --- Dark Mode Overrides --- */
+/* --- Dark Mode Overrides ---
+   Ink-filled bands (hero--dark, footer, announce) must use --color-elevated in
+   dark mode — if they keep --color-ink they flip to near-white and invert the
+   design. on-volt stays #141414 in BOTH modes so text on volt never vanishes. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --color-base:           #0F0F0F;
@@ -1783,8 +1801,13 @@ h5 { font-size: 1rem; }
     --color-border:         #2E2E2C;
     --color-danger:         #FF7B7E;
     --color-danger-hover:   #FF9497;
+    --color-warning:        #E6C35C;
+    --color-warning-bg:     #3A3218;
+    --color-success-bg:     #163528;
+    --color-danger-bg:      #3A1A1C;
     --color-on-volt:        #141414;
     --color-accent-text:    #D4FF3F;
+    --color-rating:         #E6C35C;
   }
 }
 
@@ -1802,20 +1825,61 @@ h5 { font-size: 1rem; }
   --color-border:         #2E2E2C;
   --color-danger:         #FF7B7E;
   --color-danger-hover:   #FF9497;
+  --color-warning:        #E6C35C;
+  --color-warning-bg:     #3A3218;
+  --color-success-bg:     #163528;
+  --color-danger-bg:      #3A1A1C;
   --color-on-volt:        #141414;
   --color-accent-text:    #D4FF3F;
+  --color-rating:         #E6C35C;
 }
 
-/* Fix Trap A for bands that stay dark in light mode */
+/* Ink-band inversion trap: sections that are ink-filled in light mode. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .hero--dark,
-  :root:not([data-theme="light"]) .footer {
+  :root:not([data-theme="light"]) .footer,
+  :root:not([data-theme="light"]) .barcode-strip,
+  :root:not([data-theme="light"]) .announce-bar {
     background: var(--color-elevated);
     color: var(--color-ink);
   }
 }
 :root[data-theme="dark"] .hero--dark,
-:root[data-theme="dark"] .footer {
+:root[data-theme="dark"] .footer,
+:root[data-theme="dark"] .barcode-strip,
+:root[data-theme="dark"] .announce-bar {
   background: var(--color-elevated);
   color: var(--color-ink);
+}
+
+/* Theme toggle control (navbar + footer) */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.35rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-ink);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  border-color: var(--color-ink);
+  color: var(--color-accent-text);
+}
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--color-volt);
+  outline-offset: 2px;
+}
+.footer .theme-toggle {
+  color: inherit;
+  border-color: currentColor;
+  opacity: 0.85;
 }

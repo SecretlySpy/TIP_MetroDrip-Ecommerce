@@ -37,6 +37,7 @@ from apps.orders.money import format_centavos
 from apps.payments.services import confirm_order_paid
 from apps.reviews.models import Review, ReviewStatus
 from apps.shipping.models import ShippingZone
+from apps.shipping.zones import resolve_zone
 
 from .errors import error_payload
 from .serializers import (
@@ -596,6 +597,33 @@ class ZoneListView(APIView):
                     }
                     for zone in ShippingZone.objects.filter(is_active=True).order_by("name")
                 ]
+            }
+        )
+
+
+class ZoneResolveView(APIView):
+    """FR-13: map a Places province/city to an active ShippingZone.
+
+    The zone dropdown stays the fallback — this endpoint only *suggests*.
+    Empty or unrecognised input returns zone=null without erroring.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        province = str(request.query_params.get("province", "")).strip()
+        city = str(request.query_params.get("city", "")).strip()
+        zone = resolve_zone(province, city=city)
+        if zone is None:
+            return Response({"zone": None})
+        return Response(
+            {
+                "zone": {
+                    "id": zone.pk,
+                    "name": zone.name,
+                    "fee": zone.fee,
+                    "fee_display": format_centavos(zone.fee),
+                }
             }
         )
 

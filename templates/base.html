@@ -106,13 +106,19 @@
         <li>
           <a href="{% url 'storefront:cart' %}" class="navbar__link navbar__cart" x-data="cartBadge()" x-init="init()">
             {# Cart icon (inline SVG for zero-dependency) #}
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
               <line x1="3" y1="6" x2="21" y2="6"/>
               <path d="M16 10a4 4 0 01-8 0"/>
             </svg>
             <span class="navbar__cart-badge" x-show="count > 0" x-text="count" x-transition></span>
           </a>
+        </li>
+        <li>
+          <button type="button" class="theme-toggle" id="theme-toggle" onclick="toggleTheme()"
+                  aria-label="Toggle colour theme" aria-pressed="false">
+            Theme
+          </button>
         </li>
       </ul>
     </div>
@@ -142,7 +148,7 @@
           <li><a href="{% url 'storefront:contact' %}" class="footer__link">Contact</a></li>
           <li><a href="/pages/privacy/" class="footer__link">Privacy</a></li>
           <li><a href="{% url 'storefront:developers' %}" class="footer__link">Developers</a></li>
-          <li><button type="button" class="footer__link" style="background:none;border:none;cursor:pointer;padding:0;" onclick="toggleTheme()">Theme</button></li>
+          <li><button type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle colour theme">Theme</button></li>
         </ul>
         <p class="footer__copy">&copy; {% now "Y" %} MetroDrip. All rights reserved. Metro Manila, Philippines.</p>
       </div>
@@ -178,12 +184,21 @@
       };
     }
 
+    function syncThemeToggle() {
+      var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+      document.querySelectorAll('.theme-toggle').forEach(function (btn) {
+        btn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+        btn.textContent = dark ? 'Light' : 'Dark';
+      });
+    }
     function toggleTheme() {
       var currentTheme = document.documentElement.getAttribute('data-theme');
       var newTheme = currentTheme === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', newTheme);
-      localStorage.setItem('theme', newTheme);
+      try { localStorage.setItem('theme', newTheme); } catch (e) {}
+      syncThemeToggle();
     }
+    syncThemeToggle();
   </script>
 
   {% block extra_js %}{% endblock %}

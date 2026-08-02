@@ -193,8 +193,9 @@ document.addEventListener('alpine:init', () => {
 </script>
 
 {% if GOOGLE_MAPS_API_KEY %}
-{# FR-13 enhancement tier: autocomplete assists the address field; the manual
-   zone dropdown above stays authoritative, so an API outage never blocks checkout. #}
+{# FR-13: Places fills address/city; zone is resolved server-side so web and
+   mobile share one mapper. The manual zone dropdown stays authoritative — an
+   API outage never blocks checkout. #}
 <script async defer src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_API_KEY }}&libraries=places&callback=initAutocomplete"></script>
 <script>
 function initAutocomplete() {
@@ -209,40 +210,38 @@ function initAutocomplete() {
     const place = autocomplete.getPlace();
     if (!place.address_components) return;
     addressInput.dispatchEvent(new Event('input'));
+    let province = "";
+    let city = "";
     for (const component of place.address_components) {
       const type = component.types[0];
       if (type === "locality" || type === "administrative_area_level_2") {
+        city = component.long_name;
         const cityInput = document.getElementById('co-city');
         if (cityInput) {
-          cityInput.value = component.long_name;
+          cityInput.value = city;
           cityInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
       }
       if (type === "administrative_area_level_1") {
-        const region = component.long_name.toLowerCase();
-        let zoneMatch = "";
-        if (region.includes("ncr") || region.includes("national capital") || region.includes("metro manila")) {
-          zoneMatch = "NCR";
-        } else if (region.includes("visayas") || region.includes("mindanao") || region.includes("davao") || region.includes("zamboanga") || region.includes("caraga") || region.includes("soccsksargen") || region.includes("bangsamoro") || region.includes("cebu") || region.includes("bohol") || region.includes("leyte") || region.includes("samar") || region.includes("negros") || region.includes("panay")) {
-          zoneMatch = "VisMin";
-        } else {
-          // Default to Luzon for other PH provinces
-          zoneMatch = "Luzon";
-        }
-        
-        if (zoneMatch) {
-          const zoneSelect = document.getElementById('co-zone');
-          if (zoneSelect) {
-            Array.from(zoneSelect.options).forEach(opt => {
-              if (opt.text.includes(zoneMatch)) {
-                zoneSelect.value = opt.value;
-                zoneSelect.dispatchEvent(new Event('change', { bubbles: true }));
-              }
-            });
-          }
-        }
+        province = component.long_name;
       }
     }
+    if (!province && !city) return;
+    const params = new URLSearchParams();
+    if (province) params.set("province", province);
+    if (city) params.set("city", city);
+    fetch("{% url 'storefront:resolve-zone' %}?" + params.toString(), {
+      headers: { "Accept": "application/json" }
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data || data.zone_id == null) return;
+        const zoneSelect = document.getElementById("co-zone");
+        if (!zoneSelect) return;
+        zoneSelect.value = String(data.zone_id);
+        zoneSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      })
+      .catch(() => { /* dropdown remains the fallback */ });
   });
 }
 </script>

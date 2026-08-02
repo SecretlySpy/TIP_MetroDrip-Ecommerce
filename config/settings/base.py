@@ -64,6 +64,8 @@ MIDDLEWARE = [
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # SI FR-05 / NFR-12: mint or propagate X-Correlation-ID on every request.
+    "config.middleware.CorrelationIdMiddleware",
     # NFR-22: mobile requests must self-identify their app version.
     "apps.mobile_api.middleware.MobileClientVersionMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -71,6 +73,38 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# Correlation id on every log line (dev + test + prod inherit unless overridden).
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "correlation_id": {
+            "()": "config.middleware.CorrelationIdFilter",
+        },
+    },
+    "formatters": {
+        "standard": {
+            "format": "{levelname} {asctime} {name} cid={correlation_id} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+            "filters": ["correlation_id"],
+        },
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+    "loggers": {
+        "django.request": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+}
 
 ROOT_URLCONF = "config.urls"
 
@@ -183,8 +217,12 @@ PAYMENT_PROVIDER = "paymongo"
 INVENTORY_PROVIDER = os.environ.get("INVENTORY_PROVIDER", "local")
 # Shipping provider registry key (simulated | jnt)
 SHIPPING_PROVIDER = "jnt"
-# Notification provider registry key (console | email_sms)
-NOTIFICATION_PROVIDER = "email_sms"
+# Notification provider registry key (console | email_sms | http).
+# Default stays in-process. `http` is the Phase-3 strangler opt-in that posts
+# DTOs to services/notifications — never flip default until parity is proven.
+NOTIFICATION_PROVIDER = os.environ.get("NOTIFICATION_PROVIDER", "email_sms")
+NOTIFICATION_SERVICE_URL = os.environ.get("NOTIFICATION_SERVICE_URL", "http://127.0.0.1:8002")
+NOTIFICATION_SERVICE_TOKEN = os.environ.get("NOTIFICATION_SERVICE_TOKEN", "")
 
 # --- Enhancement-tier APIs (§7 rule: never on the critical checkout path) ---
 SEMAPHORE_API_KEY = os.environ.get("SEMAPHORE_API_KEY", "")

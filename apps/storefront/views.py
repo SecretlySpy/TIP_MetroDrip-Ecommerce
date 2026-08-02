@@ -38,8 +38,18 @@ from apps.orders.money import format_centavos
 from apps.orders.services import next_order_no
 from apps.payments.services import PayMongoError, confirm_order_paid, create_checkout_session
 from apps.shipping.models import ShippingZone
+from apps.shipping.zones import resolve_zone
+from config.middleware import get_correlation_id
 
 logger = logging.getLogger(__name__)
+
+
+def _json_error(message, status=400, **extra):
+    """Storefront JSON error envelope with correlation id (NFR-12)."""
+    body = {"error": message, "correlation_id": get_correlation_id() or None}
+    body.update(extra)
+    return JsonResponse(body, status=status)
+
 
 # ---------------------------------------------------------------------------
 # C-2: Homepage
@@ -211,19 +221,19 @@ def cart_availability(request):
         try:
             variant_ids = [int(x) for x in request.GET.get("ids", "").split(",") if x.strip()]
         except ValueError:
-            return JsonResponse({"error": "Invalid variant IDs"}, status=400)
+            return _json_error("Invalid variant IDs")
     elif request.method == "POST":
         try:
             body = json.loads(request.body)
             variant_ids = [int(x) for x in body.get("ids", [])]
         # All malformed JSON/list conversions share one public validation response.
         except (json.JSONDecodeError, ValueError, TypeError):
-            return JsonResponse({"error": "Invalid request body"}, status=400)
+            return _json_error("Invalid request body")
     else:
         return HttpResponseNotAllowed(["GET", "POST"])
 
     if not variant_ids or len(variant_ids) > 50:
-        return JsonResponse({"error": "Provide 1–50 variant IDs"}, status=400)
+        return _json_error("Provide 1–50 variant IDs")
 
     from apps.inventory.services import get_stock_record
 
@@ -267,6 +277,37 @@ def _parse_checkout_items(raw_items):
     return quantities
 
 
+@require_GET
+def resolve_shipping_zone(request):
+    """FR-13: JSON helper for Places → zone auto-select on web checkout.
+
+    Query params: province (admin_area_level_1), city (optional).
+    Returns {"zone_id", "zone_name", "fee", "fee_display"} or zone fields null.
+    """
+    province = str(request.GET.get("province", "")).strip()
+    city = str(request.GET.get("city", "")).strip()
+    zone = resolve_zone(province, city=city)
+    if zone is None:
+        return JsonResponse(
+            {
+                "zone_id": None,
+                "zone_name": None,
+                "fee": None,
+                "fee_display": None,
+                "correlation_id": get_correlation_id() or None,
+            }
+        )
+    return JsonResponse(
+        {
+            "zone_id": zone.pk,
+            "zone_name": zone.name,
+            "fee": zone.fee,
+            "fee_display": format_centavos(zone.fee),
+            "correlation_id": get_correlation_id() or None,
+        }
+    )
+
+
 def checkout_page(request):
     """Render the checkout form (GET) or create the order + holds (POST)."""
     if request.method == "GET":
@@ -282,23 +323,23 @@ def checkout_page(request):
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid request body."}, status=400)
+        return _json_error("Invalid request body.")
 
     try:
         quantities = _parse_checkout_items(data.get("items"))
     except ValueError as error:
-        return JsonResponse({"error": str(error)}, status=400)
+        return _json_error(str(error))
 
     contact_name = str(data.get("customer_name", "")).strip()
     contact_email = str(data.get("email", "")).strip()
     if not contact_name or not contact_email:
-        return JsonResponse({"error": "Name and email are required."}, status=400)
+        return _json_error("Name and email are required.")
 
     try:
         zone = ShippingZone.objects.get(id=data.get("zone_id"), is_active=True)
     # Missing and malformed identifiers are both invalid customer input.
     except (ShippingZone.DoesNotExist, ValueError, TypeError):
-        return JsonResponse({"error": "Choose a valid shipping zone."}, status=400)
+        return _json_error("Choose a valid shipping zone.")
 
     # Guests need a session so their holds can be traced before the order pays.
     if not request.session.session_key:
@@ -353,12 +394,11 @@ def checkout_page(request):
                 )
     except InsufficientStock as error:
         logger.info("Checkout rejected: %s", error)
-        return JsonResponse(
-            {"error": "Some items just sold out. Review your cart and try again."}, status=409
-        )
+        return _json_error("Some items just sold out. Review your cart and try again.", status=409)
     except ValueError as error:
-        return JsonResponse({"error": str(error)}, status=400)
+        return _json_error(str(error))
 
+    logger.info("Checkout created order_no=%s", order.order_no)
     token = Signer().sign(str(order.pk))
     success_url = request.build_absolute_uri(reverse("storefront:checkout-success", args=[token]))
     cancel_url = request.build_absolute_uri(reverse("storefront:cart"))
@@ -371,12 +411,18 @@ def checkout_page(request):
         logger.error("Checkout session failed for %s: %s", order.order_no, error)
         for reservation in order.reservations.filter(status="active"):
             release_reservation(reservation.pk)
-        return JsonResponse(
-            {"error": "Payment provider is unavailable right now — please try again."},
+        return _json_error(
+            "Payment provider is unavailable right now — please try again.",
             status=502,
         )
 
-    return JsonResponse({"success": True, "checkout_url": checkout_url})
+    return JsonResponse(
+        {
+            "success": True,
+            "checkout_url": checkout_url,
+            "correlation_id": get_correlation_id() or None,
+        }
+    )
 
 
 def checkout_success(request, token):

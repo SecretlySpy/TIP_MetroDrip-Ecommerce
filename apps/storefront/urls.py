@@ -15,6 +15,8 @@ urlpatterns = [
     path("shop/", views.shop_listing, name="shop"),
     path("shop/<slug:slug>/", views.product_detail, name="product-detail"),
     path("checkout/", views.checkout_page, name="checkout"),
+    # FR-13: Places province/city → ShippingZone (dropdown remains fallback).
+    path("api/shipping/resolve-zone/", views.resolve_shipping_zone, name="resolve-zone"),
     # Signed token, never the raw order number — order numbers are sequential
     # and this page renders checkout PII.
     path("checkout/success/<str:token>/", views.checkout_success, name="checkout-success"),

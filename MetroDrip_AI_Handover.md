@@ -14,26 +14,34 @@ Version 1.1 amended v1.0 to satisfy the IT 009 Project Checklist (customer accou
 
 ## 1. Product Summary
 
-**MetroDrip** is a B2C e-commerce web application + inventory system for a Metro Manila–based streetwear/apparel brand.
+**MetroDrip** is a B2C e-commerce + inventory system for a Metro Manila–based streetwear/apparel brand.
 
-- Responsive **web only** (mobile-first). Native mobile app introduced in Epic H.
+- Responsive **web storefront** (mobile-first) plus a **customer mobile app** (Epic H).
 - **Guest checkout supported**, plus optional customer accounts (registration/login, profile, saved addresses, order history, wishlist).
 - **Single warehouse** inventory, tracked per variant (Size × Color × Fit = one SKU).
-- Payments via **PayMongo** (cards, GCash, Maya). Shipping via **J&T Express**.
+- Payments via **PayMongo** (cards, GCash, Maya) with a **simulated** provider for local/dev. Shipping via **J&T Express** (manual waybill fallback).
 - Solo developer, bootstrap budget (infra ≤ ~$25/month), flexible quality-first timeline.
 - Fully custom build — the brand owns the platform end-to-end.
+
+### Architecture status (honest)
+
+**Shipped today:** a **service-oriented modular monolith** — Django apps with clear bounded contexts, one deployable, one MySQL 8 instance, provider adapters for payments/shipping/notifications/inventory. The public mobile API and Expo client are first-class clients of that monolith.
+
+**In progress (strangler, not claimed as done):** optional FastAPI sidecars under `services/` — inventory (experimental, default still `INVENTORY_PROVIDER=local`) and notifications **delivery** only (`NOTIFICATION_PROVIDER=http` opt-in). Inbox tables, stock ownership, and checkout atomicity remain in Django. Target service map and migration order: `DECISIONS.md` ADR-P3-003. No message broker, no service mesh, no Kubernetes in v1.
 
 ## 2. Tech Stack (Locked)
 
 | Layer | Choice |
 |---|---|
-| Language/Framework | **Python / Django** |
+| Language/Framework | **Python 3.14 / Django 5.2** |
 | Database | **MySQL 8, InnoDB engine only, `utf8mb4` charset** |
 | ORM | Django ORM (`select_for_update` + `transaction.atomic` for stock ops) |
-| Frontend | Django Templates + **HTMX + Alpine.js** (server-rendered, no SPA) |
+| Frontend (web) | Django Templates + **HTMX + Alpine.js** (server-rendered, no SPA) |
+| Frontend (mobile) | **React Native + Expo (TypeScript)** — customer app only (D-M5) |
+| Public API | **DRF** at `/api/mobile/v1/` (JWT + refresh rotation) |
 | Background jobs | APScheduler in-process for v1 (reservation expiry, low-stock scan); Celery+Redis later if needed |
 | Media | Object storage + CDN for product images (never app-server disk) |
-| Testing | pytest; lint with ruff; CI on every push |
+| Testing | pytest (real MySQL); lint with ruff; CI on every push; pre-commit compileall |
 
 ## 3. Hard Invariants (Non-Negotiable)
 
@@ -299,12 +307,43 @@ consoles stay web-only.
 
 ## 14. UI Reference
 
-A 6-screen UI kit exists (Home, Shop/Listing, Product Detail, Cart, Checkout, Admin Dashboard). Design language: paper white base, ink `#141414`, volt accent `#C8F031`, surface `#F4F4F2`, muted `#75756E`, border `#E4E4DF`, danger `#E5484D`. Type: Anton (display), Inter (body), IBM Plex Mono (SKUs/prices/waybill data). Signature motifs: dashed waybill-style summary cards, mono SKU tags, barcode strip. Implement templates to match these screens.
+Design source of truth: Figma file `SmJIlTZ9ZVRxQ5eKucmrd0` — pages **MetroDrip UI** (web) and **MetroDrip Mobile App (iOS/Android)** (11 frames).
 
-**Amended v1.2 — category menu.** The kit predates FR-21, so the header disclosure has no reference screen. It is built from the existing tokens: a mega-dropdown on desktop anchored to the toggle's right edge, and the same markup rendered inline inside the mobile drawer. One template partial serves both breakpoints — the presentations differ only in CSS, so they cannot drift apart.
+**Accessibility-hardened palette** (implemented in `static/css/storefront.css`; supersedes the pre-a11y kit values):
+
+| Token | Light | Role |
+|---|---|---|
+| ink | `#141414` | Primary text / dark fills |
+| paper / base | `#FFFFFF` / `#F4F4F2` | Surfaces |
+| volt | `#C8F031` | **Background accent only** on light |
+| on-volt | `#141414` | Text on any volt fill (both themes) |
+| accent-text | `#5C6B12` | Volt-family colour safe as text on white |
+| muted | `#63635C` | Secondary text (5.6:1 on white; was `#75756E`) |
+| danger | `#C2282D` | Errors (5.3:1 on white; was `#E5484D`) |
+| elevated | `#F4F4F2` → `#252524` dark | Dark-mode fill for ink bands |
+| border | `#E4E4DF` | Dividers — **never** a text colour |
+
+Type: Anton (display), Inter (body), IBM Plex Mono (SKUs/prices/waybill/order numbers). Dark mode: `prefers-color-scheme` + manual toggle (`data-theme`, `localStorage.theme`). Ink-filled bands (hero, footer) become `--color-elevated` in dark mode so they do not invert to white.
+
+**Amended v1.2 — category menu.** Built from the same tokens: mega-dropdown on desktop, inline in the mobile drawer, one partial for both breakpoints.
 
 ## 15. First Three Tasks (Start Here)
 
-1. Task A-1: repo + Django scaffold with the 7 apps + CI (pytest, ruff); first migration sets InnoDB + utf8mb4.
-2. Commit failing concurrency tests in `tests/test_inventory.py` (2 buyers / 1 unit → exactly 1 success).
-3. Task A-2: full Prisma-equivalent Django models per §4 + seed script (5 products × Size×Color×Fit matrix).
+> Historical bootstrap checklist — **already completed** on `main`. Kept for audit trail.
+
+1. Task A-1: repo + Django scaffold + CI (pytest, ruff); first migration sets InnoDB + utf8mb4. ✅
+2. Concurrency tests in `tests/test_inventory.py` (2 buyers / 1 unit → exactly 1 success; M2 20×10). ✅
+3. Task A-2: Django models per §4 + seed script (5 products × Size×Color×Fit matrix). ✅
+
+## 16. Appendix — Design & doc map
+
+| Artifact | Location |
+|---|---|
+| Figma (web + mobile) | `SmJIlTZ9ZVRxQ5eKucmrd0` |
+| Architecture decisions | `DECISIONS.md` |
+| Machine-readable module notes | `AI Documentation Notes.md` |
+| Mobile client | `mobile/README.md` |
+| Staging ops | `deploy/README.md` |
+| Contributor setup | `README.md`, `Tech Stack Setup Guide.md` |
+
+**FR-ID collision note:** web category nav / dual consoles reused FR-21/FR-22 before Epic H. Mobile FR-21…FR-31 in §12A are the mobile contract; web dual-console FR remains documented under Epic F / D-10…D-12. When citing an FR, name the surface (web vs mobile).
