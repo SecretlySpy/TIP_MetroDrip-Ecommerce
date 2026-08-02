@@ -5,7 +5,7 @@ import logging
 import os
 
 import redis.asyncio as redis
-from sqlalchemy.future import select
+from sqlalchemy import select, func
 
 from .database import AsyncSessionLocal
 from .models import MovementReason, Reservation, ReservationStatus, StockMovement, StockRecord
@@ -33,9 +33,9 @@ async def process_event(event_type: str, data: dict):
                 result = await db.execute(stmt)
                 res = result.scalars().first()
                 if res and res.status == ReservationStatus.ACTIVE:
-                    res.status = ReservationStatus.COMMITTED
+                    res.status = ReservationStatus.COMMITTED.value
                     res.order_id = order_id
-                    res.ended_at = datetime.datetime.utcnow()
+                    res.ended_at = func.now()
 
                     # Update stock
                     stmt2 = (
@@ -52,11 +52,9 @@ async def process_event(event_type: str, data: dict):
                         # create audit log
                         movement = StockMovement(
                             variant_id=res.variant_id,
-                            reason=MovementReason.SALE,
-                            qty=res.qty,
-                            is_addition=0,
-                            resulting_on_hand=rec.qty_on_hand,
-                            reference=f"order:{order_id}",
+                            reason=MovementReason.SALE.value,
+                            delta=-res.qty,
+                            ref_order_id=order_id,
                         )
                         db.add(movement)
 
@@ -71,8 +69,8 @@ async def process_event(event_type: str, data: dict):
                 result = await db.execute(stmt)
                 res = result.scalars().first()
                 if res and res.status == ReservationStatus.ACTIVE:
-                    res.status = ReservationStatus.RELEASED
-                    res.ended_at = datetime.datetime.utcnow()
+                    res.status = ReservationStatus.RELEASED.value
+                    res.ended_at = func.now()
 
                     stmt2 = (
                         select(StockRecord)

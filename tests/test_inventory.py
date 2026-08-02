@@ -104,7 +104,7 @@ def _run_parallel_buyers(variant_id, buyer_count):
     return results
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True)(transaction=True)
 def test_two_buyers_competing_for_one_unit_produce_exactly_one_success():
     """Two real MySQL connections may reserve one unit only once, with no oversell."""
     variant = _create_stocked_variant(qty_on_hand=1)
@@ -118,7 +118,7 @@ def test_two_buyers_competing_for_one_unit_produce_exactly_one_success():
     assert stock.available == 0
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True)(transaction=True)
 def test_m2_gate_twenty_buyers_for_ten_units_produce_exactly_ten_successes():
     """M2 release gate (§10): 20 parallel buys of 10 units → exactly 10 wins, 0 oversells."""
     variant = _create_stocked_variant(qty_on_hand=10)
@@ -136,7 +136,7 @@ def test_m2_gate_twenty_buyers_for_ten_units_produce_exactly_ten_successes():
     assert StockMovement.objects.count() == 0
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_reserve_creates_active_hold_with_configured_ttl():
     variant = _create_stocked_variant()
 
@@ -156,7 +156,7 @@ def test_reserve_creates_active_hold_with_configured_ttl():
     assert StockMovement.objects.count() == 0
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize("bad_qty", [0, -1, True, 1.5, "1"])
 def test_reserve_rejects_non_positive_or_non_integer_qty(bad_qty):
     variant = _create_stocked_variant()
@@ -166,7 +166,7 @@ def test_reserve_rejects_non_positive_or_non_integer_qty(bad_qty):
     assert Reservation.objects.count() == 0
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_reserve_beyond_availability_leaves_no_trace():
     variant = _create_stocked_variant()
     reserve_stock(variant_id=variant.pk, qty=8)
@@ -179,14 +179,14 @@ def test_reserve_beyond_availability_leaves_no_trace():
     assert Reservation.objects.count() == 1
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_reserve_unknown_variant_fails_loudly():
     # An untracked SKU must never be sellable (no silent zero-stock default).
     with pytest.raises(StockRecord.DoesNotExist):
         reserve_stock(variant_id=999_999, qty=1)
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_release_returns_units_and_is_idempotent():
     variant = _create_stocked_variant()
     reservation = reserve_stock(variant_id=variant.pk, qty=4)
@@ -204,7 +204,7 @@ def test_release_returns_units_and_is_idempotent():
     assert StockMovement.objects.count() == 0
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_commit_converts_hold_into_sale_with_audit_row():
     variant = _create_stocked_variant()
     reservation = reserve_stock(variant_id=variant.pk, qty=2)
@@ -229,7 +229,7 @@ def test_commit_converts_hold_into_sale_with_audit_row():
         release_reservation(reservation.pk)
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_commit_honors_active_hold_even_past_expiry():
     """The sweep alone expires holds; a paid-but-late shopper keeps their units."""
     variant = _create_stocked_variant()
@@ -245,7 +245,7 @@ def test_commit_honors_active_hold_even_past_expiry():
     assert StockRecord.objects.get(variant=variant).qty_on_hand == 9
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_sweep_expires_only_overdue_active_holds():
     variant = _create_stocked_variant()
     overdue = reserve_stock(variant_id=variant.pk, qty=2)
@@ -267,7 +267,7 @@ def test_sweep_expires_only_overdue_active_holds():
     assert StockMovement.objects.count() == 0
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_adjust_stock_writes_counter_and_ledger_together():
     variant = _create_stocked_variant()
 
@@ -278,7 +278,7 @@ def test_adjust_stock_writes_counter_and_ledger_together():
     assert (movement.delta, movement.reason) == (5, MovementReason.RESTOCK)
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_adjust_stock_rejects_invalid_requests():
     variant = _create_stocked_variant()
     reserve_stock(variant_id=variant.pk, qty=5)
@@ -299,7 +299,7 @@ def test_adjust_stock_rejects_invalid_requests():
     assert StockMovement.objects.count() == 0
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_scan_low_stock_measures_availability_not_shelf_count():
     variant = _create_stocked_variant(qty_on_hand=10, low_stock_threshold=5)
 
@@ -312,7 +312,7 @@ def test_scan_low_stock_measures_availability_not_shelf_count():
     assert [record.variant_id for record in flagged] == [variant.pk]
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(LOW_STOCK_ALERT_RECIPIENTS=["ops@metrodrip.example"])
 def test_low_stock_alert_emails_flagged_skus():
     variant = _create_stocked_variant(qty_on_hand=2, low_stock_threshold=5)
@@ -324,7 +324,7 @@ def test_low_stock_alert_emails_flagged_skus():
     assert variant.sku in mail.outbox[0].body
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(LOW_STOCK_ALERT_RECIPIENTS=[])
 def test_low_stock_alert_degrades_to_noop_without_recipients():
     _create_stocked_variant(qty_on_hand=2, low_stock_threshold=5)

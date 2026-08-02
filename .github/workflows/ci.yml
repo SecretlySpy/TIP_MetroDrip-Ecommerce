@@ -61,6 +61,12 @@ jobs:
         run: >-
           python manage.py check --deploy --fail-level WARNING
           --settings=config.settings.staging
+      - name: Start FastAPI Inventory Service
+        env:
+          MYSQL_DATABASE_INVENTORY: test_metrodrip
+        run: |
+          python -m uvicorn services.inventory.main:app --port 8000 &
+          sleep 3
       - name: Tests (pytest)
         run: pytest
       - name: Reversible migration gate

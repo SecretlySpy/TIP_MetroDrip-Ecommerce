@@ -28,7 +28,7 @@ def submit_review(request):
     try:
         rating = int(request.POST.get("rating", ""))
     # Non-numeric ratings remain invalid input and are handled by the range check below.
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         rating = 0
 
     if order.status != OrderStatus.DELIVERED:

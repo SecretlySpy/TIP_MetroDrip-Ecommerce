@@ -70,7 +70,7 @@ def _post_checkout(client, variant, zone, qty=2):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(PAYMENT_PROVIDER="simulated")
 def test_checkout_creates_order_holds_and_payment(client):
     # Override price proves checkout charges the effective variant price,
@@ -80,6 +80,7 @@ def test_checkout_creates_order_holds_and_payment(client):
 
     response = _post_checkout(client, variant, zone, qty=2)
 
+    print(response.json())
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
@@ -108,7 +109,7 @@ def test_checkout_creates_order_holds_and_payment(client):
     assert StockMovement.objects.count() == 0  # holds are not sales
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(PAYMENT_PROVIDER="simulated")
 def test_checkout_insufficient_stock_rolls_back_everything(client):
     variant = _make_variant(on_hand=1)
@@ -125,7 +126,7 @@ def test_checkout_insufficient_stock_rolls_back_everything(client):
     assert stock.qty_reserved == 0
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(PAYMENT_PROVIDER="simulated")
 def test_checkout_rejects_bad_payloads(client):
     variant = _make_variant()
@@ -154,7 +155,7 @@ def test_checkout_rejects_bad_payloads(client):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(PAYMENT_PROVIDER="simulated")
 def test_mock_success_page_confirms_payment_idempotently(client):
     variant = _make_variant()
@@ -188,7 +189,7 @@ def test_mock_success_page_confirms_payment_idempotently(client):
     assert len(mail.outbox) == 1
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(PAYMENT_PROVIDER="paymongo")
 def test_success_page_never_confirms_when_mock_disabled(client):
     variant = _make_variant()
@@ -202,7 +203,7 @@ def test_success_page_never_confirms_when_mock_disabled(client):
     assert Payment.objects.get().status == PaymentStatus.PENDING
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_checkout_success_requires_valid_token(client):
     assert client.get("/checkout/success/not-a-valid-token/").status_code == 404
 
@@ -241,7 +242,7 @@ def _paid_order(client, variant, zone):
     return Order.objects.latest("created_at")
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(PAYMONGO_WEBHOOK_SECRET=WEBHOOK_SECRET)
 def test_webhook_with_valid_signature_confirms_order(client):
     variant = _make_variant()
@@ -265,7 +266,7 @@ def test_webhook_with_valid_signature_confirms_order(client):
     assert (stock.qty_on_hand, stock.qty_reserved) == (9, 0)
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(PAYMONGO_WEBHOOK_SECRET=WEBHOOK_SECRET)
 def test_webhook_rejects_bad_or_missing_signature(client):
     variant = _make_variant()
@@ -287,7 +288,7 @@ def test_webhook_rejects_bad_or_missing_signature(client):
     assert order.status == OrderStatus.PENDING  # unsigned events never confirm
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(PAYMONGO_WEBHOOK_SECRET="")
 def test_webhook_fails_closed_without_configured_secret(client):
     variant = _make_variant()
@@ -306,7 +307,7 @@ def test_webhook_fails_closed_without_configured_secret(client):
     assert order.status == OrderStatus.PENDING
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(PAYMONGO_WEBHOOK_SECRET=WEBHOOK_SECRET)
 def test_webhook_replay_is_idempotent(client):
     variant = _make_variant()
@@ -326,7 +327,7 @@ def test_webhook_replay_is_idempotent(client):
     assert len(mail.outbox) == 1  # confirmation sent exactly once
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(PAYMONGO_WEBHOOK_SECRET=WEBHOOK_SECRET)
 def test_webhook_acknowledges_unknown_order_without_processing(client):
     body = _webhook_body("MD-2099-99999")
@@ -344,7 +345,7 @@ def test_webhook_acknowledges_unknown_order_without_processing(client):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @override_settings(PAYMENT_PROVIDER="simulated")
 def test_order_status_page_renders_via_token(client):
     variant = _make_variant()

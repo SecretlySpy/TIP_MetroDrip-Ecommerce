@@ -26,7 +26,10 @@ async def get_stock(variant_id: int, db: AsyncSession = Depends(get_db)):  # noq
 
 @router.post("/reservations")
 async def create_reservations(
-    items: list[dict[str, int]], session_key: str = "", db: AsyncSession = Depends(get_db)  # noqa: B008
+    items: list[dict[str, int]],
+    session_key: str = "",
+    order_id: int | None = None,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ):
     """Reserve stock for multiple variants. Atomic."""
     created = []
@@ -59,8 +62,9 @@ async def create_reservations(
                 variant_id=variant_id,
                 qty=qty,
                 session_key=session_key,
+                order_id=order_id,
                 expires_at=expires_at,
-                status=ReservationStatus.ACTIVE,
+                status=ReservationStatus.ACTIVE.value,
             )
             db.add(res)
             created.append(res)

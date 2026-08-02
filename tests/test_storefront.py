@@ -288,6 +288,7 @@ class TestShopListing:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.django_db(transaction=True)
 class TestProductDetail:
     def test_detail_returns_200(self, client, product, variant):
         response = client.get(f"/shop/{product.slug}/")
@@ -353,6 +354,7 @@ class TestCartPage:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.django_db(transaction=True)
 class TestCartAvailability:
     def test_availability_returns_stock(self, client, variant):
         response = client.get(f"/api/cart/availability/?ids={variant.id}")

@@ -4,3 +4,6 @@ from django.apps import AppConfig
 class ShippingConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.shipping"
+
+    def ready(self):
+        from .providers import jnt, simulated

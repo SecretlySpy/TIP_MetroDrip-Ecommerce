@@ -15,9 +15,11 @@ from .events import start_redis_listener, stop_redis_listener
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Setup database tables if they don't exist
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    import os
+    if not os.environ.get("SKIP_CREATE_ALL"):
+        # Setup database tables if they don't exist
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
     # Start Redis listener for Order events
     await start_redis_listener()

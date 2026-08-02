@@ -19,3 +19,5 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.dummy.DummyCache",
     }
 }
+
+NOTIFICATION_PROVIDER = "email_sms"

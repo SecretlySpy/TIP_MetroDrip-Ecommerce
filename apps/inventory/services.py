@@ -45,16 +45,26 @@ def reserve_stock(*, variant_id, qty, session_key="", order=None):
         raise ValueError("qty must be an integer of at least 1.")
 
     try:
+        params = {"session_key": session_key}
+
         response = requests.post(
             f"{INVENTORY_SERVICE_URL}/reservations",
             json=[{"variant_id": variant_id, "qty": qty}],
-            params={"session_key": session_key},
+            params=params,
             timeout=5,
         )
         response.raise_for_status()
         data = response.json()
+        res_id = data["reservations"][0]
+        
+        # We update the order_id in Django because FastAPI cannot insert it
+        # while Django holds the uncommitted transaction for the new Order.
+        if order:
+            from apps.inventory.models import Reservation
+            Reservation.objects.filter(pk=res_id).update(order=order)
+            
         # Returns dummy reservation so caller can track reservation IDs
-        return DummyReservation(data["reservations"][0])
+        return DummyReservation(res_id)
     except requests.HTTPError:
         if response.status_code == 400 and "Insufficient stock" in response.text:
             raise InsufficientStock(f"variant {variant_id} is short on stock") from None

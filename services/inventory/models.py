@@ -1,7 +1,7 @@
 import datetime
 import enum
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Enum, ForeignKey, Index, Integer, String
+from sqlalchemy import CheckConstraint, Column, DateTime, Enum, ForeignKey, Index, Integer, String, func
 
 from .database import Base
 
@@ -58,7 +58,7 @@ class Reservation(Base):
         Integer, ForeignKey("inventory_stockrecord.variant_id", ondelete="RESTRICT"), nullable=False
     )
     qty = Column(Integer, nullable=False)
-    status = Column(Enum(ReservationStatus), default=ReservationStatus.ACTIVE, nullable=False)
+    status = Column(String(9), default=ReservationStatus.ACTIVE.value, nullable=False)
     session_key = Column(String(64), default="", nullable=False)
 
     # We just store order_id here without foreign key because orders are in a different DB
@@ -77,13 +77,7 @@ class StockMovement(Base):
     variant_id = Column(
         Integer, ForeignKey("inventory_stockrecord.variant_id", ondelete="RESTRICT"), nullable=False
     )
-    reason = Column(Enum(MovementReason), nullable=False)
-    qty = Column(Integer, nullable=False)
-    is_addition = Column(Integer, nullable=False)  # boolean basically
-    # Snapshot fields
-    resulting_on_hand = Column(Integer, nullable=False)
-    reference = Column(String(64), default="", nullable=False)
+    reason = Column(String(12), nullable=False)
+    delta = Column(Integer, nullable=False)
+    ref_order_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
-
-    # Correlate via abstract ID
-    user_id = Column(Integer, nullable=True)
