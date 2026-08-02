@@ -16,7 +16,7 @@ Version 1.1 amended v1.0 to satisfy the IT 009 Project Checklist (customer accou
 
 **MetroDrip** is a B2C e-commerce web application + inventory system for a Metro Manila–based streetwear/apparel brand.
 
-- Responsive **web only** (mobile-first). No native apps in v1.
+- Responsive **web only** (mobile-first). Native mobile app introduced in Epic H.
 - **Guest checkout supported**, plus optional customer accounts (registration/login, profile, saved addresses, order history, wishlist).
 - **Single warehouse** inventory, tracked per variant (Size × Color × Fit = one SKU).
 - Payments via **PayMongo** (cards, GCash, Maya). Shipping via **J&T Express**.
@@ -196,7 +196,14 @@ Business logic lives in each app's `services.py`; views stay thin. One courier/p
 
 **Epic F — Reporting & Hardening:** F-1 CSV exports → F-2 admin 2FA + rate limits + admin audit log + customer-account admin view (view/edit/suspend) → F-3 performance pass (LCP target) → F-4 privacy pages.
 
+**Epic H — Mobile Application (v1.3 addendum):** H-1 public API scaffold (token auth, throttling, pagination, documented error schema) → H-2 catalog endpoints → H-3 auth endpoints → H-4 cart + checkout endpoints with server-side price/stock validation → H-5 order endpoints incl. tracking timeline → H-6 account/wishlist/review endpoints → H-7 Expo scaffold + design tokens + shared components (parallel with H-1) → H-8 screens M01–M06 → H-9 screens M07–M11 → H-10 push notifications + notification centre → H-11 biometric unlock + secure token storage → H-12 offline/error/empty states + dark mode → H-13 TestFlight / Play internal testing build.
+*H-4's acceptance is the concurrency gate passing when driven from the API; H-9's is checkout completing end-to-end against the simulated provider.*
+
+**Milestone M7 — Mobile Beta.** End-to-end purchase from the app on both platforms; push on every order transition; the M2 concurrency gate passes through the mobile API. *QA gate:* no client-side price or stock computation anywhere in the app codebase (grep-verified); tokens never in plain storage; accessibility audit passes.
+
 **Epic F (extended v1.3) — Console Separation (FR-22):** F-5 `Customer.role` + `roles.py` + migration promoting existing staff → F-6 `AdministratorSite` / `MerchantSite` with role-gated `has_permission`, per-console login forms, and the wrong-console page → F-7 re-point every app's registrations so each model has exactly one owner, splitting shipping (zones administrator, shipments merchant) → F-8 `sync_console_roles` + `create_console_account`, the audit-trail admin, the superuser-only privilege tier, and the storefront console shortcut.
+
+**Epic H — Mobile App & Public API:** H-1 JWT-authenticated public mobile API at `/api/mobile/v1/` → H-2 single shared checkout implementation → H-3 push notifications and in-app centre → H-4 mobile session storage with biometric unlock.
 
 ## 10. Milestones & QA Gates
 
@@ -229,7 +236,55 @@ Business logic lives in each app's `services.py`; views stay thin. One courier/p
 
 ## 12. Out of Scope for v1 (Do NOT Build)
 
-Native/PWA apps · multi-warehouse · wholesale/B2B pricing · promo-code/discount engine (homepage promo *banners* are in via FR-20; discount *codes* are not) · direct accounting API sync · loyalty points · live chat (contact form + FAQ only) · returns portal (manual via order status + refund action) · public REST API (future mobile-app requirement).
+multi-warehouse · wholesale/B2B pricing · promo-code/discount engine (homepage promo *banners* are in via FR-20; discount *codes* are not) · direct accounting API sync · loyalty points · live chat (contact form + FAQ only) · returns portal (manual via order status + refund action).
+
+**Now in scope — v1.3 Planning Addendum (2026-08-01):** native apps and the
+public REST API were promoted out of this list. The React Native + Expo customer
+app and the public `/api/mobile/v1/` surface are active scope; see §12A below,
+§9 Epic H, and FR-21…FR-31 / NFR-17…NFR-22. The Merchant and Administrator
+consoles stay web-only.
+
+## 12A. Mobile Application (v1.3 Addendum)
+
+> **Decision-ID note:** the addendum numbers its decisions D-10…D-14, but this
+> handover already assigned D-10/D-11/D-12 to the two-console work in v1.3.
+> The mobile decisions are recorded here as **D-M1…D-M5** to avoid two
+> different meanings for the same ID. Content is unchanged from the addendum.
+
+| ID | Decision |
+|---|---|
+| D-M1 | Mobile app enters v1.x scope as a first-class client, iOS + Android from one codebase (addendum D-10) |
+| D-M2 | React Native + Expo (TypeScript); managed workflow covers push, secure storage, and biometrics without ejecting (addendum D-11) |
+| D-M3 | New public API at `/api/mobile/v1/`, token-authenticated and versioned, separate from internal service-to-service endpoints (addendum D-12) |
+| D-M4 | **The app is a client only.** No price calculation, stock decision, or order-state transition on-device — preserves Hard Invariants 1–5 (addendum D-13) |
+| D-M5 | Merchant and Administrator consoles remain web-only; the app is customer-facing exclusively (addendum D-14) |
+
+### Functional Requirements (mobile)
+
+| ID | Requirement |
+|---|---|
+| FR-21 | Public, versioned, token-authenticated REST API at `/api/mobile/v1/` serving catalog, cart, checkout, order, account, wishlist, and review operations |
+| FR-22 | Registration, sign-in, sign-out, password reset, and **guest checkout**, at web parity |
+| FR-23 | Opt-in biometric authentication (Face ID / Touch ID / Android Biometric) after an initial password sign-in |
+| FR-24 | Browse, search, filter (category, price, size, colour, fit), sort; product detail with gallery, variant picker, live stock, rating, approved reviews |
+| FR-25 | Cart management and stepped checkout (address → shipping → payment) with server-validated pricing and stock |
+| FR-26 | Order history and a live order-tracking timeline reflecting the server-side state machine |
+| FR-27 | Push notifications for order lifecycle events (Paid, Shipped, Out for Delivery, Delivered), drops, back-in-stock, review reminders |
+| FR-28 | In-app notification centre with read/unread state, mirroring delivered push messages |
+| FR-29 | Wishlist add/remove with a "notify me" action on out-of-stock items |
+| FR-30 | Graceful offline degradation: cached catalog browsing, explicit offline banner, writes fail with an explicit retry |
+| FR-31 | Device-level dark mode following the system setting, with a manual override |
+
+### Non-Functional Requirements (mobile)
+
+| ID | Attribute | Testable requirement |
+|---|---|---|
+| NFR-17 | Mobile performance | Cold start to interactive Home ≤ 3s on a mid-range Android device; list scrolling ≥ 55 FPS |
+| NFR-18 | API efficiency | ≤ 3 API round-trips per screen; product lists paginated at ≤ 20 items |
+| NFR-19 | Mobile security | Tokens in the OS secure enclave (Keychain / Keystore), never plain `AsyncStorage`; certificate pinning on payment calls; no PII in device logs |
+| NFR-20 | Mobile accessibility | Touch targets ≥ 44×44 pt; full screen-reader labelling; WCAG 2.2 AA contrast; Dynamic Type to 200% |
+| NFR-21 | Platform support | iOS 15+ and Android 8.0 (API 26)+ |
+| NFR-22 | API compatibility | `/api/mobile/v1/` stays backward-compatible for the life of a released app version; breaking changes ship as `/v2` with `/v1` maintained ≥ 90 days |
 
 ## 13. Top Risks & Mitigations
 

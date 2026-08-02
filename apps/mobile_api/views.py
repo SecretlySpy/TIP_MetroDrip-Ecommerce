@@ -183,7 +183,11 @@ class PasswordResetConfirmView(APIView):
         try:
             validate_password(password, customer)
         except Exception as exc:
-            raise DRFValidationError({"new_password": list(getattr(exc, "messages", [str(exc)]))})
+            # Django's validators raise ValidationError with `.messages`; surface
+            # them as DRF field errors so the app can map them onto the input.
+            raise DRFValidationError(
+                {"new_password": list(getattr(exc, "messages", [str(exc)]))}
+            ) from exc
         customer.set_password(password)
         customer.save(update_fields=["password"])
         return Response({"status": "password_changed"})

@@ -87,13 +87,13 @@ def get_catalog_queryset(*, filters=None, sort=None, search=None):
         try:
             qs = qs.filter(base_price__gte=int(price_min))
         # Ignore malformed optional filters instead of failing the listing page.
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             pass
     if price_max := filters.get("price_max"):
         try:
             qs = qs.filter(base_price__lte=int(price_max))
         # Ignore malformed optional filters instead of failing the listing page.
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             pass
 
     # --- Search ---

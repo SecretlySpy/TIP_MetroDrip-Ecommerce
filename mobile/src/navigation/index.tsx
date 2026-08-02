@@ -4,7 +4,12 @@
  * detail/cart/checkout/tracking/auth flows.
  */
 
-import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
+import {
+  DefaultTheme,
+  NavigationContainer,
+  type NavigatorScreenParams,
+  createNavigationContainerRef,
+} from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React, { useCallback } from 'react';
@@ -31,7 +36,9 @@ import WishlistScreen from '@/screens/WishlistScreen';
 
 export type RootStackParamList = {
   Splash: undefined;
-  Tabs: undefined;
+  // NavigatorScreenParams lets screens jump to a specific tab type-safely,
+  // e.g. navigation.navigate('Tabs', { screen: 'Shop' }).
+  Tabs: NavigatorScreenParams<TabParamList> | undefined;
   ProductDetail: { slug: string };
   Cart: undefined;
   Checkout: undefined;

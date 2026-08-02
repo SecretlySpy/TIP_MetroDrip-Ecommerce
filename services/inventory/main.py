@@ -16,6 +16,7 @@ from .events import start_redis_listener, stop_redis_listener
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import os
+
     if not os.environ.get("SKIP_CREATE_ALL"):
         # Setup database tables if they don't exist
         async with engine.begin() as conn:

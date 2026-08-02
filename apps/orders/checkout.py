@@ -11,11 +11,6 @@ import time
 
 from django.db import OperationalError, transaction
 
-# MySQL error 1213: two checkouts chose each other as deadlock victims. The
-# transaction fully rolled back, so re-running it is safe and expected practice.
-_MYSQL_DEADLOCK = 1213
-_DEADLOCK_ATTEMPTS = 3
-
 from apps.catalog.models import ProductVariant
 from apps.inventory.services import release_reservation, reserve_stock
 from apps.orders.models import Order, OrderItem
@@ -27,6 +22,11 @@ logger = logging.getLogger(__name__)
 
 MAX_CHECKOUT_LINES = 20
 MAX_LINE_QTY = 99
+
+# MySQL error 1213: two checkouts chose each other as deadlock victims. The
+# transaction fully rolled back, so re-running it is safe and expected practice.
+_MYSQL_DEADLOCK = 1213
+_DEADLOCK_ATTEMPTS = 3
 
 
 class CheckoutError(ValueError):
@@ -115,9 +115,7 @@ def place_order(
             )
             for variant_id, qty in quantities.items():
                 # Raising here rolls back everything — no half-built orders.
-                reserve_stock(
-                    variant_id=variant_id, qty=qty, session_key=session_key, order=order
-                )
+                reserve_stock(variant_id=variant_id, qty=qty, session_key=session_key, order=order)
                 OrderItem.objects.create(
                     order=order,
                     variant=variants[variant_id],

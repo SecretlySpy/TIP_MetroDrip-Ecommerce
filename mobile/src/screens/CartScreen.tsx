@@ -16,6 +16,7 @@ import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { request } from '@/api/client';
 import { commerce } from '@/api/endpoints';
 import type { CartValidation, Zone } from '@/api/types';
 import { EmptyState, Mono, NavBar, PillButton, QtyStepper, StickyBar } from '@/components/primitives';
@@ -100,7 +101,7 @@ export default function CartScreen() {
             <PillButton
               label="Shop the drop"
               variant="volt"
-              onPress={() => navigation.navigate('Tabs' as never, { screen: 'Shop' } as never)}
+              onPress={() => navigation.navigate('Tabs', { screen: 'Shop' })}
             />
           }
         />
@@ -235,8 +236,12 @@ export default function CartScreen() {
   );
 }
 
-/** Zone-aware validate: same endpoint, optional zone_id (server totals only). */
-async function validateWithZone(items: { variant_id: number; qty: number }[], zoneId: number) {
-  const { request } = await import('@/api/client');
-  return request('/cart/validate/', { method: 'POST', body: { items, zone_id: zoneId }, auth: false });
+/** Zone-aware validate: same endpoint plus zone_id, so shipping and the grand
+ * total also come from the server (D-13 — the app adds nothing up itself). */
+function validateWithZone(items: { variant_id: number; qty: number }[], zoneId: number) {
+  return request<CartValidation & Record<string, string>>('/cart/validate/', {
+    method: 'POST',
+    body: { items, zone_id: zoneId },
+    auth: false,
+  });
 }

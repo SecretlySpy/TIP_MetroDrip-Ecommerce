@@ -134,7 +134,7 @@ export default function HomeScreen() {
             accessibilityRole="button"
             accessibilityLabel={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
             hitSlop={12}
-            onPress={() => navigation.navigate('Tabs' as never, { screen: 'Orders' } as never)}
+            onPress={() => navigation.navigate('Tabs', { screen: 'Orders' })}
           >
             <Text style={{ fontSize: 19, color: colors.ink, fontFamily: fonts.body }}>◔</Text>
             {unread > 0 ? (
@@ -197,7 +197,7 @@ export default function HomeScreen() {
             variant="volt"
             style={{ alignSelf: 'flex-start', minHeight: 0, paddingVertical: space.s12 }}
             textStyle={{ fontFamily: fonts.bodyBold, fontSize: 14 }}
-            onPress={() => navigation.navigate('Tabs' as never, { screen: 'Shop' } as never)}
+            onPress={() => navigation.navigate('Tabs', { screen: 'Shop' })}
           />
         </View>
 
@@ -253,7 +253,7 @@ export default function HomeScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="See all products"
-              onPress={() => navigation.navigate('Tabs' as never, { screen: 'Shop' } as never)}
+              onPress={() => navigation.navigate('Tabs', { screen: 'Shop' })}
             >
               <Mono size={11} color={colors.muted}>
                 See all →

@@ -7,14 +7,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useColorScheme } from 'react-native';
 
-import { ColorScheme, ThemeColors, darkColors, lightColors, surfaceOnInk } from './theme';
+import {
+  ColorScheme,
+  InkSurfaceColors,
+  ThemeColors,
+  darkColors,
+  lightColors,
+  surfaceOnInk,
+} from './theme';
 
 type Preference = 'system' | ColorScheme;
 
 interface ThemeContextValue {
   scheme: ColorScheme;
   colors: ThemeColors;
-  onInk: (typeof surfaceOnInk)['light'];
+  onInk: InkSurfaceColors;
   preference: Preference;
   setPreference: (preference: Preference) => void;
 }

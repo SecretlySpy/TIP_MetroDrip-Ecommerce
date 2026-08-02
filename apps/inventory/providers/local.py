@@ -108,9 +108,7 @@ class LocalInventoryProvider(InventoryProvider):
                     f"reservation {reservation_id} is {reservation.status}, not active."
                 )
 
-            stock = StockRecord.objects.select_for_update().get(
-                variant_id=reservation.variant_id
-            )
+            stock = StockRecord.objects.select_for_update().get(variant_id=reservation.variant_id)
             if stock.qty_on_hand < reservation.qty or stock.qty_reserved < reservation.qty:
                 raise InvalidReservationState(
                     f"reservation {reservation_id}: counters cannot cover the committed sale."

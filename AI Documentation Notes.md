@@ -2076,3 +2076,94 @@
 - **Behavior**: The inventory service was successfully extracted to a standalone FastAPI microservice using the Strangler Fig pattern. Read/write operations from Django are bridged over HTTP and Redis Pub/Sub events. The UI design system (colors, focus states) was made consistent and accessible (WCAG AA). Missing loading and error states for the AlpineJS cart component were implemented, and the missing product images were correctly wired from the catalog through the JS cart representation.
 - **Side Effects**: Reduced monolithic complexity, decoupled the catalog from inventory management in anticipation of separate scaling characteristics.
 
+
+## Sprint H — Mobile Application and Public API (2026-08-01)
+
+- **Purpose:** Document the public mobile surface and the React Native client added by the v1.3 Planning Addendum.
+- **Inputs:** Mobile HTTP requests carrying `X-Client-Version` and (mostly) a JWT bearer token.
+- **Outputs:** JSON payloads whose money fields are integer centavos **plus** a server-formatted display string.
+- **Dependencies:** DRF, SimpleJWT (rotation + blacklist), the existing domain services, Expo SDK 51.
+- **Behavior:** The API is a second consumer of the same services the web storefront uses; the app computes nothing (addendum D-13).
+
+### Module: `apps/mobile_api/views.py`
+
+- **Purpose:** All `/api/mobile/v1/` endpoints: auth, catalog, cart validation, checkout, orders, account, wishlist, reviews, devices, notification centre.
+- **Inputs:** JSON bodies of user intent (ids, quantities, contact block, zone id, credentials).
+- **Outputs:** Server-computed payloads; `{"error": {...}}` envelopes on failure.
+- **Dependencies:** `apps.orders.checkout.place_order`, `apps.payments.services.confirm_order_paid`, `apps.catalog.services`, `apps.inventory.services.get_stock_record`.
+- **Behavior:** Guest checkout needs no token. Order detail scopes to `customer=request.user`, so another shopper's order number returns 404. `SimulatedPaymentConfirmView` returns 404 unless `PAYMENT_PROVIDER == "simulated"` (ADR-H-003). The tracking timeline is derived server-side from the order state machine (FR-26).
+
+### Module: `apps/mobile_api/middleware.py`, `errors.py`, `pagination.py`
+
+- **Purpose:** Enforce the NFR-22 version header, the documented error schema, and the NFR-18 page cap.
+- **Inputs:** Any request under `/api/mobile/`; any DRF exception; any list response.
+- **Outputs:** 400 `missing_client_version`; `{"error": {"code", "message", "fields?"}}`; pages of at most 20 items.
+- **Dependencies:** DRF exception handler hook and `PageNumberPagination`.
+- **Behavior:** `max_page_size` equals `page_size`, so `?page_size=` cannot be used to exceed the cap.
+
+### Module: `apps/orders/checkout.py`
+
+- **Purpose:** The single checkout implementation shared by web and mobile (ADR-H-002).
+- **Inputs:** Cart lines, zone id, contact block, optional customer, success/cancel URLs.
+- **Outputs:** `(order, checkout_url)`; raises `CheckoutError` (400), `InsufficientStock` (409), `PaymentSessionError` (502, holds already released).
+- **Dependencies:** Catalog variants, inventory reservations, order numbering, the payment provider registry.
+- **Behavior:** One atomic block — effective variant prices, totals correct at INSERT, order-linked holds, order items. Retries up to three times on MySQL deadlock 1213 (the victim transaction rolled back fully). A `__TOKEN__` placeholder in a redirect URL is substituted with the signed status token after the order row exists.
+
+### Module: `apps/notifications/push.py` and `models.py`
+
+- **Purpose:** FR-27 push fan-out and FR-28 notification-centre persistence.
+- **Inputs:** Order transitions, shipment status changes, registered Expo device tokens.
+- **Outputs:** `Notification` rows and Expo push messages; `DeviceToken` per install.
+- **Dependencies:** `PUSH_PROVIDER` (`simulated` or `expo`), `transaction.on_commit`.
+- **Behavior:** Hooked into `Order.transition_to()` and `Shipment.save()`; every failure is logged and swallowed so delivery can never fail a business transition. Guest orders are skipped.
+
+### Client: `mobile/`
+
+- **Purpose:** The iOS/Android customer app, 11 screens matching the Figma frames one-to-one.
+- **Inputs:** `/api/mobile/v1/`, the OS colour scheme, biometric enrolment, push permission.
+- **Outputs:** Rendered screens, server-validated checkout, deep links back from the payment flow.
+- **Dependencies:** Expo SDK 51, React Navigation 6, `expo-secure-store`, `expo-local-authentication`, `expo-notifications`.
+- **Behavior:** `src/theme/theme.ts` is the only file containing colour literals (grep-verified). Money is never computed on-device (grep-verified). JWTs live only in the OS keychain. `src/api/client.ts` transparently refreshes an expired access token once then replays the request; a network failure raises `OfflineError`, which screens render as the FR-30 offline banner over cached content.
+
+| Screen | Figma frame | Node |
+|---|---|---|
+| `SplashScreen` | M01 Splash and Onboarding | `63:3` |
+| `HomeScreen` | M02 Home (Tab) | `63:67` |
+| `ShopScreen` | M03 Shop and Search (Tab) | `63:155` |
+| `ProductDetailScreen` | M04 Product Detail | `64:2` |
+| `CartScreen` | M05 Cart | `64:74` |
+| `CheckoutScreen` | M06 Checkout | `64:152` |
+| `OrderTrackingScreen` | M07 Order Tracking | `65:2` |
+| `NotificationsScreen` | M08 Notifications | `65:83` |
+| `AccountScreen` | M09 Account | `65:155` |
+| `AuthScreen` | M10 Sign In / Register | `67:2` |
+| `WishlistScreen` | M11 Saved / Wishlist | `67:45` |
+
+### Test Module: `tests/test_mobile_api.py`
+
+- **Purpose:** Pin the Epic H contracts including the M7 QA gate.
+- **Inputs:** Real MySQL, version-header clients, 20 concurrent checkout threads.
+- **Outputs:** 19 passing cases.
+- **Dependencies:** pytest-django, `override_settings`, the simulated payment provider.
+- **Behavior:** Covers the missing-version-header 400, anonymous 401, credential 429, register/login/refresh/logout with refresh-token blacklisting, guest-order claiming on registration, password reset round-trip, the 20-item page cap, server-priced cart validation, tamper-proof checkout (client prices ignored), 409 rollback, gated and idempotent simulated confirmation, **20 parallel API buyers against 10 units producing exactly 10 orders**, tracking timeline states, cross-customer order 404, wishlist toggle, the verified-purchase review rule, and device registration plus notification-centre read state.
+
+### Regression: inventory provider registry
+
+- **Purpose:** Record why `apps/inventory/services.py` became a facade (ADR-P3-002).
+- **Inputs:** The state of `main` before this sprint.
+- **Outputs:** `providers/local.py` (default) and `providers/service.py` (opt-in).
+- **Dependencies:** `INVENTORY_PROVIDER` setting.
+- **Behavior:** The microservice extraction had replaced the row-locked implementation outright, leaving `adjust_stock`, `release_expired_reservations`, and `scan_low_stock` as stubs and making commits/releases fire-and-forget. 19 tests including the M2 no-oversell gate were failing. The proven Epic B code is restored as the default provider; the service client is preserved verbatim behind an explicit opt-in.
+
+### QA gate — Sprint H
+
+| Check | Command | Result |
+|---|---|---|
+| Ruff lint | `.venv/Scripts/ruff check .` | Passed |
+| Ruff format | `.venv/Scripts/ruff format --check .` | Passed; 139 files |
+| Django system check | `manage.py check` | Passed; 0 issues |
+| Migration drift | `manage.py makemigrations --check --dry-run` | Passed; no changes |
+| Backend tests | `.venv/Scripts/pytest -q` | Passed; 407 on MySQL 8 |
+| Mobile typecheck | `npx tsc --noEmit` | Passed; 0 errors |
+| No on-device money math | grep for arithmetic on price/total/fee in `mobile/src` | Passed; comments only |
+| No hardcoded hex | grep for `#RRGGBB` in `mobile/src` | Passed; `theme.ts` only |

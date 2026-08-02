@@ -38,6 +38,9 @@ class Shipment(models.Model):
     )
     booked_at = models.DateTimeField(null=True, blank=True)
 
+    def __str__(self):
+        return f"{self.order_id} {self.courier} {self.waybill_no or '(no waybill)'}"
+
     def save(self, *args, **kwargs):
         """Persist, then fire the Out-for-Delivery push exactly on that edge.
 
@@ -58,6 +61,3 @@ class Shipment(models.Model):
             from apps.notifications.push import notify_out_for_delivery
 
             transaction.on_commit(lambda: notify_out_for_delivery(self))
-
-    def __str__(self):
-        return f"{self.order_id} {self.courier} {self.waybill_no or '(no waybill)'}"

@@ -178,7 +178,7 @@ export default function WishlistScreen() {
               <PillButton
                 label="Browse the shop"
                 variant="volt"
-                onPress={() => navigation.navigate('Tabs' as never, { screen: 'Shop' } as never)}
+                onPress={() => navigation.navigate('Tabs', { screen: 'Shop' })}
               />
             }
           />

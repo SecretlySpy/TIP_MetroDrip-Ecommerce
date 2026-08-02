@@ -6,4 +6,6 @@ class ShippingConfig(AppConfig):
     name = "apps.shipping"
 
     def ready(self):
-        from .providers import jnt, simulated
+        # Side-effect import: running the modules is what registers the
+        # providers. The names are deliberately unused — do not remove.
+        from .providers import jnt, simulated  # noqa: F401

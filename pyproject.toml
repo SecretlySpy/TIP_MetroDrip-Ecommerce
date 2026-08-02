@@ -11,6 +11,10 @@ select = ["E", "F", "W", "I", "B", "UP", "DJ"]
 # One-off root-level seed scripts call django.setup() before their imports and
 # hold long content strings; they are dev utilities, not shipped code.
 "seed_*.py" = ["E402", "E501"]
+# AppConfig.ready() imports provider modules purely for their registration
+# side effects. `--fix` deleted these once and silently broke every provider
+# lookup at runtime; the ignore makes that impossible to repeat.
+"apps/*/apps.py" = ["F401"]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings.test"

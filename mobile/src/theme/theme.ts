@@ -68,10 +68,16 @@ export const darkColors: ThemeColors = {
  * fill in both modes — `inkSurface` is that fill, `onInkSurface`/`onInkMuted`
  * the text on it.
  */
-export const surfaceOnInk = {
+export interface InkSurfaceColors {
+  inkSurface: string;
+  onInkSurface: string;
+  onInkMuted: string;
+}
+
+export const surfaceOnInk: Record<ColorScheme, InkSurfaceColors> = {
   light: { inkSurface: '#141414', onInkSurface: '#FFFFFF', onInkMuted: '#A8A8A0' },
   dark: { inkSurface: '#252524', onInkSurface: '#F2F2EF', onInkMuted: '#A3A39A' },
-} as const;
+};
 
 /** §2.2 — the only corner radii in the design. */
 export const radius = {

@@ -139,7 +139,7 @@ export default function AccountScreen() {
       glyph: '♡',
       label: 'Wishlist',
       meta: `${wishlistCount} item${wishlistCount === 1 ? '' : 's'}`,
-      onPress: () => navigation.navigate('Tabs' as never, { screen: 'Saved' } as never),
+      onPress: () => navigation.navigate('Tabs', { screen: 'Saved' }),
     },
     {
       glyph: '◈',
@@ -157,7 +157,7 @@ export default function AccountScreen() {
       glyph: '◔',
       label: 'Notifications',
       meta: unread > 0 ? `${unread} new` : undefined,
-      onPress: () => navigation.navigate('Tabs' as never, { screen: 'Orders' } as never),
+      onPress: () => navigation.navigate('Tabs', { screen: 'Orders' }),
     },
     { glyph: '?', label: 'Help & FAQ', onPress: () => Linking.openURL(`${WEB_BASE}/pages/faq/`) },
     { glyph: '✉', label: 'Contact us', onPress: () => Linking.openURL(`${WEB_BASE}/contact/`) },
