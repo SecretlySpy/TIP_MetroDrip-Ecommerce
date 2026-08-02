@@ -16,9 +16,19 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { OfflineError } from '@/api/client';
 import { account, catalog } from '@/api/endpoints';
 import type { ProductDetail, Variant } from '@/api/types';
-import { MicroLabel, Mono, NavBar, PillButton, StickyBar } from '@/components/primitives';
+import {
+  EmptyState,
+  LoadingState,
+  MicroLabel,
+  Mono,
+  NavBar,
+  OfflineBanner,
+  PillButton,
+  StickyBar,
+} from '@/components/primitives';
 import type { RootStackParamList } from '@/navigation';
 import { useAuth } from '@/store/AuthContext';
 import { useCart } from '@/store/CartContext';
@@ -47,6 +57,8 @@ export default function ProductDetailScreen() {
   const cart = useCart();
 
   const [product, setProduct] = useState<ProductDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<'offline' | 'failed' | null>(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [size, setSize] = useState<string | null>(null);
   const [color, setColor] = useState<string | null>(null);
@@ -54,11 +66,25 @@ export default function ProductDetailScreen() {
   const [wishlisted, setWishlisted] = useState(false);
   const [added, setAdded] = useState(false);
 
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    catalog
+      .productDetail(route.params.slug)
+      .then((data) => {
+        setProduct(data);
+        setWishlisted(data.is_wishlisted);
+      })
+      .catch((err) => {
+        setProduct(null);
+        setError(err instanceof OfflineError ? 'offline' : 'failed');
+      })
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    catalog.productDetail(route.params.slug).then((data) => {
-      setProduct(data);
-      setWishlisted(data.is_wishlisted);
-    });
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params.slug]);
 
   const variants = product?.variants ?? [];
@@ -82,6 +108,29 @@ export default function ProductDetailScreen() {
 
   const priceDisplay = selected?.price_display ?? product?.price_display ?? '';
   const stars = product ? '★'.repeat(Math.round(product.review_avg ?? 0)).padEnd(5, '☆') : '';
+
+  if (loading) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.paper }}>
+        <NavBar title="Product" onBack={() => navigation.goBack()} />
+        <LoadingState />
+      </SafeAreaView>
+    );
+  }
+
+  if (!product) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.paper }}>
+        <NavBar title="Product" onBack={() => navigation.goBack()} />
+        {error === 'offline' ? <OfflineBanner onRetry={load} /> : null}
+        <EmptyState
+          title={error === 'offline' ? "You're offline" : 'Could not load product'}
+          body={error === 'offline' ? 'Reconnect and try again.' : 'Pull back and open the product again.'}
+          action={<PillButton label="Retry" variant="volt" onPress={load} />}
+        />
+      </SafeAreaView>
+    );
+  }
 
   const addToCart = () => {
     if (!product || !selected || selected.available < 1) return;

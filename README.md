@@ -54,6 +54,10 @@ uvicorn services.inventory.main:app --reload --port 8001
 # Notifications delivery only (email/SMS/push DTOs). Opt-in:
 #   NOTIFICATION_PROVIDER=http NOTIFICATION_SERVICE_URL=http://127.0.0.1:8002
 uvicorn services.notifications.main:app --reload --port 8002
+
+# Fulfillment booking only (waybill I/O). Opt-in:
+#   SHIPPING_PROVIDER=http SHIPPING_SERVICE_URL=http://127.0.0.1:8003
+uvicorn services.fulfillment.main:app --reload --port 8003
 ```
 
 ### Mobile app

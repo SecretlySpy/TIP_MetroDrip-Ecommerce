@@ -253,6 +253,27 @@ export function EmptyState({
   );
 }
 
+/** Full-screen / section loading shell (H-12). */
+export function LoadingState({ label = 'Loading…' }: { label?: string }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: space.s28 * 2,
+        gap: space.s12,
+      }}
+      accessibilityRole="progressbar"
+      accessibilityLabel={label}
+    >
+      <ActivityIndicator color={colors.ink} />
+      <Text style={{ ...type.body, color: colors.muted }}>{label}</Text>
+    </View>
+  );
+}
+
 /** Quantity stepper (M04/M05) — 44pt targets. */
 export function QtyStepper({
   qty,

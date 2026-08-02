@@ -115,6 +115,15 @@ export default function SplashScreen() {
         </View>
 
         <View style={{ paddingHorizontal: space.s24, paddingBottom: 44, gap: space.s12 }}>
+          {locked ? (
+            <PillButton
+              label="Unlock"
+              variant="volt"
+              style={{ height: 54, borderRadius: radius.pill }}
+              textStyle={{ fontFamily: fonts.bodyBold, fontSize: 16 }}
+              onPress={() => unlockWithBiometrics().catch(() => undefined)}
+            />
+          ) : null}
           <PillButton
             label="Create account"
             variant="volt"

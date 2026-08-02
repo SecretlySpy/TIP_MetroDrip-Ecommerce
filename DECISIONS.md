@@ -378,3 +378,18 @@
 - **Decision:** Live tokens in `static/css/storefront.css` are the palette of record: muted `#63635C`, danger `#C2282D`, plus `on-volt`, `accent-text`, `elevated`, `muted-on-dark`. Dark mode via OS preference + manual toggle. Volt is background-only on light; text on volt is always `on-volt`.
 - **Rationale:** Pre-a11y muted/danger failed WCAG AA on white. Handover §14 and `index.html` are updated to match CSS, not the reverse.
 - **Consequences:** New UI must use tokens, never raw hex. Invoice/print templates may keep a minimal local subset for print isolation.
+
+## ADR-P3-004 — Checkout saga is deferred until stock leaves the orders transaction
+
+- **Status:** Accepted
+- **Decision:** Do **not** introduce a multi-service checkout saga module while inventory and orders share one MySQL transaction. Current checkout remains `place_order()` atomic block + payment-session compensation (`release_reservation` on provider failure).
+- **Rationale:** A premature saga that HTTP-calls inventory would either no-op-wrap the atomic path (noise) or split the transaction and break M2 / Hard Invariant 1. Dual-ledger inventory FastAPI is still experimental (ADR-P3-002).
+- **When unlocked (after Catalog owns stock via sync REST):** steps `ValidateCart → CreateOrder → ReserveStock → CreatePaymentSession` with compensations `ReleaseReservations` / cancel pending payment; propagate `X-Correlation-ID` (ADR-P2-002). No broker.
+- **Consequences:** Fulfillment booking HTTP strangler (ADR-P3-003 step 2) may ship independently — packing is post-Paid admin work, off the M2 path.
+
+## ADR-P3-005 — Fulfillment booking HTTP strangler
+
+- **Status:** Accepted
+- **Decision:** Opt-in `SHIPPING_PROVIDER=http` posts booking DTOs to `services/fulfillment` (`POST /v1/shipments/book`). Django keeps `Shipment` rows and applies waybill fields on success. Default remains `jnt` / `simulated`.
+- **Rationale:** Same pattern as notifications delivery: extract I/O, keep domain state in the monolith, never flip default until parity.
+- **Consequences:** Courier webhook, zones, and OFD push stay in Django. Manual waybill remains the failure fallback.

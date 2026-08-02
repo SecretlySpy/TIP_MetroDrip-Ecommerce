@@ -12,15 +12,20 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { OfflineError } from '@/api/client';
 import { account, catalog, type CatalogQuery } from '@/api/endpoints';
 import type { ProductCard as ProductCardData } from '@/api/types';
 import { ProductCard } from '@/components/ProductCard';
-import { EmptyState, Mono, NavBar } from '@/components/primitives';
+import { EmptyState, LoadingState, Mono, NavBar, OfflineBanner } from '@/components/primitives';
 import type { RootStackParamList } from '@/navigation';
 import { useAuth } from '@/store/AuthContext';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, space } from '@/theme/theme';
 import { fonts } from '@/theme/typography';
+
+const SHOP_CACHE_KEY = 'metrodrip.shop.cache.v1';
 
 const SORTS: Array<{ key: string; label: string }> = [
   { key: 'newest', label: 'Newest' },
@@ -53,6 +58,8 @@ export default function ShopScreen() {
   const [page, setPage] = useState(1);
   const [hasNext, setHasNext] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [offline, setOffline] = useState(false);
   const [wishlisted, setWishlisted] = useState<Set<number>>(new Set());
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -61,14 +68,40 @@ export default function ShopScreen() {
       const nextPage = reset ? 1 : (pageOverride ?? page + 1);
       const params: CatalogQuery = { ...filters, sort: sort.key, page: nextPage };
       if (query.trim()) params.q = query.trim();
-      const data = await catalog.products(params).catch(() => null);
-      if (!data) return;
-      setCount(data.count);
-      setHasNext(data.next !== null);
-      setPage(nextPage);
-      setProducts((previous) => (reset ? data.results : [...previous, ...data.results]));
+      try {
+        const data = await catalog.products(params);
+        setOffline(false);
+        setCount(data.count);
+        setHasNext(data.next !== null);
+        setPage(nextPage);
+        setProducts((previous) => (reset ? data.results : [...previous, ...data.results]));
+        if (reset) {
+          AsyncStorage.setItem(
+            SHOP_CACHE_KEY,
+            JSON.stringify({ results: data.results, count: data.count }),
+          ).catch(() => undefined);
+        }
+      } catch (err) {
+        if (err instanceof OfflineError) {
+          setOffline(true);
+          if (reset && products.length === 0) {
+            const cached = await AsyncStorage.getItem(SHOP_CACHE_KEY).catch(() => null);
+            if (cached) {
+              try {
+                const parsed = JSON.parse(cached) as { results: ProductCardData[]; count: number };
+                setProducts(parsed.results);
+                setCount(parsed.count);
+              } catch {
+                /* ignore corrupt cache */
+              }
+            }
+          }
+        }
+      } finally {
+        setLoading(false);
+      }
     },
-    [filters, sort, query, page],
+    [filters, sort, query, page, products.length],
   );
 
   useEffect(() => {
@@ -139,13 +172,17 @@ export default function ShopScreen() {
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.paper }}>
       <NavBar title="Shop" right={<Text style={{ fontSize: 18, color: colors.ink }}>⚙</Text>} />
+      {offline ? <OfflineBanner onRetry={() => load(true)} /> : null}
 
+      {loading && products.length === 0 ? (
+        <LoadingState label="Loading shop…" />
+      ) : (
       <FlatList
         data={products}
         numColumns={2}
         keyExtractor={(item) => String(item.id)}
         columnWrapperStyle={{ gap: space.s12, paddingHorizontal: space.screenX }}
-        contentContainerStyle={{ gap: space.screenX, paddingBottom: space.screenX }}
+        contentContainerStyle={{ gap: space.screenX, paddingBottom: space.screenX, flexGrow: 1 }}
         refreshing={refreshing}
         onRefresh={async () => {
           setRefreshing(true);
@@ -154,6 +191,16 @@ export default function ShopScreen() {
         }}
         onEndReachedThreshold={0.4}
         onEndReached={() => hasNext && load(false)}
+        ListEmptyComponent={
+          <EmptyState
+            title={offline ? "You're offline" : 'No results'}
+            body={
+              offline
+                ? 'Connect to the network to browse the full catalog.'
+                : 'Try another search or clear filters.'
+            }
+          />
+        }
         ListHeaderComponent={
           <View style={{ paddingHorizontal: space.screenX, paddingTop: space.s12, gap: space.s12 }}>
             {/* Pill search field. */}
@@ -238,10 +285,8 @@ export default function ShopScreen() {
             onPress={() => navigation.navigate('ProductDetail', { slug: item.slug })}
           />
         )}
-        ListEmptyComponent={
-          <EmptyState title="No results" body="Try clearing a filter or searching something else." />
-        }
       />
+      )}
     </SafeAreaView>
   );
 }

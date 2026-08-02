@@ -8,4 +8,4 @@ class ShippingConfig(AppConfig):
     def ready(self):
         # Side-effect import: running the modules is what registers the
         # providers. The names are deliberately unused — do not remove.
-        from .providers import jnt, simulated  # noqa: F401
+        from .providers import http, jnt, simulated  # noqa: F401

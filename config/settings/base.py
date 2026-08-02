@@ -215,8 +215,11 @@ PAYMENT_PROVIDER = "paymongo"
 # into the experimental D-07 FastAPI client, which does not yet implement
 # commits/adjustments/sweeps transactionally.
 INVENTORY_PROVIDER = os.environ.get("INVENTORY_PROVIDER", "local")
-# Shipping provider registry key (simulated | jnt)
-SHIPPING_PROVIDER = "jnt"
+# Shipping provider registry key (simulated | jnt | http).
+# Default stays in-process. `http` is the Phase-3 fulfillment strangler opt-in.
+SHIPPING_PROVIDER = os.environ.get("SHIPPING_PROVIDER", "jnt")
+SHIPPING_SERVICE_URL = os.environ.get("SHIPPING_SERVICE_URL", "http://127.0.0.1:8003")
+SHIPPING_SERVICE_TOKEN = os.environ.get("SHIPPING_SERVICE_TOKEN", "")
 # Notification provider registry key (console | email_sms | http).
 # Default stays in-process. `http` is the Phase-3 strangler opt-in that posts
 # DTOs to services/notifications — never flip default until parity is proven.

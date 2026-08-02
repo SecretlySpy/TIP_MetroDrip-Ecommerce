@@ -213,12 +213,15 @@ export default function AuthScreen() {
             onPress={submit}
           />
 
-          {/* Biometric affordance — hidden when unenrolled (§4). */}
-          {mode === 'signin' && auth.biometricsEnrolled && auth.biometricPref ? (
+          {/* Biometric unlock — only when a SecureStore session still exists (H-11). */}
+          {mode === 'signin' &&
+          auth.biometricsEnrolled &&
+          auth.biometricPref &&
+          (auth.locked || auth.hasSession) ? (
             <Pressable
               onPress={faceId}
               accessibilityRole="button"
-              accessibilityLabel="Sign in with Face ID"
+              accessibilityLabel={`Sign in with ${auth.biometricLabel}`}
               style={{
                 height: 52,
                 borderRadius: radius.pill,
@@ -232,7 +235,7 @@ export default function AuthScreen() {
             >
               <Text style={{ fontSize: 18, color: colors.ink }}>☉</Text>
               <Text style={{ fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink }}>
-                Sign in with Face ID
+                Sign in with {auth.biometricLabel}
               </Text>
             </Pressable>
           ) : null}

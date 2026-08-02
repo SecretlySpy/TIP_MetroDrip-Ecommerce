@@ -17,10 +17,18 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { API_BASE_URL } from '@/api/client';
+import { API_BASE_URL, OfflineError } from '@/api/client';
 import { orders } from '@/api/endpoints';
 import type { OrderPayload } from '@/api/types';
-import { Mono, NavBar, PillButton, StickyBar } from '@/components/primitives';
+import {
+  EmptyState,
+  LoadingState,
+  Mono,
+  NavBar,
+  OfflineBanner,
+  PillButton,
+  StickyBar,
+} from '@/components/primitives';
 import type { RootStackParamList } from '@/navigation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, space } from '@/theme/theme';
@@ -61,22 +69,52 @@ export default function OrderTrackingScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'OrderTracking'>>();
   const [order, setOrder] = useState<OrderPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<'offline' | 'failed' | null>(null);
 
-  const load = useCallback(() => {
-    orders.track(route.params.token).then(setOrder).catch(() => undefined);
+  const load = useCallback((isInitial = false) => {
+    if (isInitial) setLoading(true);
+    orders
+      .track(route.params.token)
+      .then((data) => {
+        setOrder(data);
+        setError(null);
+      })
+      .catch((err) => {
+        setError(err instanceof OfflineError ? 'offline' : 'failed');
+      })
+      .finally(() => setLoading(false));
   }, [route.params.token]);
 
   useEffect(() => {
-    load();
-    // Live-ish tracking: refresh while the screen is open.
-    const interval = setInterval(load, 30_000);
+    load(true);
+    const interval = setInterval(() => load(false), 30_000);
     return () => clearInterval(interval);
   }, [load]);
+
+  if (loading && !order) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.paper }}>
+        <NavBar title="Order" onBack={() => navigation.goBack()} />
+        <LoadingState label="Loading order…" />
+      </SafeAreaView>
+    );
+  }
 
   if (!order) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.paper }}>
         <NavBar title="Order" onBack={() => navigation.goBack()} />
+        {error === 'offline' ? <OfflineBanner onRetry={load} /> : null}
+        <EmptyState
+          title={error === 'offline' ? "You're offline" : 'Order not found'}
+          body={
+            error === 'offline'
+              ? 'Reconnect to refresh tracking.'
+              : 'Check the link or open the order from your account.'
+          }
+          action={<PillButton label="Retry" variant="volt" onPress={load} />}
+        />
       </SafeAreaView>
     );
   }

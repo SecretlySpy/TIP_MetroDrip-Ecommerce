@@ -40,9 +40,26 @@ Run the Django backend with the simulated payment provider so checkout
 completes without PayMongo keys:
 
 ```bash
-# repo root
-PAYMENT_PROVIDER=simulated ../.venv/Scripts/python manage.py runserver 0.0.0.0:8080
+# repo root (Linux/macOS)
+PAYMENT_PROVIDER=simulated python manage.py runserver 0.0.0.0:8080
 ```
+
+## Internal builds (H-13 — TestFlight / Play)
+
+Scaffold only until store accounts and real assets exist:
+
+1. `npm i -g eas-cli` and `eas login`
+2. Replace `extra.eas.projectId` and `owner` in `app.json` via `eas init`
+3. Add brand `assets/icon.png`, `splash.png`, `adaptive-icon.png` and wire them in `app.json`
+4. Set `EXPO_PUBLIC_API_URL` in `eas.json` profiles to your staging/production API
+5. Build internal binaries:
+
+```bash
+npm run build:android   # Play internal / APK preview
+npm run build:ios       # TestFlight (requires Apple team)
+```
+
+Staging must set `PUSH_PROVIDER=expo` for real device pushes.
 
 ## Structure
 

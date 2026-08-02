@@ -19,8 +19,12 @@ interface AuthContextValue {
   restoring: boolean;
   /** true when a stored session exists but biometric unlock hasn't passed yet */
   locked: boolean;
+  /** refresh token still in SecureStore — required before offering biometric unlock */
+  hasSession: boolean;
   biometricsEnrolled: boolean;
   biometricPref: boolean;
+  /** OS-aware label: Face ID / Touch ID / Biometrics */
+  biometricLabel: string;
   signIn: (email: string, password: string) => Promise<void>;
   register: (body: { email: string; password: string; name: string; phone?: string }) => Promise<void>;
   signOut: () => Promise<void>;
@@ -35,21 +39,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [restoring, setRestoring] = useState(true);
   const [locked, setLocked] = useState(false);
+  const [hasSession, setHasSession] = useState(false);
   const [biometricsEnrolled, setBiometricsEnrolled] = useState(false);
   const [biometricPref, setBiometricPrefState] = useState(false);
+  const [biometricLabel, setBiometricLabel] = useState('Biometrics');
 
   useEffect(() => {
     (async () => {
-      const [hasHardware, enrolled] = await Promise.all([
+      const [hasHardware, enrolled, types] = await Promise.all([
         LocalAuthentication.hasHardwareAsync(),
         LocalAuthentication.isEnrolledAsync(),
+        LocalAuthentication.supportedAuthenticationTypesAsync(),
       ]);
       setBiometricsEnrolled(hasHardware && enrolled);
+      if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+        setBiometricLabel('Face ID');
+      } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+        setBiometricLabel('Touch ID');
+      } else {
+        setBiometricLabel('Biometrics');
+      }
 
       const pref = (await AsyncStorage.getItem(BIOMETRIC_PREF_KEY)) === '1';
       setBiometricPrefState(pref);
 
-      if (await hasStoredSession()) {
+      const session = await hasStoredSession();
+      setHasSession(session);
+      if (session) {
         if (pref && hasHardware && enrolled) {
           // FR-23: opt-in biometric gate before the session becomes usable.
           setLocked(true);
@@ -77,17 +93,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       customer,
       restoring,
       locked,
+      hasSession,
       biometricsEnrolled,
       biometricPref,
+      biometricLabel,
       async signIn(email, password) {
         const payload = await auth.login({ email, password });
         await saveTokens(payload.access, payload.refresh);
+        setHasSession(true);
         setCustomer(payload.customer);
         setLocked(false);
       },
       async register(body) {
         const payload = await auth.register(body);
         await saveTokens(payload.access, payload.refresh);
+        setHasSession(true);
         setCustomer(payload.customer);
         setLocked(false);
       },
@@ -101,12 +121,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
         await clearTokens();
+        setHasSession(false);
         setCustomer(null);
         setLocked(false);
       },
       async unlockWithBiometrics() {
         const result = await LocalAuthentication.authenticateAsync({
           promptMessage: 'Unlock MetroDrip',
+          fallbackLabel: 'Use password',
+          disableDeviceFallback: false,
         });
         if (result.success) {
           setLocked(false);
@@ -122,7 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await restoreProfile();
       },
     }),
-    [customer, restoring, locked, biometricsEnrolled, biometricPref],
+    [customer, restoring, locked, hasSession, biometricsEnrolled, biometricPref, biometricLabel],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
