@@ -121,6 +121,8 @@ If step 3 fails with a network error, the API binding is wrong — see above.
 | Expo Go dies instantly; logcat shows `Failed to create NativeModule 'UIManager'` | Running an API 34 image, or `react-native-reanimated/plugin` missing from `babel.config.js` | Use the API 35 AVD; keep the Reanimated plugin **last** in the Babel plugin list |
 | "Expo Go isn't responding" (ANR) | Two emulators competing for CPU | Run one at a time: `adb -s emulator-XXXX emu kill` |
 | Expo opens the *wrong* emulator | Expo CLI takes the first `adb` device and ignores `ANDROID_SERIAL` | Boot only the MetroDrip AVD, or install Expo Go manually and deep-link: `adb -s <serial> shell am start -a android.intent.action.VIEW -d 'exp://10.0.2.2:8090' host.exp.exponent` |
+| `adb devices` shows `offline` forever; qemu is running and the log stops after "Windows Hypervisor Platform accelerator is operational" | `config.ini` has empty `target` / `tag.ids` — the emulator cannot resolve its own system image, and fails silently rather than erroring | Re-run `scripts/setup-android-emulator.ps1` (it now writes those keys explicitly), or set `target=android-35`, `tag.id=google_apis`, `tag.ids=google_apis` by hand and boot with `-wipe-data` |
+| Emulator dies the moment the launching shell exits | The emulator is a child of that shell's process group | Launch it detached — the IDE task does this; from a script use `cmd /c start "" /MIN <batch that runs emulator.exe>` |
 
 ---
 

@@ -168,27 +168,45 @@ if ($existing) {
     Write-Host "Created."
 }
 
-# Give the AVD enough RAM/storage for a React Native debug build.
+# Repair and tune the generated config.
+#
+# `avdmanager create` can leave `target`, `tag.ids`, and `tag.displaynames`
+# EMPTY. The emulator then cannot resolve its own system image at boot: qemu
+# starts, WHPX reports "operational", and the device sits at `offline` in
+# `adb devices` forever with no error. Writing them explicitly is the fix —
+# do not drop this block.
+#
+# Sizes must carry a unit suffix ("2G", not "2048"); a bare number is
+# misparsed. Values match a known-good API 35 AVD on this machine.
 $avdConfig = Join-Path $env:USERPROFILE ".android\avd\$AvdName.avd\config.ini"
 if (Test-Path $avdConfig) {
     $config = Get-Content $avdConfig
-    $tuned = @{
-        "hw.ramSize"          = "2048"
-        "vm.heapSize"         = "384"
-        "disk.dataPartition.size" = "6G"
-        "hw.keyboard"         = "yes"
-        "hw.gpu.enabled"      = "yes"
-        "hw.gpu.mode"         = "auto"
+    $tuned = [ordered]@{
+        # Identity the emulator needs to find its system image.
+        "target"                  = "android-$ApiLevel"
+        "tag.id"                  = "google_apis"
+        "tag.ids"                 = "google_apis"
+        "tag.display"             = "Google APIs"
+        "tag.displaynames"        = "Google APIs"
+        # Headroom for a React Native debug build.
+        "hw.ramSize"              = "2G"
+        "vm.heapSize"             = "228M"
+        "disk.dataPartition.size" = "10G"
+        "hw.keyboard"             = "yes"
+        # Host GPU emulation is a common cause of a black or hung first boot
+        # on Windows; the emulator picks a working renderer on its own.
+        "hw.gpu.enabled"          = "no"
     }
     foreach ($key in $tuned.Keys) {
-        if ($config -match "^$([regex]::Escape($key))=") {
-            $config = $config -replace "^$([regex]::Escape($key))=.*", "$key=$($tuned[$key])"
+        $escaped = [regex]::Escape($key)
+        if ($config -match "^$escaped=") {
+            $config = $config -replace "^$escaped=.*", "$key=$($tuned[$key])"
         } else {
             $config += "$key=$($tuned[$key])"
         }
     }
-    Set-Content -Path $avdConfig -Value $config -Encoding ascii
-    Write-Host "Tuned $avdConfig (2 GB RAM, 6 GB data, hardware keyboard)."
+    Set-Content -Path $avdConfig -Value ($config | Sort-Object) -Encoding ascii
+    Write-Host "Repaired + tuned $avdConfig (target/tags set, 2 GB RAM, 10 GB data)."
 }
 
 Write-Step "Done"
