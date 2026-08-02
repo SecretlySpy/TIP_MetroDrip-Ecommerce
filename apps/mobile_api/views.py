@@ -170,7 +170,7 @@ class PasswordResetConfirmView(APIView):
             customer = Customer.objects.get(
                 pk=force_str(urlsafe_base64_decode(str(request.data.get("uid", ""))))
             )
-        except Customer.DoesNotExist, ValueError, TypeError, OverflowError:
+        except (Customer.DoesNotExist, ValueError, TypeError, OverflowError):
             customer = None
         if customer is None or not default_token_generator.check_token(
             customer, str(request.data.get("token", ""))
@@ -429,7 +429,7 @@ class SimulatedPaymentConfirmView(APIView):
         try:
             order_id = Signer().unsign(str(request.data.get("status_token", "")))
             order = Order.objects.get(pk=order_id)
-        except BadSignature, Order.DoesNotExist:
+        except (BadSignature, Order.DoesNotExist):
             return Response(
                 error_payload("not_found", "Unknown order token."),
                 status=status.HTTP_404_NOT_FOUND,
@@ -556,7 +556,7 @@ class OrderTrackView(APIView):
             order = Order.objects.prefetch_related("items__variant__product").get(
                 pk=Signer().unsign(token)
             )
-        except BadSignature, Order.DoesNotExist:
+        except (BadSignature, Order.DoesNotExist):
             return Response(
                 error_payload("not_found", "Order not found."), status=status.HTTP_404_NOT_FOUND
             )
@@ -630,7 +630,7 @@ class WishlistView(APIView):
 
         try:
             product = Product.objects.get(pk=request.data.get("product_id"))
-        except Product.DoesNotExist, ValueError, TypeError:
+        except (Product.DoesNotExist, ValueError, TypeError):
             return Response(
                 error_payload("not_found", "Unknown product."), status=status.HTTP_404_NOT_FOUND
             )
@@ -651,7 +651,7 @@ class ReviewCreateView(APIView):
                 order_no=str(request.data.get("order_no", "")), customer=request.user
             )
             product = Product.objects.get(pk=request.data.get("product_id"))
-        except Order.DoesNotExist, Product.DoesNotExist, ValueError, TypeError:
+        except (Order.DoesNotExist, Product.DoesNotExist, ValueError, TypeError):
             return Response(
                 error_payload("not_found", "Order or product not found."),
                 status=status.HTTP_404_NOT_FOUND,
@@ -659,7 +659,7 @@ class ReviewCreateView(APIView):
 
         try:
             rating = int(request.data.get("rating", ""))
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             rating = 0
 
         # FR-17 verified-purchase rule, enforced server-side only (H-6 gate).

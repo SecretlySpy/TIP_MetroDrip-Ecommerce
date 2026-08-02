@@ -49,7 +49,7 @@ def parse_items(raw_items):
         try:
             variant_id = int(line["variant_id"])
             qty = int(line["qty"])
-        except KeyError, TypeError, ValueError:
+        except (KeyError, TypeError, ValueError):
             raise CheckoutError("Each cart line needs a variant_id and qty.") from None
         if not 1 <= qty <= MAX_LINE_QTY:
             raise CheckoutError(f"Quantities must be between 1 and {MAX_LINE_QTY}.")
@@ -81,7 +81,7 @@ def place_order(
 
     try:
         zone = ShippingZone.objects.get(id=zone_id, is_active=True)
-    except ShippingZone.DoesNotExist, ValueError, TypeError:
+    except (ShippingZone.DoesNotExist, ValueError, TypeError):
         raise CheckoutError("Choose a valid shipping zone.") from None
 
     def _build_order():

@@ -217,7 +217,7 @@ def cart_availability(request):
             body = json.loads(request.body)
             variant_ids = [int(x) for x in body.get("ids", [])]
         # All malformed JSON/list conversions share one public validation response.
-        except json.JSONDecodeError, ValueError, TypeError:
+        except (json.JSONDecodeError, ValueError, TypeError):
             return JsonResponse({"error": "Invalid request body"}, status=400)
     else:
         return HttpResponseNotAllowed(["GET", "POST"])
@@ -259,7 +259,7 @@ def _parse_checkout_items(raw_items):
             variant_id = int(line["variant_id"])
             qty = int(line["qty"])
         # Every malformed line maps to the same public validation error.
-        except KeyError, TypeError, ValueError:
+        except (KeyError, TypeError, ValueError):
             raise ValueError("Each cart line needs a variant_id and qty.") from None
         if not 1 <= qty <= MAX_LINE_QTY:
             raise ValueError(f"Quantities must be between 1 and {MAX_LINE_QTY}.")
@@ -297,7 +297,7 @@ def checkout_page(request):
     try:
         zone = ShippingZone.objects.get(id=data.get("zone_id"), is_active=True)
     # Missing and malformed identifiers are both invalid customer input.
-    except ShippingZone.DoesNotExist, ValueError, TypeError:
+    except (ShippingZone.DoesNotExist, ValueError, TypeError):
         return JsonResponse({"error": "Choose a valid shipping zone."}, status=400)
 
     # Guests need a session so their holds can be traced before the order pays.
