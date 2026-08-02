@@ -318,3 +318,24 @@
 - **Decision:** The JWT pair lives exclusively in `expo-secure-store` (Keychain / Keystore). Biometric unlock (FR-23) is an opt-in gate applied on cold start *after* an initial password sign-in; it never replaces the password as the credential.
 - **Rationale:** NFR-19. Biometrics authorize access to an already-established session — treating them as a credential would mean the device, not the server, decides who you are.
 - **Consequences:** With the preference on, a stored session starts locked and the splash screen prompts. Failing or cancelling leaves the app usable as a guest. Logout blacklists the refresh token server-side and clears the enclave.
+
+## ADR-E-001 — Courier webhook is signature-verified and fails closed
+
+- **Status:** Accepted
+- **Decision:** `/api/webhooks/courier/` verifies an HMAC-SHA256 of the raw body under `COURIER_WEBHOOK_SECRET` before parsing anything, and rejects every request when that secret is unset — the same fail-closed posture as the PayMongo handler (ADR-D-003).
+- **Rationale:** The endpoint can mark an order Delivered. Unauthenticated, it would let anyone close out someone else's order, and Delivered is the state that unlocks reviews (FR-17) and ends the support window.
+- **Consequences:** Carrier status vocabulary is normalized through `COURIER_STATUS_MAP`; unmapped statuses and unknown waybills are acknowledged with 200 (so carriers stop retrying) but logged for reconciliation. Only `delivered` has an order-level counterpart — the rest are shipment detail. Re-delivering the same status is a no-op, so carrier retries are safe. The `out_for_delivery` edge is what fires FR-27's fourth push, via `Shipment.save()`.
+
+## ADR-E-002 — Line totals are computed in Python, never in templates
+
+- **Status:** Accepted
+- **Decision:** `OrderItem.line_total` returns `unit_price_snapshot * qty` in integer centavos, and every surface showing a line total reads it.
+- **Rationale:** The admin invoice used `{% widthratio item.unit_price_snapshot 100 item.qty %}`, which does integer division and rounds. A ₱899.50 item bought three times printed as ₱2,697 instead of ₱2,698.50 — a money error on a document the customer keeps, and a direct violation of Hard Invariant 2's "format at display time only".
+- **Consequences:** Django templates cannot multiply money safely, so no template may try. Pinned by a test using a price with centavos (`89950`) precisely because a round-peso price would hide the bug.
+
+## ADR-E-003 — Packing slip and invoice are different documents
+
+- **Status:** Accepted
+- **Decision:** FR-19 ships two documents. The **packing slip** (merchant console, `/merchant/orders/order/<id>/packing-slip/`) is a warehouse pick list: SKU, attributes, quantity, tick boxes, waybill — and deliberately **no prices**. The **invoice** exists twice: the merchant copy and a customer-facing copy at `/order/<token>/invoice/`, authorized by the same signed token as the status page (ADR-D-004).
+- **Rationale:** They serve different readers. A picker needs SKUs and counts; putting prices in the box is how gift orders leak their cost. The customer needs a financial record they can print or save as PDF.
+- **Consequences:** The customer invoice is a standalone print document — it does not extend `base.html`, because a navbar and cart badge have no place on an invoice. It is reachable from both order history and the tokenized status page, so guests get it too.

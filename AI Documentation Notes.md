@@ -2167,3 +2167,59 @@
 | Mobile typecheck | `npx tsc --noEmit` | Passed; 0 errors |
 | No on-device money math | grep for arithmetic on price/total/fee in `mobile/src` | Passed; comments only |
 | No hardcoded hex | grep for `#RRGGBB` in `mobile/src` | Passed; `theme.ts` only |
+
+## Sprint I — Fulfillment completion and printable documents (2026-08-02)
+
+- **Purpose:** Record the courier webhook, the FR-19 documents, and the FR-9 dashboard flag.
+- **Inputs:** Carrier status callbacks; merchant and customer print requests; merchant stock list views.
+- **Outputs:** Shipment/order state transitions, two printable HTML documents, a low-stock filter and badge.
+- **Dependencies:** `COURIER_WEBHOOK_SECRET`, the order state machine, `OrderItem.line_total`.
+- **Behavior:** Closes the second inbound webhook required by section 7 and the remaining half of FR-19.
+
+### Module: `apps/shipping/webhooks.py`
+
+- **Purpose:** `/api/webhooks/courier/` — the second inbound webhook (section 7).
+- **Inputs:** POST with `{waybill_no, status}` and an `X-Courier-Signature` HMAC-SHA256 header over the raw body.
+- **Outputs:** 400 (bad/missing signature, malformed body, missing fields); 200 (applied, replayed, unknown waybill, or unmapped status).
+- **Dependencies:** `COURIER_WEBHOOK_SECRET`, `Shipment`, `Order.transition_to`.
+- **Behavior:** Fails closed with no secret configured. Normalizes carrier vocabulary through `COURIER_STATUS_MAP`. Only `delivered` advances the order state machine; `out_for_delivery` sets shipment status, which fires FR-27's fourth push through `Shipment.save()`. An `IllegalTransition` (e.g. the order was already refunded) is logged, not raised.
+
+### Property: `OrderItem.line_total`
+
+- **Purpose:** Exact line total in integer centavos (Hard Invariant 2).
+- **Inputs:** `unit_price_snapshot`, `qty`.
+- **Outputs:** Integer centavos.
+- **Dependencies:** None.
+- **Behavior:** Replaces a `widthratio` template calculation that did integer division and rounded — ₱899.50 × 3 printed as ₱2,697 instead of ₱2,698.50. Templates must never multiply money.
+
+### Views: printable documents (FR-19)
+
+- **Purpose:** Packing slip for the warehouse; invoice for the customer.
+- **Inputs:** `OrderAdmin.packing_slip_view` (merchant console, by order id); `storefront.views.order_invoice` (signed token).
+- **Outputs:** `admin/orders/order/packing_slip.html` and `storefront/invoice.html`, both print-styled.
+- **Dependencies:** Signed-token authorization (ADR-D-004) for the customer copy.
+- **Behavior:** The packing slip carries SKU, attributes, quantity, tick boxes, and the waybill, and shows **no prices**. The customer invoice is standalone (does not extend `base.html`) and is linked from both order history and the tokenized status page, so guests can print one too.
+
+### Admin: low-stock flag (FR-9)
+
+- **Purpose:** The dashboard leg of the low-stock requirement.
+- **Inputs:** Merchant console StockRecord list.
+- **Outputs:** A `LowStockFilter` ("Low stock" / "Healthy") and an OUT / LOW / OK badge column.
+- **Dependencies:** `available_units` annotation on the admin queryset.
+- **Behavior:** Compares availability (on hand minus reserved), matching the scan job — shelf count alone would hide units already promised to holds. The badge spells the state out in words, so colour is not the only cue.
+
+### Test Module: `tests/test_fulfillment_docs.py`
+
+- **Purpose:** Pin the courier webhook and the FR-19 documents.
+- **Outputs:** 9 passing cases.
+- **Behavior:** Covers status advance to Delivered, replay idempotency, bad/missing signature rejection, fail-closed with no secret, acknowledged unknown waybill and unmapped status, exact centavo line totals, invoice rendering and token requirement, and that the packing slip contains no prices.
+
+### QA gate — Sprint I
+
+| Check | Command | Result |
+|---|---|---|
+| Ruff lint + format | `ruff check .` / `ruff format --check .` | Passed |
+| Backend tests | `pytest -q` | Passed; 416 on MySQL 8 |
+| Web route sweep | 13 public routes probed on a live server | All 200 |
+| Mobile API journey | register to checkout to track, live server | 23/23 |
+| Fulfillment lifecycle | pack, ship, out-for-delivery, deliver, refund, CSV, invoice | 13/13 |

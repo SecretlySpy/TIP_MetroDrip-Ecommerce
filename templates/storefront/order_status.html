@@ -11,7 +11,12 @@
         <h1>Order Status</h1>
         <p class="text-mono text-muted mt-sm" style="font-size: 0.85rem;">Order <span class="sku-tag">{{ order.order_no }}</span></p>
       </div>
-      <span class="status-badge status-badge--{{ order.status }}">{{ order.get_status_display }}</span>
+      <div style="text-align: right;">
+        <span class="status-badge status-badge--{{ order.status }}">{{ order.get_status_display }}</span>
+        {# FR-19: printable invoice, same signed token as this page. #}
+        <a href="{% url 'storefront:order-invoice' request.resolver_match.kwargs.token %}"
+           class="btn btn--secondary btn--sm" style="display:block; margin-top: var(--space-sm);">Invoice ↗</a>
+      </div>
     </div>
 
     {% if steps %}

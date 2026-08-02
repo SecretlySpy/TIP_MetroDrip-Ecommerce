@@ -33,6 +33,8 @@ urlpatterns = [
     # service endpoints; token-authenticated, throttled, versioned.
     path("api/mobile/v1/", include("apps.mobile_api.urls")),
     path("api/", include("apps.payments.urls")),
+    # Second inbound webhook (§7): carrier delivery-status updates.
+    path("api/", include("apps.shipping.urls")),
     path("accounts/", include("apps.accounts.urls")),
     path("reviews/", include("apps.reviews.urls")),
     path("pages/", include("django.contrib.flatpages.urls")),

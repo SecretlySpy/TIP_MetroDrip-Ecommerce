@@ -19,6 +19,8 @@ urlpatterns = [
     # and this page renders checkout PII.
     path("checkout/success/<str:token>/", views.checkout_success, name="checkout-success"),
     path("order/<str:token>/", views.order_status, name="order-status"),
+    # FR-19: printable customer invoice, same signed token as the status page.
+    path("order/<str:token>/invoice/", views.order_invoice, name="order-invoice"),
     path("cart/", views.cart_page, name="cart"),
     path("api/cart/availability/", views.cart_availability, name="cart-availability"),
     path("contact/", views.contact_page, name="contact"),

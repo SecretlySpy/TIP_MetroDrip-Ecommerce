@@ -468,6 +468,30 @@ def order_status(request, token):
     return render(request, "storefront/order_status.html", {"order": order, "steps": steps})
 
 
+@require_GET
+def order_invoice(request, token):
+    """FR-19: printable customer invoice behind the same signed token.
+
+    Guests reach it from their emailed link and account holders from order
+    history, so the token — not a login — is what authorizes it (ADR-D-004).
+    """
+    try:
+        order_id = Signer().unsign(token)
+    except BadSignature:
+        raise Http404 from None
+
+    try:
+        order = (
+            Order.objects.select_related("payment", "shipment")
+            .prefetch_related("items__variant__product")
+            .get(pk=order_id)
+        )
+    except Order.DoesNotExist:
+        raise Http404 from None
+
+    return render(request, "storefront/invoice.html", {"order": order, "token": token})
+
+
 # ---------------------------------------------------------------------------
 # G-5: Contact form
 # ---------------------------------------------------------------------------

@@ -33,6 +33,8 @@
         
         <div>
           <a href="{% url 'storefront:order-status' order.id|sign %}" class="btn btn--primary" style="display: inline-block;">View Order Details</a>
+          {# FR-19: customers can print an invoice straight from their history. #}
+          <a href="{% url 'storefront:order-invoice' order.id|sign %}" class="btn btn--secondary" style="display: inline-block;">Invoice</a>
         </div>
       </div>
       {% endfor %}

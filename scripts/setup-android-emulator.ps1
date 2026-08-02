@@ -1,0 +1,207 @@
+<#
+.SYNOPSIS
+    Install the Android SDK pieces MetroDrip's Expo app needs and create the
+    MetroDrip_Pixel7_API34 emulator.
+
+.DESCRIPTION
+    Idempotent: every step checks for existing state first, so re-running it
+    after a partial failure is safe. Requires a JDK (17+) on PATH.
+
+    Installs into %LOCALAPPDATA%\Android\Sdk:
+      * cmdline-tools;latest   - sdkmanager / avdmanager
+      * platform-tools         - adb
+      * emulator               - the emulator binary
+      * platforms;android-34   - Android 14 SDK
+      * system-images;android-34;google_apis;x86_64 - the AVD's system image
+
+    API 34 is the emulator target; the app itself still supports Android 8.0
+    (API 26) and up per NFR-21.
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File scripts\setup-android-emulator.ps1
+#>
+
+[CmdletBinding()]
+param(
+    [string]$AvdName = "MetroDrip_Pixel7_API34",
+    [string]$ApiLevel = "34",
+    [string]$Device = "pixel_7"
+)
+
+$ErrorActionPreference = "Stop"
+
+$Sdk = Join-Path $env:LOCALAPPDATA "Android\Sdk"
+$CmdlineBin = Join-Path $Sdk "cmdline-tools\latest\bin"
+$SdkManager = Join-Path $CmdlineBin "sdkmanager.bat"
+$AvdManager = Join-Path $CmdlineBin "avdmanager.bat"
+$SystemImage = "system-images;android-$ApiLevel;google_apis;x86_64"
+
+function Write-Step($message) { Write-Host "`n=== $message ===" -ForegroundColor Cyan }
+
+# --- 0. Prerequisites ---------------------------------------------------------
+Write-Step "Checking prerequisites"
+# `java -version` prints to stderr even on success, which $ErrorActionPreference
+# = "Stop" would turn into a terminating error. Probe for the command instead,
+# and read the banner with stderr redirection explicitly relaxed.
+$java = Get-Command java -ErrorAction SilentlyContinue
+if (-not $java) {
+    throw "A JDK is required on PATH (17 or newer). Install one, then re-run."
+}
+$previousPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$javaVersion = (& java -version 2>&1 | Select-Object -First 1)
+$ErrorActionPreference = $previousPreference
+Write-Host "Java: $javaVersion"
+
+# --- 1. Command-line tools ----------------------------------------------------
+Write-Step "Android command-line tools"
+if (Test-Path $SdkManager) {
+    Write-Host "Already installed at $CmdlineBin"
+} else {
+    $zip = Join-Path $env:TEMP "commandlinetools.zip"
+    $url = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
+    if (-not (Test-Path $zip)) {
+        Write-Host "Downloading $url ..."
+        Invoke-WebRequest $url -OutFile $zip -UseBasicParsing
+    }
+    New-Item -ItemType Directory -Force -Path (Join-Path $Sdk "cmdline-tools") | Out-Null
+    Expand-Archive -Path $zip -DestinationPath (Join-Path $Sdk "cmdline-tools") -Force
+    $unpacked = Join-Path $Sdk "cmdline-tools\cmdline-tools"
+    if (Test-Path $unpacked) {
+        # The archive nests its own cmdline-tools/ dir; sdkmanager requires it
+        # to sit at cmdline-tools/latest/ or it cannot resolve its own root.
+        $latest = Join-Path $Sdk "cmdline-tools\latest"
+        if (Test-Path $latest) { Remove-Item $latest -Recurse -Force }
+        Move-Item $unpacked $latest
+    }
+    Write-Host "Installed to $CmdlineBin"
+}
+
+# --- 2. Environment variables -------------------------------------------------
+Write-Step "Environment variables (user scope)"
+[Environment]::SetEnvironmentVariable("ANDROID_HOME", $Sdk, "User")
+[Environment]::SetEnvironmentVariable("ANDROID_SDK_ROOT", $Sdk, "User")
+$env:ANDROID_HOME = $Sdk
+$env:ANDROID_SDK_ROOT = $Sdk
+
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+foreach ($dir in @("$Sdk\platform-tools", "$Sdk\emulator", $CmdlineBin)) {
+    if ($userPath -notlike "*$dir*") {
+        $userPath = "$userPath;$dir"
+    }
+}
+[Environment]::SetEnvironmentVariable("Path", $userPath, "User")
+$env:Path = "$env:Path;$Sdk\platform-tools;$Sdk\emulator;$CmdlineBin"
+Write-Host "ANDROID_HOME = $Sdk"
+
+# --- 3. Licenses --------------------------------------------------------------
+# Piping "y" into sdkmanager.bat does not work reliably on Windows — the batch
+# wrapper re-reads the console rather than stdin, so the prompt is left
+# unanswered and every package silently fails to install. Writing the accepted
+# licence hashes directly is what CI images do, and it is deterministic.
+Write-Step "Accepting SDK licenses"
+$LicenseHashes = @{
+    "android-sdk-license"          = @(
+        "24333f8a63b6825ea9c5514f83c2829b004d1fee",
+        "8933bad161af4178b1185d1a37fbf41ea5269c55",
+        "d56f5187479451eabf01fb78af6dfcb131a6481e"
+    )
+    "android-sdk-preview-license"  = @("84831b9409646a918e30573bab4c9c91346d8abd")
+    "android-sdk-arm-dbt-license"  = @("859f317696f67ef3d7f30a50a5560e7834b43903")
+    "android-googletv-license"     = @("601085b94cd77f0b54ff86406957099ebe79c4d6")
+    "google-gdk-license"           = @("33b6a2b64607f11b759f320ef9dff4ae5c47d97a")
+    "intel-android-extra-license"  = @("d975f751698a77b662f1254ddbeed3901e976f5a")
+    "mips-android-sysimage-license" = @("e9acab5b5fbb560a72cfaecce8946896ff6aab9d")
+}
+$licenseDir = Join-Path $Sdk "licenses"
+New-Item -ItemType Directory -Force -Path $licenseDir | Out-Null
+foreach ($license in $LicenseHashes.GetEnumerator()) {
+    $path = Join-Path $licenseDir $license.Key
+    # sdkmanager matches on exact file content, so write LF-joined hashes with
+    # no trailing newline and no BOM.
+    [IO.File]::WriteAllText($path, ($license.Value -join "`n"), [Text.UTF8Encoding]::new($false))
+}
+Write-Host "Wrote $($LicenseHashes.Count) licence files to $licenseDir"
+
+# --- 4. Packages --------------------------------------------------------------
+Write-Step "Installing SDK packages (this is the long part)"
+# package name -> a path that must exist afterwards, so a silent failure is
+# caught here instead of surfacing later as avdmanager's opaque
+# "Cannot invoke SystemImage.getPackage() because img is null".
+$packages = [ordered]@{
+    "platform-tools"                = "platform-tools\adb.exe"
+    "emulator"                      = "emulator\emulator.exe"
+    "platforms;android-$ApiLevel"   = "platforms\android-$ApiLevel"
+    $SystemImage                    = "system-images\android-$ApiLevel\google_apis\x86_64"
+}
+foreach ($package in $packages.GetEnumerator()) {
+    $marker = Join-Path $Sdk $package.Value
+    if (Test-Path $marker) {
+        Write-Host "-> $($package.Key) (already installed)"
+        continue
+    }
+    Write-Host "-> $($package.Key)"
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $SdkManager --install $package.Key --sdk_root="$Sdk" 2>&1 |
+        Where-Object { $_ -notmatch '^\[=*\s*\]' -and $_ -notmatch '^\s*$' } |
+        Select-Object -Last 2
+    $ErrorActionPreference = $previousPreference
+    if (-not (Test-Path $marker)) {
+        throw "Package '$($package.Key)' did not install (expected $marker). " +
+              "Re-run this script; if it persists, run: `"$SdkManager`" --list"
+    }
+}
+
+# --- 5. AVD -------------------------------------------------------------------
+Write-Step "Creating AVD '$AvdName'"
+$existing = & $AvdManager list avd 2>&1 | Select-String -Pattern "Name: $AvdName"
+if ($existing) {
+    Write-Host "AVD already exists."
+} else {
+    "no" | & $AvdManager create avd --name $AvdName --package "$SystemImage" --device $Device --force 2>&1 |
+        Select-Object -Last 3
+    Write-Host "Created."
+}
+
+# Give the AVD enough RAM/storage for a React Native debug build.
+$avdConfig = Join-Path $env:USERPROFILE ".android\avd\$AvdName.avd\config.ini"
+if (Test-Path $avdConfig) {
+    $config = Get-Content $avdConfig
+    $tuned = @{
+        "hw.ramSize"          = "2048"
+        "vm.heapSize"         = "384"
+        "disk.dataPartition.size" = "6G"
+        "hw.keyboard"         = "yes"
+        "hw.gpu.enabled"      = "yes"
+        "hw.gpu.mode"         = "auto"
+    }
+    foreach ($key in $tuned.Keys) {
+        if ($config -match "^$([regex]::Escape($key))=") {
+            $config = $config -replace "^$([regex]::Escape($key))=.*", "$key=$($tuned[$key])"
+        } else {
+            $config += "$key=$($tuned[$key])"
+        }
+    }
+    Set-Content -Path $avdConfig -Value $config -Encoding ascii
+    Write-Host "Tuned $avdConfig (2 GB RAM, 6 GB data, hardware keyboard)."
+}
+
+Write-Step "Done"
+Write-Host @"
+Next steps:
+
+  1. Restart Antigravity IDE so it picks up ANDROID_HOME.
+  2. Run the Django API bound to all interfaces:
+       .venv\Scripts\python.exe manage.py runserver 0.0.0.0:8080
+  3. Boot the emulator:
+       emulator -avd $AvdName
+  4. Start the app:
+       cd mobile && npm run android
+
+  In Antigravity: Terminal > Run Task... > "MetroDrip: Full mobile stack"
+  does steps 1-4 in one go.
+
+  The emulator reaches the host at 10.0.2.2, which is already the default in
+  mobile/.env.example (EXPO_PUBLIC_API_URL).
+"@

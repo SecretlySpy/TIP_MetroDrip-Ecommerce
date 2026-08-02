@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Invoice - {{ order.order_no }}</title>
+    <title>Packing Slip - {{ order.order_no }}</title>
     <style>
         body { font-family: monospace; font-size: 14px; margin: 40px; }
         .header { text-align: center; border-bottom: 2px dashed #000; padding-bottom: 20px; margin-bottom: 20px; }
@@ -13,9 +13,10 @@
         th, td { border-bottom: 1px solid #ddd; padding: 8px; text-align: left; }
         th { border-bottom: 2px solid #000; text-transform: uppercase; }
         .right { text-align: right; }
-        .totals { width: 50%; margin-left: auto; border: 2px solid #000; padding: 10px; }
-        .totals div { display: flex; justify-content: space-between; margin-bottom: 5px; }
-        .totals .grand { font-weight: bold; border-top: 1px solid #000; padding-top: 5px; font-size: 16px; }
+        .tick { width: 40px; text-align: center; font-size: 18px; }
+        .waybill { border: 2px solid #000; padding: 12px; margin-top: 20px; text-align: center; }
+        .waybill strong { font-size: 20px; letter-spacing: 2px; }
+        .note { margin-top: 24px; font-size: 12px; color: #444; }
         @media print {
             body { margin: 0; }
             button { display: none; }
@@ -23,18 +24,19 @@
     </style>
 </head>
 <body>
-    <button onclick="window.print()" style="padding: 10px; margin-bottom: 20px;">Print Invoice</button>
+    <button onclick="window.print()" style="padding: 10px; margin-bottom: 20px;">Print Packing Slip</button>
 
     <div class="header">
-        <h1>METRODRIP E-COMMERCE</h1>
-        <p>Order / Packing Slip</p>
+        <h1>METRODRIP — PACKING SLIP</h1>
+        <p>Warehouse copy — no prices shown</p>
     </div>
 
     <div class="details">
         <div class="box">
             <strong>Order No:</strong> {{ order.order_no }}<br>
             <strong>Date:</strong> {{ order.created_at|date:"M d, Y" }}<br>
-            <strong>Payment:</strong> {{ order.payment.status|upper }}
+            <strong>Status:</strong> {{ order.get_status_display|upper }}<br>
+            <strong>Items:</strong> {{ total_units }} unit{{ total_units|pluralize }}
         </div>
         <div class="box">
             <strong>Ship To:</strong><br>
@@ -46,35 +48,41 @@
         </div>
     </div>
 
+    {# A packing slip is a pick list: SKU, attributes, quantity, and a tick box.
+       Prices belong on the invoice, not in the box the customer opens. #}
     <table>
         <thead>
             <tr>
-                <th>Item</th>
+                <th class="tick">✓</th>
                 <th>SKU</th>
-                <th>Attributes</th>
+                <th>Item</th>
+                <th>Size / Color / Fit</th>
                 <th class="right">Qty</th>
-                <th class="right">Price</th>
-                <th class="right">Total</th>
             </tr>
         </thead>
         <tbody>
             {% for item in order.items.all %}
             <tr>
-                <td>{{ item.variant.product.name }}</td>
+                <td class="tick">☐</td>
                 <td>{{ item.variant.sku }}</td>
-                <td>{{ item.variant.get_size_display }}, {{ item.variant.color }}</td>
+                <td>{{ item.variant.product.name }}</td>
+                <td>{{ item.variant.get_size_display }} / {{ item.variant.color }} / {{ item.variant.get_fit_display }}</td>
                 <td class="right">{{ item.qty }}</td>
-                <td class="right">{{ item.unit_price_snapshot|centavos_to_peso }}</td>
-                <td class="right">{{ item.line_total|centavos_to_peso }}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 
-    <div class="totals">
-        <div><span>Subtotal:</span> <span>{{ order.subtotal|centavos_to_peso }}</span></div>
-        <div><span>Shipping:</span> <span>{{ order.shipping_fee|centavos_to_peso }}</span></div>
-        <div class="grand"><span>Total:</span> <span>{{ order.total|centavos_to_peso }}</span></div>
+    <div class="waybill">
+        {% if order.shipment.waybill_no %}
+            {{ order.shipment.courier|upper }} WAYBILL<br>
+            <strong>{{ order.shipment.waybill_no }}</strong>
+        {% else %}
+            <strong>WAYBILL PENDING</strong><br>
+            Book the shipment or enter a waybill manually before dispatch.
+        {% endif %}
     </div>
+
+    <p class="note">Packed by: ____________________ &nbsp;&nbsp; Checked by: ____________________ &nbsp;&nbsp; Date: __________</p>
 </body>
 </html>

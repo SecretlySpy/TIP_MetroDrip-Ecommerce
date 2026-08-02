@@ -95,6 +95,11 @@ class OrderAdmin(ExportCsvMixin, admin.ModelAdmin):
                 self.admin_site.admin_view(self.invoice_view),
                 name="orders_order_invoice",
             ),
+            path(
+                "<path:object_id>/packing-slip/",
+                self.admin_site.admin_view(self.packing_slip_view),
+                name="orders_order_packing_slip",
+            ),
         ]
         return custom_urls + urls
 
@@ -132,6 +137,22 @@ class OrderAdmin(ExportCsvMixin, admin.ModelAdmin):
 
         order = get_object_or_404(Order, pk=object_id)
         return render(request, "admin/orders/order/invoice.html", {"order": order})
+
+    def packing_slip_view(self, request, object_id):
+        """FR-19: warehouse pick list — same order, no prices."""
+        from django.shortcuts import get_object_or_404, render
+
+        from .models import Order
+
+        order = get_object_or_404(
+            Order.objects.select_related("shipment").prefetch_related("items__variant__product"),
+            pk=object_id,
+        )
+        return render(
+            request,
+            "admin/orders/order/packing_slip.html",
+            {"order": order, "total_units": sum(item.qty for item in order.items.all())},
+        )
 
     def has_delete_permission(self, request, obj=None):
         return False

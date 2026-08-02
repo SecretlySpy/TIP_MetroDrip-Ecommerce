@@ -224,6 +224,16 @@ class OrderItem(models.Model):
     def __str__(self):
         return f"{self.order_id} × {self.variant_id} ({self.qty})"
 
+    @property
+    def line_total(self):
+        """Line total in integer centavos (Hard Invariant 2).
+
+        Exists because templates cannot multiply money safely: `widthratio`
+        does integer division and rounds, which silently mangles a printed
+        invoice. Every surface that shows a line total reads this.
+        """
+        return self.unit_price_snapshot * self.qty
+
 
 class OrderNumberSequence(models.Model):
     """Per-year counter backing MD-YYYY-NNNNN allocation.

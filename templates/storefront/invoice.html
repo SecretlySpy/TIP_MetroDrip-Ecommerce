@@ -1,0 +1,145 @@
+{% load money %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invoice {{ order.order_no }} — MetroDrip</title>
+  {# Standalone print document: it deliberately does not extend base.html,
+     because the navbar, footer, and cart badge have no place on an invoice. #}
+  <style>
+    :root {
+      --ink: #141414; --muted: #63635C; --border: #E4E4DF;
+      --volt: #C8F031; --paper: #FFFFFF;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      color: var(--ink); background: var(--paper);
+      margin: 0; padding: 40px 24px; font-size: 13px; line-height: 1.5;
+    }
+    .sheet { max-width: 760px; margin: 0 auto; }
+    .brand { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+    .brand span { background: var(--volt); padding: 0 6px; }
+    header { border-bottom: 2px dashed var(--ink); padding-bottom: 18px; margin-bottom: 22px;
+             display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+    .doc-title { text-transform: uppercase; letter-spacing: 2px; font-size: 11px; color: var(--muted); }
+    .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .meta section { border: 1px solid var(--border); padding: 12px; }
+    .label { text-transform: uppercase; font-size: 9px; letter-spacing: 1px; color: var(--muted); display: block; margin-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
+    th { text-transform: uppercase; font-size: 10px; letter-spacing: 1px; text-align: left;
+         border-bottom: 2px solid var(--ink); padding: 8px 6px; }
+    td { border-bottom: 1px solid var(--border); padding: 8px 6px; vertical-align: top; }
+    .right { text-align: right; }
+    .totals { margin-left: auto; width: min(320px, 100%); border: 2px solid var(--ink); padding: 14px; }
+    .totals div { display: flex; justify-content: space-between; margin-bottom: 6px; }
+    .totals .grand { border-top: 1px solid var(--ink); padding-top: 8px; margin-top: 8px;
+                     font-size: 17px; font-weight: 700; }
+    .paid-stamp { display: inline-block; border: 2px solid var(--ink); background: var(--volt);
+                  padding: 4px 12px; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; }
+    footer { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 14px;
+             font-size: 11px; color: var(--muted); }
+    .actions { max-width: 760px; margin: 0 auto 20px; display: flex; gap: 10px; }
+    .btn { font: inherit; cursor: pointer; border: 2px solid var(--ink); background: var(--volt);
+           color: var(--ink); padding: 10px 18px; text-decoration: none; }
+    .btn--plain { background: var(--paper); }
+    @media print {
+      body { padding: 0; }
+      .actions { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="actions">
+    <button class="btn" onclick="window.print()">Print / Save PDF</button>
+    <a class="btn btn--plain" href="{% url 'storefront:order-status' token %}">Back to order status</a>
+  </div>
+
+  <div class="sheet">
+    <header>
+      <div>
+        <div class="brand">Metro<span>Drip</span></div>
+        <div class="doc-title">Invoice · Non-VAT registered</div>
+      </div>
+      <div class="right">
+        <span class="label">Invoice for order</span>
+        <strong>{{ order.order_no }}</strong><br>
+        {{ order.created_at|date:"M d, Y" }}
+      </div>
+    </header>
+
+    <div class="meta">
+      <section>
+        <span class="label">Billed / shipped to</span>
+        {{ order.shipping_address.name }}<br>
+        {{ order.shipping_address.address_line1 }}<br>
+        {{ order.shipping_address.city }}<br>
+        {{ order.shipping_address.zone }}<br>
+        {{ order.shipping_address.email }}
+      </section>
+      <section>
+        <span class="label">Payment</span>
+        {% if order.payment %}
+          {{ order.payment.get_method_display }} · {{ order.payment.get_status_display }}<br>
+          {% if order.payment.paid_at %}Paid {{ order.payment.paid_at|date:"M d, Y H:i" }}{% endif %}
+        {% else %}
+          Pending
+        {% endif %}
+        <div style="margin-top:8px;">
+          {% if order.payment.status == 'paid' %}<span class="paid-stamp">Paid</span>{% endif %}
+        </div>
+      </section>
+      <section>
+        <span class="label">Delivery</span>
+        {{ order.get_status_display }}<br>
+        {% if order.shipment %}
+          {{ order.shipment.courier|upper }}<br>
+          {{ order.shipment.waybill_no|default:"Waybill pending" }}
+        {% else %}
+          Courier pending
+        {% endif %}
+      </section>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>SKU</th>
+          <th class="right">Qty</th>
+          <th class="right">Unit</th>
+          <th class="right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in order.items.all %}
+          <tr>
+            <td>
+              {{ item.variant.product.name }}<br>
+              <span style="color: var(--muted); font-size: 11px;">
+                {{ item.variant.get_size_display }} / {{ item.variant.color }} / {{ item.variant.get_fit_display }}
+              </span>
+            </td>
+            <td>{{ item.variant.sku }}</td>
+            <td class="right">{{ item.qty }}</td>
+            <td class="right">{{ item.unit_price_snapshot|centavos_to_peso }}</td>
+            {# line_total is computed in Python — templates cannot multiply money safely. #}
+            <td class="right">{{ item.line_total|centavos_to_peso }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div><span>Subtotal</span><span>{{ order.subtotal|centavos_to_peso }}</span></div>
+      <div><span>Shipping ({{ order.shipping_address.zone }})</span><span>{{ order.shipping_fee|centavos_to_peso }}</span></div>
+      <div class="grand"><span>Total</span><span>{{ order.total|centavos_to_peso }}</span></div>
+    </div>
+
+    <footer>
+      MetroDrip · Metro Manila, Philippines · Non-VAT registered (D-03).<br>
+      This invoice was generated from your order record on {% now "M d, Y" %}. Keep it for your records.
+    </footer>
+  </div>
+</body>
+</html>

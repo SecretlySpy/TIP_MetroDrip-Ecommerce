@@ -169,6 +169,9 @@ DEFAULT_FROM_EMAIL = os.environ.get(
 # --- Payments (D-2/D-3, Hard Invariant 3) ---
 PAYMONGO_SECRET_KEY = os.environ.get("PAYMONGO_SECRET_KEY", "")
 PAYMONGO_WEBHOOK_SECRET = os.environ.get("PAYMONGO_WEBHOOK_SECRET", "")
+# Shared secret for the inbound courier webhook (§7). Unset = endpoint rejects
+# everything, so a missing secret can never mean "accept anything".
+COURIER_WEBHOOK_SECRET = os.environ.get("COURIER_WEBHOOK_SECRET", "")
 # Sandbox-only simulated payment completion for demos without PayMongo keys.
 # dev.py may enable it; prod.py refuses to boot with it on (fail closed).
 # Payment provider registry key (simulated | paymongo)

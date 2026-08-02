@@ -25,7 +25,12 @@ deploy/.env.staging
 htmlcov/
 
 # Editors / OS
-.vscode/
+# Editor state is personal, but the shared run configuration is not: the
+# Antigravity/VS Code tasks are how a teammate boots the mobile stack.
+.vscode/*
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
 .idea/
 Thumbs.db
 .DS_Store

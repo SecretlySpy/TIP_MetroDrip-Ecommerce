@@ -7,10 +7,34 @@ visibility into active checkout holds.
 """
 
 from django.contrib import admin
+from django.db.models import F
+from django.utils.html import format_html
 
 from config.consoles import merchant_site
 
 from .models import Reservation, StockMovement, StockRecord
+
+
+class LowStockFilter(admin.SimpleListFilter):
+    """FR-9's dashboard leg: find SKUs at or below their reorder threshold.
+
+    The comparison is on *availability* (on hand − reserved), matching the
+    scan job — shelf count alone would hide units already promised to holds.
+    """
+
+    title = "stock level"
+    parameter_name = "stock_level"
+
+    def lookups(self, request, model_admin):
+        return (("low", "Low stock (needs restock)"), ("ok", "Healthy"))
+
+    def queryset(self, request, queryset):
+        # `available_units` is annotated by StockRecordAdmin.get_queryset().
+        if self.value() == "low":
+            return queryset.filter(available_units__lte=F("low_stock_threshold"))
+        if self.value() == "ok":
+            return queryset.filter(available_units__gt=F("low_stock_threshold"))
+        return queryset
 
 
 class StockRecordInline(admin.StackedInline):
@@ -36,14 +60,40 @@ class StockRecordAdmin(admin.ModelAdmin):
         "qty_reserved",
         "available_display",
         "low_stock_threshold",
+        "stock_flag",
     )
-    list_filter = ("low_stock_threshold",)
+    list_filter = (LowStockFilter, "low_stock_threshold")
     search_fields = ("variant__sku",)
     readonly_fields = ("available_display",)
 
-    @admin.display(description="Available")
+    def get_queryset(self, request):
+        # Annotate once so the filter can compare in SQL and the flag column
+        # doesn't trigger a query per row.
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("variant", "variant__product")
+            .annotate(available_units=F("qty_on_hand") - F("qty_reserved"))
+        )
+
+    @admin.display(description="Available", ordering="available_units")
     def available_display(self, obj):
         return obj.available
+
+    @admin.display(description="Status")
+    def stock_flag(self, obj):
+        """Visual low-stock badge (FR-9), with the word as a non-colour cue."""
+        if obj.available <= 0:
+            return format_html(
+                '<span style="background:#C2282D;color:#fff;padding:2px 8px;'
+                'border-radius:4px;font-weight:600;">OUT</span>'
+            )
+        if obj.available <= obj.low_stock_threshold:
+            return format_html(
+                '<span style="background:#C8F031;color:#141414;padding:2px 8px;'
+                'border-radius:4px;font-weight:600;">LOW</span>'
+            )
+        return format_html('<span style="color:#63635C;">OK</span>')
 
 
 @admin.register(StockMovement, site=merchant_site)
