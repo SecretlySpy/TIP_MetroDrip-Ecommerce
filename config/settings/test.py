@@ -21,3 +21,11 @@ CACHES = {
 }
 
 NOTIFICATION_PROVIDER = "email_sms"
+
+# DummyCache also disables DRF throttle buckets suite-wide (they store counters
+# in the default cache), so unrelated tests can never poison each other's rate
+# windows. The dedicated 429 test opts back into a real locmem cache.
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,  # noqa: F405
+    "DEFAULT_THROTTLE_RATES": {"anon": "1000/min", "user": "1000/min", "auth-burst": "10/min"},
+}

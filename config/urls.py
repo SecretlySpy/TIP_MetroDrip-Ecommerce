@@ -29,6 +29,9 @@ urlpatterns = [
     path("merchant/", merchant_site.urls),
     # Storefront routes (Epic C): homepage, shop, product detail, cart.
     # Included last so admin/health/staging paths take precedence.
+    # Public mobile API (Epic H, D-12) — separate surface from the internal
+    # service endpoints; token-authenticated, throttled, versioned.
+    path("api/mobile/v1/", include("apps.mobile_api.urls")),
     path("api/", include("apps.payments.urls")),
     path("accounts/", include("apps.accounts.urls")),
     path("reviews/", include("apps.reviews.urls")),

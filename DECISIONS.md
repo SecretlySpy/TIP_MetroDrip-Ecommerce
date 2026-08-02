@@ -276,3 +276,45 @@
 - **Rationale:** Separates the catalog read-heavy workload from the write-heavy inventory ledger while preserving Hard Invariant 1 (No overselling).
 - **Consequences:** The \pps.inventory\ models remain in Django for now but are no longer directly queried by storefront views for live stock availability. Local dev requires running the FastAPI service and a Redis instance (added to docker-compose).
 
+
+## ADR-P3-002 — Inventory provider registry; `local` is the default
+
+- **Status:** Accepted (amends ADR-P3-001)
+- **Decision:** `apps/inventory/services.py` is a thin facade over an `InventoryProvider` chosen by `INVENTORY_PROVIDER` (`local` | `service`), mirroring the payments/shipping/notification registries. **`local` is the default.**
+- **Rationale:** The Strangler-Fig extraction replaced the row-locked in-process implementation outright, and the service does not yet honour the full contract: `commit_reservation` and `release_reservation` are fire-and-forget Redis publishes with no transactional guarantee, and `adjust_stock`, `release_expired_reservations`, and `scan_low_stock` were stubs that raised or returned empty. That silently broke Hard Invariants 1 and 4 — 19 tests, including the M2 no-oversell release gate, were failing.
+- **Consequences:** The proven Epic B implementation lives in `providers/local.py` and is what every environment runs unless explicitly opted out. `providers/service.py` preserves the HTTP/Redis client verbatim for continued microservice work, but `INVENTORY_PROVIDER = "service"` must not be used where the hard invariants are load-bearing until the service implements commits, adjustments, the TTL sweep, and the low-stock scan transactionally. Domain exceptions moved to `apps/inventory/exceptions.py` so providers and callers share one taxonomy.
+
+## ADR-H-001 — Public mobile API surface
+
+- **Status:** Accepted
+- **Decision:** The mobile app consumes a dedicated public API at `/api/mobile/v1/` (D-12), separate from the internal service-to-service endpoints. It is JWT-authenticated (SimpleJWT, 30-minute access / 30-day refresh with rotation + blacklist), throttled (120/min per user, 60/min anonymous, 10/min on credential endpoints), paginated at 20 items maximum (NFR-18), and requires an `X-Client-Version` header on every request (NFR-22).
+- **Rationale:** Internal endpoints assume a trusted network and carry no user-scoped auth, rate limiting, or versioning lifecycle. Exposing them publicly would be the single largest attack surface in the system (risk register).
+- **Consequences:** Every non-2xx response uses one documented envelope — `{"error": {"code", "message", "fields?"}}` — so the client switches on `code` and maps `fields` onto form inputs. Breaking changes ship as `/v2` with `/v1` maintained at least 90 days; the version header makes app-version correlation possible.
+
+## ADR-H-002 — One checkout service, many clients
+
+- **Status:** Accepted
+- **Decision:** `apps/orders/checkout.py::place_order()` is the single checkout implementation. The web storefront view and the mobile API endpoint are both thin callers that supply intent (variant ids, quantities, contact block, zone) and success/cancel URLs.
+- **Rationale:** D-13 forbids business logic on the device, but the real risk is *duplicated* logic on the server — two checkout paths would drift, and one of them would eventually oversell. Prices, totals, and stock decisions are computed once, in one place, inside one atomic block.
+- **Consequences:** Client-supplied prices and totals are ignored entirely (pinned by test). The mobile deep-link success URL is templated with `__TOKEN__` and substituted after the order row exists, because the signed status token needs the order id. Checkout retries up to three times on a MySQL deadlock (error 1213): the victim transaction rolls back completely, so rebuilding is safe and the 20-parallel-buyer gate stays deterministic.
+
+## ADR-H-003 — Simulated payment completion is server-gated
+
+- **Status:** Accepted
+- **Decision:** `POST /checkout/confirm-simulated/` exists only while `PAYMENT_PROVIDER == "simulated"`; under any real provider it returns 404. It calls the same idempotent `confirm_order_paid()` service the signature-verified webhook uses.
+- **Rationale:** The app must complete an end-to-end purchase in demo and grading environments without PayMongo credentials, while Hard Invariant 3 (webhooks are payment truth) stays intact everywhere deployed. Gating on the server — not on a client flag — means a tampered client cannot confirm its own payment.
+- **Consequences:** Pinned by two tests: the endpoint 404s under `paymongo`, and replaying it never double-decrements stock or resends notifications.
+
+## ADR-H-004 — Push notifications and the notification centre
+
+- **Status:** Accepted
+- **Decision:** `Order.transition_to()` fires a `transaction.on_commit` hook that writes a `Notification` row and pushes to the customer's registered devices; `Shipment.save()` does the same on the Out-for-Delivery edge (which has no order-status counterpart). Delivery goes through a `PUSH_PROVIDER` registry (`simulated` | `expo`), simulated by default.
+- **Rationale:** FR-27 requires push at Paid / Shipped / Out for Delivery / Delivered, and FR-28 requires the in-app centre to mirror them. Hooking the transition itself means every path — admin action, webhook, mock confirmation — notifies identically and only after the state change actually commits.
+- **Consequences:** Push failures are logged and swallowed; an outage can never fail or roll back a business transition (section 7 enhancement-tier rule). Guest orders (no customer row) are skipped silently. The centre's unread count is computed server-side across all pages, not per page.
+
+## ADR-H-005 — Mobile session storage and biometric unlock
+
+- **Status:** Accepted
+- **Decision:** The JWT pair lives exclusively in `expo-secure-store` (Keychain / Keystore). Biometric unlock (FR-23) is an opt-in gate applied on cold start *after* an initial password sign-in; it never replaces the password as the credential.
+- **Rationale:** NFR-19. Biometrics authorize access to an already-established session — treating them as a credential would mean the device, not the server, decides who you are.
+- **Consequences:** With the preference on, a stored session starts locked and the splash screen prompts. Failing or cancelling leaves the app usable as a guest. Logout blacklists the refresh token server-side and clears the enclave.

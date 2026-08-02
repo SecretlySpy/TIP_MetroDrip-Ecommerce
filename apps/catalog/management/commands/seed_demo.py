@@ -64,6 +64,12 @@ PRODUCT_SEEDS = (
         "base_price": 249900,
         "colors": (("Neon Lime", "NLIM"), ("Carbon Black", "CBLK")),
     },
+)
+
+# Auto-generated catalog padding for fuller demos. Seeded only with --full:
+# the canonical five-product contract above (ADR-A-012) is what QA gates,
+# CI persistence checks, and the staging preview assert against.
+EXTENDED_PRODUCT_SEEDS = (
     {
         "code": "S1",
         "name": "Sector Beanie 1",
@@ -553,7 +559,17 @@ FLATPAGE_SEEDS = (
 class Command(BaseCommand):
     """Create the complete demo variant matrix without rewriting live stock."""
 
-    help = "Seed five demo products with all size/color/fit variants and initial inventory."
+    help = (
+        "Seed the canonical five demo products (ADR-A-012) with all size/color/fit "
+        "variants and initial inventory. Pass --full to also seed the extended catalog."
+    )
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--full",
+            action="store_true",
+            help="Also seed the extended auto-generated catalog (demo-only).",
+        )
 
     def handle(self, *args, **options):
         """Create deterministic rows and report only rows created by this run."""
@@ -570,10 +586,12 @@ class Command(BaseCommand):
             "banners": 0,
         }
 
+        product_seeds = PRODUCT_SEEDS + (EXTENDED_PRODUCT_SEEDS if options.get("full") else ())
+
         # One transaction prevents a partially seeded catalog or a stock balance
         # without its matching audit entry if any later row fails to persist.
         with transaction.atomic():
-            for product_seed in PRODUCT_SEEDS:
+            for product_seed in product_seeds:
                 # Stable category slugs make reruns update descriptive seed fields
                 # while preserving the same database identity.
                 category, category_created = Category.objects.update_or_create(

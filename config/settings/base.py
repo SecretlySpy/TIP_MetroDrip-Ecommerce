@@ -5,6 +5,7 @@ utf8mb4 charset. Anything environment-specific (DEBUG, hosts, secrets) lives in
 dev.py / prod.py; secrets are only ever read from the environment (.env locally).
 """
 
+import datetime
 import os
 from pathlib import Path
 
@@ -52,6 +53,10 @@ INSTALLED_APPS = [
     "apps.reviews",
     "apps.cms",
     "apps.storefront",
+    # Public mobile API (Epic H / FR-21): DRF + JWT with refresh-token rotation.
+    "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
+    "apps.mobile_api",
 ]
 
 MIDDLEWARE = [
@@ -59,6 +64,8 @@ MIDDLEWARE = [
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # NFR-22: mobile requests must self-identify their app version.
+    "apps.mobile_api.middleware.MobileClientVersionMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -166,6 +173,11 @@ PAYMONGO_WEBHOOK_SECRET = os.environ.get("PAYMONGO_WEBHOOK_SECRET", "")
 # dev.py may enable it; prod.py refuses to boot with it on (fail closed).
 # Payment provider registry key (simulated | paymongo)
 PAYMENT_PROVIDER = "paymongo"
+# Inventory provider registry key (local | service). "local" is the row-locked
+# in-process implementation that upholds Hard Invariants 1 & 4; "service" opts
+# into the experimental D-07 FastAPI client, which does not yet implement
+# commits/adjustments/sweeps transactionally.
+INVENTORY_PROVIDER = os.environ.get("INVENTORY_PROVIDER", "local")
 # Shipping provider registry key (simulated | jnt)
 SHIPPING_PROVIDER = "jnt"
 # Notification provider registry key (console | email_sms)
@@ -190,3 +202,43 @@ CONTACT_ALERT_RECIPIENTS = [
 AUTH_USER_MODEL = "accounts.Customer"
 LOGIN_URL = "/accounts/login/"
 SITE_ID = 1
+
+# --- Public mobile API (Epic H: FR-21, NFR-18/NFR-22, D-12) ---
+# Separate surface from internal service-to-service /api/v1/: this one is
+# token-authenticated, throttled, versioned, and paginated at ≤ 20 items.
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "60/min",
+        "user": "120/min",
+        # Credential endpoints get a much tighter budget (H-1 risk register).
+        "auth-burst": "10/min",
+    },
+    "DEFAULT_PAGINATION_CLASS": "apps.mobile_api.pagination.MobilePageNumberPagination",
+    "PAGE_SIZE": 20,
+    "EXCEPTION_HANDLER": "apps.mobile_api.errors.mobile_exception_handler",
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "TEST_REQUEST_DEFAULT_FORMAT": "json",
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": datetime.timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": datetime.timedelta(days=30),
+    # Rotation + blacklist: a stolen refresh token dies on first legitimate use,
+    # and logout can revoke the pair (NFR-19 pairs with device secure storage).
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": False,
+}
+
+# Deep-link scheme the app registers; payment redirects land back in the app.
+MOBILE_APP_SCHEME = os.environ.get("MOBILE_APP_SCHEME", "metrodrip")
+# Push provider registry key (simulated | expo) — simulated logs, never sends.
+PUSH_PROVIDER = os.environ.get("PUSH_PROVIDER", "simulated")

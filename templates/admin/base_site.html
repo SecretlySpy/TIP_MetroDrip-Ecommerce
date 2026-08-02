@@ -195,6 +195,13 @@
   </style>
 {% endblock %}
 
+{# Stock base.html leaves `branding` empty; without this block the console's
+   site_header — including the "Administrator Login" / "Merchant Login"
+   headings on the login pages — never reaches the document at all. #}
+{% block branding %}
+  <h1 id="site-name">{{ site_header }}</h1>
+{% endblock %}
+
 {% block nav-sidebar %}
   <aside class="console-sidebar">
     <div class="console-sidebar__brand">
@@ -221,10 +228,11 @@
     
     <div class="console-sidebar__user">
       <div class="console-sidebar__avatar">
-        {{ user.username|make_list|first|upper }}
+        {# Customer has no `username` — email is the login identifier (ADR-A-003). #}
+        {{ user.name|default:user.email|slice:":1"|upper }}
       </div>
       <div>
-        <div class="console-sidebar__user-name">{{ user.get_full_name|default:user.username }}</div>
+        <div class="console-sidebar__user-name">{{ user.name|default:user.email }}</div>
         <div class="console-sidebar__user-meta">
           {% if site_header == 'MetroDrip Administration' %}ADMINISTRATOR{% else %}MERCHANT{% endif %} &middot; 2FA ON
         </div>

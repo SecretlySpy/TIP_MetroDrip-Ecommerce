@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "MetroDrip",
+    "slug": "metrodrip",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "metrodrip",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#FFFFFF",
+    "splash": {
+      "backgroundColor": "#141414"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "ph.metrodrip.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Unlock MetroDrip with Face ID."
+      }
+    },
+    "android": {
+      "package": "ph.metrodrip.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#141414"
+      }
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-local-authentication",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "default"
+        }
+      ]
+    ]
+  }
+}

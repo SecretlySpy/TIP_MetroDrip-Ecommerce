@@ -187,6 +187,16 @@ class Order(models.Model):
             # locked path; no caller-controlled bypass flag is exposed on save().
             super(Order, locked).save(using=database, update_fields=["status"])
 
+            # FR-27: every committed lifecycle transition notifies the shopper.
+            # on_commit + the notifier's own exception guard keep enhancement-
+            # tier delivery from ever failing or rolling back a transition.
+            def _dispatch(order=self, status=target):
+                from apps.notifications.push import notify_order_event
+
+                notify_order_event(order, status)
+
+            transaction.on_commit(_dispatch, using=database)
+
         # Keep the caller usable even if it was stale before the locked read.
         self.status = target
         return self
