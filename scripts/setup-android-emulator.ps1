@@ -127,6 +127,34 @@ foreach ($license in $LicenseHashes.GetEnumerator()) {
 }
 Write-Host "Wrote $($LicenseHashes.Count) licence files to $licenseDir"
 
+# --- 3b. Self-update the command-line tools ------------------------------------
+# The bootstrap zip pinned above ships an avdmanager that only understands SDK
+# repository XML up to version 3. Current system images publish version 4, and
+# the mismatch is NOT fatal — avdmanager prints a warning and then writes an
+# AVD config with `target`, `tag.ids`, and `tag.displaynames` left EMPTY. Such
+# an AVD starts qemu and then hangs at `offline` forever. Upgrading the tools
+# first is what actually prevents that.
+Write-Step "Updating command-line tools to the current release"
+$previousPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$xmlWarning = & $AvdManager list target 2>&1 | Select-String -Pattern 'only understands SDK XML'
+if ($xmlWarning) {
+    Write-Host "Bootstrap tools are stale; installing cmdline-tools;latest ..."
+    & $SdkManager --install "cmdline-tools;latest" --sdk_root="$Sdk" 2>&1 |
+        Where-Object { $_ -notmatch '^\[=*\s*\]' -and $_ -notmatch '^\s*$' } | Select-Object -Last 2
+    # sdkmanager refuses to overwrite the directory it is running from and
+    # drops the new build in `latest-2`; move it into place.
+    $staged = Join-Path $Sdk "cmdline-tools\latest-2"
+    if (Test-Path $staged) {
+        Remove-Item (Join-Path $Sdk "cmdline-tools\latest") -Recurse -Force
+        Move-Item $staged (Join-Path $Sdk "cmdline-tools\latest")
+        Write-Host "Command-line tools updated."
+    }
+} else {
+    Write-Host "Command-line tools are current."
+}
+$ErrorActionPreference = $previousPreference
+
 # --- 4. Packages --------------------------------------------------------------
 Write-Step "Installing SDK packages (this is the long part)"
 # package name -> a path that must exist afterwards, so a silent failure is
