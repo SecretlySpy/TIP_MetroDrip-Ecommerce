@@ -611,8 +611,8 @@
         <li>Docker</li>
       </ul>
       <p class="tagline" style="font-size:0.875rem;">
-        Last verified against the storefront on 28 July 2026 — including the two-level category
-        navigation and the branded admin.
+        Last verified against the storefront on 3 August 2026 — including dual consoles, demo
+        logins, category navigation, and the mobile API.
       </p>
     </div>
   </header>
@@ -629,7 +629,8 @@
       <a href="#database">5 · Database</a>
       <a href="#migrate">6 · Data</a>
       <a href="#run">7 · Run</a>
-      <a href="#admin">8 · Admin</a>
+      <a href="#admin">8 · Accounts</a>
+      <a href="#demo-logins">Demo logins</a>
       <a href="#verify">9 · Verify</a>
       <a href="#tests">10 · Tests</a>
       <a href="#stop">11 · Stop</a>
@@ -1179,55 +1180,131 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
     </section>
 
-    <!-- ============================== 8. ADMIN ============================== -->
+    <!-- ============================== 8. ACCOUNTS ============================== -->
     <section id="admin">
       <div class="section-head">
         <span class="step-num">Step 8</span>
-        <h2 class="section-title">Create an admin account</h2>
+        <h2 class="section-title">Create demo accounts (customer, merchant, admin)</h2>
       </div>
 
       <p>
-        The storefront is the customer's view. The <strong>admin site</strong> is the staff view, where you manage
-        products, stock, and orders. You need to create a superuser before you can log in.
+        MetroDrip has <strong>three login surfaces</strong>. Shoppers use the storefront account pages.
+        Staff use two separate consoles: <strong>Merchant</strong> (<code>/merchant/</code>) for catalog,
+        stock, and orders, and <strong>Administrator</strong> (<code>/admin/</code>) for accounts, roles,
+        and shipping fees. A merchant cannot sign into the admin console and vice versa.
       </p>
 
-      <p>Open a <strong>second terminal</strong> in the same folder (leave the server running) and run:</p>
+      <p>
+        <code>seed_demo</code> loads products only — it does <strong>not</strong> create users. Open a
+        <strong>second terminal</strong> in the project folder (leave the server running) and create the
+        three local demo accounts below.
+      </p>
+
+      <h3 id="demo-logins">Local demo credentials</h3>
+      <p>
+        Use these on your own machine only. They match the accounts created by the commands in this step.
+        Never reuse them on a public or staging host.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Role</th><th>Email</th><th>Password</th><th>Login URL</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Customer (shopper)</td>
+              <td><code>customer@metrodrip.test</code></td>
+              <td><code>MetroDrip!Shopper99</code></td>
+              <td><code>http://127.0.0.1:8000/accounts/login/</code></td>
+            </tr>
+            <tr>
+              <td>Merchant / Seller</td>
+              <td><code>merchant@metrodrip.test</code></td>
+              <td><code>Str33twear#Console1</code></td>
+              <td><code>http://127.0.0.1:8000/merchant/</code></td>
+            </tr>
+            <tr>
+              <td>Administrator</td>
+              <td><code>admin@metrodrip.test</code></td>
+              <td><code>Str33twear#Console1</code></td>
+              <td><code>http://127.0.0.1:8000/admin/</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--tip">
+        <span class="note__label">Email is the username</span>
+        <p>
+          Console and storefront logins use <strong>email</strong>, not a separate username field. Paste the
+          full address into the email box.
+        </p>
+      </div>
+
+      <h3>Create the administrator and merchant consoles</h3>
+      <p>
+        Prefer <code>create_console_account</code> over <code>createsuperuser</code> when you want to prove
+        console separation. Superusers can open both consoles and therefore do not demonstrate the FR-22
+        boundary.
+      </p>
 
       <div class="only-win">
-        <div class="code"><pre><code>.venv/Scripts/python manage.py createsuperuser</code></pre></div>
+        <div class="code"><pre><code>.venv/Scripts/python manage.py create_console_account --role administrator `
+  --email admin@metrodrip.test --name "Demo Admin" --password "Str33twear#Console1"
+.venv/Scripts/python manage.py create_console_account --role merchant `
+  --email merchant@metrodrip.test --name "Demo Merchant" --password "Str33twear#Console1"
+.venv/Scripts/python manage.py sync_console_roles</code></pre></div>
       </div>
       <div class="only-mac">
-        <div class="code"><pre><code>.venv/bin/python manage.py createsuperuser</code></pre></div>
+        <div class="code"><pre><code>.venv/bin/python manage.py create_console_account --role administrator \
+  --email admin@metrodrip.test --name "Demo Admin" --password 'Str33twear#Console1'
+.venv/bin/python manage.py create_console_account --role merchant \
+  --email merchant@metrodrip.test --name "Demo Merchant" --password 'Str33twear#Console1'
+.venv/bin/python manage.py sync_console_roles</code></pre></div>
       </div>
       <div class="only-linux">
-        <div class="code"><pre><code>.venv/bin/python manage.py createsuperuser</code></pre></div>
+        <div class="code"><pre><code>.venv/bin/python manage.py create_console_account --role administrator \
+  --email admin@metrodrip.test --name "Demo Admin" --password 'Str33twear#Console1'
+.venv/bin/python manage.py create_console_account --role merchant \
+  --email merchant@metrodrip.test --name "Demo Merchant" --password 'Str33twear#Console1'
+.venv/bin/python manage.py sync_console_roles</code></pre></div>
       </div>
 
       <p>
-        It asks for an <strong>email address</strong> (not a username — MetroDrip uses email to log in), a
-        <strong>name</strong>, and a password. The password is invisible as you type; that is normal.
+        <code>sync_console_roles</code> attaches the right Django group permissions so each console is not empty.
+        Re-run it any time after you move models between consoles.
       </p>
 
-      <p>Then log in at:</p>
-      <div class="code"><pre><code><span class="p">http://127.0.0.1:8000/admin/</span></code></pre></div>
+      <h3>Create the shopper account</h3>
+      <div class="only-win">
+        <div class="code"><pre><code>.venv/Scripts/python manage.py shell -c "from apps.accounts.models import Customer; u, _ = Customer.objects.get_or_create(email='customer@metrodrip.test', defaults={'name': 'Demo Shopper'}); u.set_password('MetroDrip!Shopper99'); u.save(); print('ok', u.email)"</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>.venv/bin/python manage.py shell -c "from apps.accounts.models import Customer; u, _ = Customer.objects.get_or_create(email='customer@metrodrip.test', defaults={'name': 'Demo Shopper'}); u.set_password('MetroDrip!Shopper99'); u.save(); print('ok', u.email)"</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>.venv/bin/python manage.py shell -c "from apps.accounts.models import Customer; u, _ = Customer.objects.get_or_create(email='customer@metrodrip.test', defaults={'name': 'Demo Shopper'}); u.set_password('MetroDrip!Shopper99'); u.save(); print('ok', u.email)"</code></pre></div>
+      </div>
+
+      <p>Or register interactively at <code>http://127.0.0.1:8000/accounts/register/</code> with any email you control.</p>
 
       <div class="note">
-        <span class="note__label">Scripted version</span>
-        <p>If you want to create it without answering prompts — handy for a demo machine — both <code>--email</code> and <code>--name</code> are required:</p>
+        <span class="note__label">Optional superuser</span>
+        <p>
+          For a break-glass account that can open both consoles, run <code>createsuperuser</code> instead.
+          That is convenient for debugging, but it is <strong>not</strong> a substitute for the scoped merchant
+          and administrator accounts above when you demo console separation.
+        </p>
         <div class="only-win">
-          <div class="code"><pre><code>$env:DJANGO_SUPERUSER_PASSWORD="admin12345"
-.venv/Scripts/python manage.py createsuperuser --noinput `
-  --email admin@metrodrip.test --name "Local Admin"</code></pre></div>
+          <div class="code"><pre><code>.venv/Scripts/python manage.py createsuperuser</code></pre></div>
         </div>
         <div class="only-mac">
-          <div class="code"><pre><code>DJANGO_SUPERUSER_PASSWORD=admin12345 .venv/bin/python manage.py createsuperuser \
-  --noinput --email admin@metrodrip.test --name "Local Admin"</code></pre></div>
+          <div class="code"><pre><code>.venv/bin/python manage.py createsuperuser</code></pre></div>
         </div>
         <div class="only-linux">
-          <div class="code"><pre><code>DJANGO_SUPERUSER_PASSWORD=admin12345 .venv/bin/python manage.py createsuperuser \
-  --noinput --email admin@metrodrip.test --name "Local Admin"</code></pre></div>
+          <div class="code"><pre><code>.venv/bin/python manage.py createsuperuser</code></pre></div>
         </div>
-        <p>Use a throwaway password like this only on your own machine.</p>
       </div>
 
       <figure>
@@ -1235,10 +1312,9 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
              alt="The MetroDrip Administration dashboard after logging in, listing the Accounts, Authentication and Authorization, Catalog, CMS, Flat pages, and Inventory sections."
              loading="lazy" width="1600" height="1075">
         <figcaption>
-          The admin dashboard after a successful login. Every app appears here — Catalog for products and
-          categories, Inventory for stock records and movements, and Orders further down the page. The login
-          screen is headed <em>Administrator Login</em>; everything past it is branded
-          <em>MetroDrip Administration</em>.
+          The administrator dashboard after a successful login at <code>/admin/</code>. The login screen is
+          headed <em>Administrator Login</em>. Merchants use a separate console at <code>/merchant/</code>
+          with its own login page.
         </figcaption>
       </figure>
     </section>
@@ -1265,9 +1341,10 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
             <tr><td>Product detail</td><td><code>/shop/&lt;product-slug&gt;/</code></td><td>Sizes, colours, add-to-cart</td></tr>
             <tr><td>Cart</td><td><code>/cart/</code></td><td>Empty cart, or your items</td></tr>
             <tr><td>Contact</td><td><code>/contact/</code></td><td>Contact form</td></tr>
-            <tr><td>Login</td><td><code>/accounts/login/</code></td><td>Customer sign-in form</td></tr>
+            <tr><td>Login</td><td><code>/accounts/login/</code></td><td>Customer sign-in — use <code>customer@metrodrip.test</code></td></tr>
             <tr><td>Register</td><td><code>/accounts/register/</code></td><td>Customer sign-up form</td></tr>
-            <tr><td>Admin</td><td><code>/admin/</code></td><td>Staff login, then the dashboard</td></tr>
+            <tr><td>Merchant console</td><td><code>/merchant/</code></td><td>Merchant login — use <code>merchant@metrodrip.test</code></td></tr>
+            <tr><td>Administrator console</td><td><code>/admin/</code></td><td>Admin login — use <code>admin@metrodrip.test</code></td></tr>
             <tr><td>Health check</td><td><code>/healthz/ready/</code></td><td><code>{"status": "ok"}</code></td></tr>
           </tbody>
         </table>
@@ -1583,7 +1660,9 @@ docker compose up -d db --wait
             <tr><td><code>manage.py seed_mock_catalog</code></td><td>Fill every subcategory with placeholder products</td></tr>
             <tr><td><code>manage.py seed_mock_catalog --dry-run</code></td><td>Preview that plan without writing</td></tr>
             <tr><td><code>manage.py runserver</code></td><td>Start the web server on port 8000</td></tr>
-            <tr><td><code>manage.py createsuperuser</code></td><td>Create an admin account</td></tr>
+            <tr><td><code>manage.py create_console_account</code></td><td>Create merchant or administrator (scoped console)</td></tr>
+            <tr><td><code>manage.py sync_console_roles</code></td><td>Attach group permissions to console roles</td></tr>
+            <tr><td><code>manage.py createsuperuser</code></td><td>Optional break-glass superuser (both consoles)</td></tr>
             <tr><td><code>manage.py check</code></td><td>Look for configuration problems</td></tr>
             <tr><td><code>manage.py run_scheduler</code></td><td>Start the background job runner</td></tr>
             <tr><td><code>manage.py shell</code></td><td>Open an interactive Python session with the project loaded</td></tr>
@@ -1608,7 +1687,10 @@ docker compose up -d db --wait
 [ ] Browse Categories opens and lists Men / Women per category
 [ ] A subcategory link returns the count shown beside it
 [ ] http://127.0.0.1:8000/healthz/ready/ returns {"status": "ok"}
-[ ] Superuser created and /admin/ login works</code></pre></div>
+[ ] Demo accounts created (customer / merchant / admin) — see Step 8
+[ ] /accounts/login/ works with customer@metrodrip.test
+[ ] /merchant/ works with merchant@metrodrip.test
+[ ] /admin/ works with admin@metrodrip.test</code></pre></div>
     </section>
 
     <!-- ============================== DOCS ============================== -->
