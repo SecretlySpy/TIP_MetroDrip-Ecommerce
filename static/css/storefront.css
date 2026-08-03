@@ -1801,13 +1801,14 @@ h5 { font-size: 1rem; }
     --color-border:         #2E2E2C;
     --color-danger:         #FF7B7E;
     --color-danger-hover:   #FF9497;
-    --color-warning:        #E6C35C;
+    /* warning/rating on elevated (#252524): #F0D070 ≈ 9:1 AA large / 4.5+ body */
+    --color-warning:        #F0D070;
     --color-warning-bg:     #3A3218;
     --color-success-bg:     #163528;
     --color-danger-bg:      #3A1A1C;
     --color-on-volt:        #141414;
     --color-accent-text:    #D4FF3F;
-    --color-rating:         #E6C35C;
+    --color-rating:         #F0D070;
   }
 }
 
@@ -1825,13 +1826,13 @@ h5 { font-size: 1rem; }
   --color-border:         #2E2E2C;
   --color-danger:         #FF7B7E;
   --color-danger-hover:   #FF9497;
-  --color-warning:        #E6C35C;
+  --color-warning:        #F0D070;
   --color-warning-bg:     #3A3218;
   --color-success-bg:     #163528;
   --color-danger-bg:      #3A1A1C;
   --color-on-volt:        #141414;
   --color-accent-text:    #D4FF3F;
-  --color-rating:         #E6C35C;
+  --color-rating:         #F0D070;
 }
 
 /* Ink-band inversion trap: sections that are ink-filled in light mode. */

@@ -1,13 +1,33 @@
-# Local development database only — the app itself runs on the host (runserver).
-# MySQL 8 LTS with the charset invariant pinned server-side (Hard Invariant 6).
+# Local development stack.
+# - db + redis: always on (Django on the host uses these).
+# - notifications / fulfillment / inventory: strangler sidecars (profile: services).
+#   Django defaults remain in-process. Activate with:
+#     docker compose --profile services up -d
+#     NOTIFICATION_PROVIDER=http NOTIFICATION_SERVICE_URL=http://127.0.0.1:8002
+#     SHIPPING_PROVIDER=http SHIPPING_SERVICE_URL=http://127.0.0.1:8003
+#     INVENTORY_PROVIDER=service  # experimental — keep local for M2
+#
+# Smoke: scripts/smoke-services.sh
+# MySQL 8 LTS with charset invariant pinned server-side (Hard Invariant 6).
+
+name: metrodrip
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: mysql:8.4
     container_name: metrodrip-mysql
+    logging: *default-logging
     command:
       - mysqld
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
+      - --default-storage-engine=InnoDB
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: metrodrip
@@ -17,14 +37,198 @@ services:
       - "3306:3306"
     volumes:
       - dbdata:/var/lib/mysql
-      # Grants the app user rights over pytest's test_* databases.
       - ./docker/mysql-init.sql:/docker-entrypoint-initdb.d/grants.sql:ro
-  
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
   redis:
     image: redis:7-alpine
     container_name: metrodrip-redis
+    logging: *default-logging
     ports:
       - "6379:6379"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # --- Strangler sidecars (profile: services) — internal only via Caddy ---
+  notifications:
+    profiles: ["services"]
+    image: metrodrip-services:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.services
+    container_name: metrodrip-notifications
+    logging: *default-logging
+    command:
+      [
+        "uvicorn",
+        "services.notifications.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8002",
+        "--access-log",
+      ]
+    environment:
+      LOG_LEVEL: INFO
+      NOTIFICATION_SERVICE_TOKEN: "${NOTIFICATION_SERVICE_TOKEN:-}"
+      PUSH_PROVIDER: "${PUSH_PROVIDER:-simulated}"
+    expose:
+      - "8002"
+    ports:
+      # Host-mapped for local Django → sidecar smoke only; staging Caddy keeps them internal.
+      - "8002:8002"
+    networks:
+      - backend
+      - internal
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/healthz/ready', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  fulfillment:
+    profiles: ["services"]
+    image: metrodrip-services:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.services
+    container_name: metrodrip-fulfillment
+    logging: *default-logging
+    command:
+      [
+        "uvicorn",
+        "services.fulfillment.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8003",
+        "--access-log",
+      ]
+    environment:
+      LOG_LEVEL: INFO
+      SHIPPING_SERVICE_TOKEN: "${SHIPPING_SERVICE_TOKEN:-}"
+    expose:
+      - "8003"
+    ports:
+      - "8003:8003"
+    networks:
+      - backend
+      - internal
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/healthz/ready', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  inventory:
+    profiles: ["services"]
+    image: metrodrip-services:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.services
+    container_name: metrodrip-inventory
+    logging: *default-logging
+    command:
+      [
+        "uvicorn",
+        "services.inventory.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8001",
+        "--access-log",
+      ]
+    environment:
+      LOG_LEVEL: INFO
+      MYSQL_USER: metrodrip
+      MYSQL_PASSWORD: metrodrip
+      MYSQL_HOST: db
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE_INVENTORY: metrodrip_inventory
+      REDIS_URL: redis://redis:6379/0
+      # Experimental: tolerate missing schema / redis during smoke.
+      SKIP_CREATE_ALL: "${INVENTORY_SKIP_CREATE_ALL:-0}"
+      INVENTORY_DISABLE_REDIS: "${INVENTORY_DISABLE_REDIS:-0}"
+      INVENTORY_READY_SKIP_DB: "${INVENTORY_READY_SKIP_DB:-0}"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8001"
+    ports:
+      - "8001:8001"
+    networks:
+      - backend
+      - internal
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/healthz/ready', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 25s
+
+  # Internal-only reverse proxy for service routes (never bind public 80/443 here).
+  # Hit from the Docker network as http://caddy-internal:9080/internal/...
+  caddy-internal:
+    profiles: ["services"]
+    image: caddy:2-alpine
+    container_name: metrodrip-caddy-internal
+    logging: *default-logging
+    volumes:
+      - ./deploy/Caddyfile.internal:/etc/caddy/Caddyfile:ro
+    expose:
+      - "9080"
+    # Loopback-only publish so demos can curl from the host without opening LAN.
+    ports:
+      - "127.0.0.1:9080:9080"
+    depends_on:
+      notifications:
+        condition: service_healthy
+      fulfillment:
+        condition: service_healthy
+      inventory:
+        condition: service_healthy
+    networks:
+      - internal
+
+networks:
+  backend:
+  internal:
+    internal: false
 
 volumes:
   dbdata:

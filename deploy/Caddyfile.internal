@@ -1,0 +1,42 @@
+# Internal service gateway — NOT public ingress.
+# Bound to :9080 on the Compose network (and optionally 127.0.0.1:9080 on host).
+# Routes under /internal/* are never registered on the public staging Caddyfile.
+{
+	admin off
+	auto_https off
+}
+
+:9080 {
+	encode zstd gzip
+
+	# Correlation id: prefer inbound header, else mint one for log correlation.
+	# Caddy cannot mint UUIDs natively; clients (Django adapters) send X-Correlation-ID.
+
+	handle /internal/notifications/* {
+		uri strip_prefix /internal/notifications
+		reverse_proxy notifications:8002
+	}
+
+	handle /internal/fulfillment/* {
+		uri strip_prefix /internal/fulfillment
+		reverse_proxy fulfillment:8003
+	}
+
+	handle /internal/inventory/* {
+		uri strip_prefix /internal/inventory
+		reverse_proxy inventory:8001
+	}
+
+	handle /internal/healthz {
+		respond "ok" 200
+	}
+
+	handle {
+		respond "not found — internal routes only" 404
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

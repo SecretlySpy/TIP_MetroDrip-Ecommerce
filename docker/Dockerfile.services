@@ -1,0 +1,33 @@
+# Multi-service FastAPI image for MetroDrip strangler sidecars.
+# One image, three entrypoints (notifications | fulfillment | inventory).
+# Defaults stay OFF — Django uses in-process providers unless env flips them.
+FROM python:3.14-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+ARG APP_UID=10001
+ARG APP_GID=10001
+RUN groupadd --gid "${APP_GID}" metrodrip \
+    && useradd --uid "${APP_UID}" \
+        --gid "${APP_GID}" \
+        --create-home \
+        --no-log-init \
+        --shell /usr/sbin/nologin \
+        metrodrip
+
+WORKDIR /app
+
+# Minimal deps for the three FastAPI sidecars (no Django required at runtime).
+COPY docker/services-requirements.txt ./requirements-services.txt
+RUN python -m pip install -r requirements-services.txt
+
+COPY services ./services
+
+USER ${APP_UID}:${APP_GID}
+
+# Default entrypoint overridden per Compose service.
+EXPOSE 8002
+CMD ["uvicorn", "services.notifications.main:app", "--host", "0.0.0.0", "--port", "8002"]

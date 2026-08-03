@@ -27,7 +27,7 @@ Version 1.1 amended v1.0 to satisfy the IT 009 Project Checklist (customer accou
 
 **Shipped today:** a **service-oriented modular monolith** — Django apps with clear bounded contexts, one deployable, one MySQL 8 instance, provider adapters for payments/shipping/notifications/inventory. The public mobile API and Expo client are first-class clients of that monolith.
 
-**In progress (strangler, not claimed as done):** optional FastAPI sidecars under `services/` — inventory (experimental, default still `INVENTORY_PROVIDER=local`) and notifications **delivery** only (`NOTIFICATION_PROVIDER=http` opt-in). Inbox tables, stock ownership, and checkout atomicity remain in Django. Target service map and migration order: `DECISIONS.md` ADR-P3-003. No message broker, no service mesh, no Kubernetes in v1.
+**In progress (strangler):** FastAPI sidecars under `services/` — `notifications` (delivery), `fulfillment` (booking), `inventory` (experimental). Compose profile `services` + internal Caddy (`deploy/Caddyfile.internal`) make them demonstrable; **defaults remain in-process**. Stock ownership and checkout atomicity remain in Django. See ADR-P3-003…P3-007. No message broker, no service mesh, no Kubernetes in v1.
 
 ## 2. Tech Stack (Locked)
 
@@ -52,6 +52,36 @@ Version 1.1 amended v1.0 to satisfy the IT 009 Project Checklist (customer accou
 5. **Order state machine enforced in code.** `Pending → Paid → Packed → Shipped → Delivered`, plus `Cancelled`/`Refunded`. Illegal transitions must raise.
 6. **MySQL: InnoDB + utf8mb4 from the first migration.** Never MyISAM, never legacy utf8.
 7. Card data never touches the server — PayMongo hosted checkout/elements only.
+
+
+### 3.1 Runtime architecture (as running)
+
+```
+[ Expo client ]──JWT──▶ /api/mobile/v1/ ─┐
+[ Browser     ]─HTMX──▶ Django storefront ├─▶ MySQL 8 (InnoDB, utf8mb4)
+[ Merchant    ]───────▶ /merchant/        │      single instance
+[ Admin       ]───────▶ /admin/           ┘
+                              │ opt-in HTTP (defaults OFF)
+                              ├─▶ notifications:8002  (email/SMS/push I/O)
+                              ├─▶ fulfillment:8003    (waybill booking I/O)
+                              └─▶ inventory:8001      (experimental; local default)
+Public Caddy → app:8000 only. Internal Caddy :9080 → /internal/* sidecars.
+```
+
+**Accuracy:** this is a **service-oriented modular monolith with bounded contexts, migrating to microservices via the strangler pattern**. Sidecars are containerized and health-checked; they are not the default write path for stock or checkout.
+
+### 3.3.3 Mobile Application Modules
+
+| Module | Path | Role |
+|---|---|---|
+| API client | `mobile/src/api/` | Fetch + SecureStore tokens + OfflineError |
+| Screens M01–M11 | `mobile/src/screens/` | Figma-mapped UI |
+| Navigation | `mobile/src/navigation/` | 5-tab bar + stack |
+| Theme | `mobile/src/theme/` | Tokens; light/dark |
+| Push hook | `mobile/src/hooks/usePushRegistration.ts` | Device reg + deep links |
+| Auth | `mobile/src/store/AuthContext.tsx` | Session + biometric gate |
+| Cart | `mobile/src/store/CartContext.tsx` | Client cart; server prices at checkout |
+
 
 ## 4. Data Model
 
@@ -94,6 +124,18 @@ Customer 1──* Review *──1 Product   (verified purchase only)
 - `Customer.clean()` rejects a console role paired with `is_staff = False`, the same validation-only pattern `Category.clean()` uses. The runtime boundary is `ConsoleSite.has_permission`, checked on every console request.
 
 
+
+### 4.1 Clients and providers
+
+| Consumer / provider | Role |
+|---|---|
+| Web storefront | Django templates + HTMX/Alpine |
+| Mobile client | Expo app → `/api/mobile/v1/` |
+| Push provider | `PUSH_PROVIDER=simulated\|expo` via `apps/notifications/push.py` |
+| Payment provider | PayMongo or simulated |
+| Shipping provider | jnt / simulated / http (fulfillment sidecar) |
+| Notification provider | console / email_sms / http |
+
 ## 5. Functional Requirements
 
 | ID | Requirement |
@@ -121,6 +163,25 @@ Customer 1──* Review *──1 Product   (verified purchase only)
 | FR-21 | **Added v1.2.** Global category navigation: a "Browse Categories" disclosure in the site header listing every main category, an "All \<Category\>" link, and its Men/Women children with live active-product counts. The same two levels replace the flat category chips in the shop filter panel. Selecting a main category returns its directly-assigned products **plus** every child's; selecting a child returns only its own. Category, size, colour, fit, price, search, and sort all survive filtering and pagination |
 | FR-22 | **Added v1.3.** The back office is two separate consoles. `/merchant/` holds catalog, variants, stock and the movement ledger, orders, payments, shipments, banners, flat pages, contact messages, and review moderation. `/admin/` holds customer accounts, roles and groups, shipping fees, and the audit trail. Every model belongs to exactly one console. Each console has its own login page and rejects the other console's credentials with an explanatory message rather than a redirect loop. A signed-in user who reaches the wrong console gets a 403 page naming the console they own; guessing the other console's model URL returns 404. Only superusers may change roles, staff/superuser status, groups, or permissions, and nobody may change their own |
 
+### 5.1 Mobile Application Requirements (Epic H / §12A)
+
+> **ID note:** web FR-21/FR-22 (category nav / dual consoles) predate Epic H. Mobile requirements reuse FR-21…FR-31 in §12A. Cite the surface (web vs mobile) when referring to an ID.
+
+| ID | Requirement (mobile) |
+|---|---|
+| FR-21 | Public JWT API at `/api/mobile/v1/` — catalog, cart, checkout, orders, account, wishlist, reviews, notifications |
+| FR-22 | Registration, sign-in, sign-out, password reset, guest checkout at web parity |
+| FR-23 | Opt-in biometric unlock after password sign-in |
+| FR-24 | Browse/search/filter/sort; product detail with variants, stock, reviews |
+| FR-25 | Cart + stepped checkout with **server-validated** pricing and stock |
+| FR-26 | Order history + live tracking timeline from server state machine |
+| FR-27 | Push on Paid / Shipped / Out for Delivery / Delivered |
+| FR-28 | In-app notification centre with read/unread |
+| FR-29 | Wishlist + notify-me on OOS |
+| FR-30 | Offline degradation: cached browse, offline banner, explicit retry |
+| FR-31 | Dark mode (OS + manual override) |
+
+
 ## 6. Non-Functional Requirements
 
 - NFR-1 Performance: LCP < 2.5s on 4G mobile; cache catalog pages (`cache_page`)
@@ -133,6 +194,18 @@ Customer 1──* Review *──1 Product   (verified purchase only)
 - NFR-8 **Added v1.2.** The category disclosure meets WCAG 2.2 AA interaction expectations — semantic `<details>`/`<summary>` (so it works with JavaScript disabled), visible focus, Escape and outside-click closing, no hover-only behaviour, usable at 320 CSS px with ~44 px touch targets
 - NFR-9 **Added v1.3.** Console authorization is deny-by-default and verified server-side on every request, never by hiding interface controls. The role check runs in `AdminSite.has_permission` before any view body; revoking `is_active`, `is_staff`, or the role takes effect on the **next request**, not at the next login. Model ownership is enforced by disjoint registries, so the other console's URLs are not merely forbidden — they are unrouted
 - NFR-10 **Added v1.3.** Any page that renders per-user chrome and is also page-cached must vary on cookie. `cache_page` stores a response *before* `SessionMiddleware` adds `Vary: Cookie`, so the header alone is not sufficient and asserting its presence is not a valid regression test (ADR-C-004)
+
+### 6.1 Mobile Non-Functional Requirements (Epic H)
+
+| ID | Attribute | Requirement |
+|---|---|---|
+| NFR-17 | Mobile performance | Cold start ≤ 3s mid-range Android; lists ≥ 55 FPS |
+| NFR-18 | API efficiency | ≤ 3 round-trips/screen; lists paginated ≤ 20 |
+| NFR-19 | Mobile security | Tokens in SecureStore (Keychain/Keystore) only; no PII in device logs; payment via provider hosted flow (card data never on device/server) |
+| NFR-20 | Mobile accessibility | ≥ 44×44 pt targets; screen-reader labels; WCAG 2.2 AA; Dynamic Type to 200% |
+| NFR-21 | Platform support | iOS 15+ / Android 8 (API 26)+ |
+| NFR-22 | API compatibility | `/api/mobile/v1/` backward-compatible for released app life; breaks ship as `/v2` |
+
 
 ## 7. External APIs (5) + Inbound Webhooks (2)
 
@@ -178,6 +251,14 @@ metrodrip/
 ├── templates/admin/console_denied.html         # wrong-console 403 page (v1.3)
 ├── templates/  static/  jobs/  tests/
 ├── index.html  .nojekyll  docs/images/   # GitHub Pages setup guide (v1.2)
+├── services/
+│   ├── notifications/   # FastAPI delivery sidecar (opt-in)
+│   ├── fulfillment/     # FastAPI booking sidecar (opt-in)
+│   └── inventory/       # FastAPI stock experiment (default OFF)
+├── mobile/              # Expo RN customer app
+├── docker/Dockerfile.services
+├── deploy/Caddyfile     # public → Django only
+├── deploy/Caddyfile.internal  # /internal/* sidecars
 └── requirements.txt
 ```
 

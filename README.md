@@ -58,6 +58,10 @@ uvicorn services.notifications.main:app --reload --port 8002
 # Fulfillment booking only (waybill I/O). Opt-in:
 #   SHIPPING_PROVIDER=http SHIPPING_SERVICE_URL=http://127.0.0.1:8003
 uvicorn services.fulfillment.main:app --reload --port 8003
+
+# Or run all three sidecars in Docker (Compose profile `services`):
+docker compose --profile services up -d --build
+bash scripts/smoke-services.sh
 ```
 
 ### Mobile app

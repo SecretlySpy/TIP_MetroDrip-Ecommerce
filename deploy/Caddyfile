@@ -5,6 +5,9 @@
 	admin off
 }
 
+# Public staging ingress ONLY. Strangler FastAPI sidecars are NOT routed here —
+# they live on deploy/Caddyfile.internal (:9080, Compose network / loopback).
+# Never expose /internal/* or service ports 8001–8003 on the public host.
 {$STAGING_HOST} {
 	# Compression reduces transfer size while Caddy negotiates the best encoding
 	# supported by each browser.

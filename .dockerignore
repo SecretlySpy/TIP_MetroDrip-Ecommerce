@@ -27,6 +27,7 @@ htmlcov
 
 # Development-only inputs are excluded to keep the staging image focused.
 tests
-docker
 docker-compose.yml
 *.md
+# docker/ is allowed so Dockerfile.services can COPY services-requirements.txt
+# and mysql-init stays available for compose volume mounts from the host.

@@ -393,3 +393,25 @@
 - **Decision:** Opt-in `SHIPPING_PROVIDER=http` posts booking DTOs to `services/fulfillment` (`POST /v1/shipments/book`). Django keeps `Shipment` rows and applies waybill fields on success. Default remains `jnt` / `simulated`.
 - **Rationale:** Same pattern as notifications delivery: extract I/O, keep domain state in the monolith, never flip default until parity.
 - **Consequences:** Courier webhook, zones, and OFD push stay in Django. Manual waybill remains the failure fallback.
+
+
+## ADR-P3-006 — Containerized strangler sidecars (Compose profile `services`)
+
+- **Status:** Accepted
+- **Decision:** `notifications`, `fulfillment`, and `inventory` FastAPI processes ship as Compose services under profile `services`, built from `docker/Dockerfile.services`. Public staging Caddy (`deploy/Caddyfile`) continues to reverse-proxy **only** the Django app. Internal routes live on `deploy/Caddyfile.internal` (:9080, loopback publish) under `/internal/{notifications,fulfillment,inventory}/*`.
+- **Defaults:** Django still uses in-process providers. Opt-in only via `NOTIFICATION_PROVIDER=http`, `SHIPPING_PROVIDER=http`, `INVENTORY_PROVIDER=service`.
+- **Verification:** `scripts/smoke-services.sh` asserts all three `/healthz/ready` return 200 and that a booking request's `correlation_id` appears in fulfillment logs.
+- **Free-tier:** one MySQL instance; inventory uses logical DB `metrodrip_inventory`. No broker/mesh/K8s required for smoke (inventory Redis listener is optional/degraded).
+- **Consequences:** Oral defense can demonstrate three healthy containers without claiming production cutover. Inventory remains experimental (ADR-P3-002).
+
+## ADR-P3-007 — Checkout saga unlock condition remains unmet
+
+- **Status:** Accepted
+- **Decision:** Catalog does **not** yet own stock via production-grade sync REST. Unlock condition for ADR-P3-004 is **not met**. Checkout stays the atomic `place_order()` + payment-session compensation path. Do not implement multi-service saga orchestration.
+- **Evidence:** `INVENTORY_PROVIDER` default is `local`; service adapter still dual-ledger / incomplete commit-release (ADR-P3-002). M2 gate depends on InnoDB `select_for_update` inside the same Django transaction as the order row.
+- **Task list to unlock (future):**
+  1. Single stock ledger owned by Catalog service (or shared schema with exclusive writer).
+  2. Sync REST: reserve / commit / release with clear error codes; drop Redis as commit path.
+  3. Django checkout calls reserve over HTTP *after* order row insert strategy is redesigned so compensation works without dual-write races.
+  4. Re-point M2 gate at Catalog reserve endpoint; both web and mobile checkout must pass.
+  5. Only then introduce saga module with ValidateCart → CreateOrder → ReserveStock → CreatePaymentSession.
