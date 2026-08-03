@@ -1,62 +1,117 @@
 {% extends "admin/base_site.html" %}
+{% load i18n %}
+{# =============================================================================
+   Administrator Dashboard — Immutable Event Ledger
+   =============================================================================
+   Replaces the hard-coded mock data with real Django context injected by
+   AdministratorSite.each_context():
+     - staff_count:  active staff accounts
+     - recent_logs:  last 20 LogEntry records
+
+   Layout: KPI row (waybill cards) + dense audit table with action chips.
+   ============================================================================= #}
 
 {% block content %}
-<div class="console-header">
-  <div>
-    <h1 class="console-title">Administrator Dashboard</h1>
-    <div class="console-meta">/admin/ &middot; METRODRIP CORE</div>
-  </div>
+<div class="barcode-strip barcode-strip--volt"></div>
+
+{# --- KPI Row --- #}
+<div class="kpi-row">
+  {% include "admin/_kpi_card.html" with label="ACTIVE STAFF ACCOUNTS" value=staff_count|default:"0" variant="volt" sub="is_staff=True, is_active=True" %}
+  {% include "admin/_kpi_card.html" with label="SYSTEM STATUS" value="ONLINE" variant="" sub="All services operational" %}
+  {% include "admin/_kpi_card.html" with label="CONSOLE" value="ADMIN" variant="" sub="/admin/ · Platform governance" %}
 </div>
 
-<div class="dashboard-grid">
-  <div class="console-panel">
-    <h3>User Accounts</h3>
-    <table class="console-table">
-      <thead>
-        <tr>
-          <th>User</th>
-          <th>Role</th>
-          <th>Last Login</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>archim</td>
-          <td>Admin</td>
-          <td>Today, 10:00 AM</td>
-        </tr>
-        <tr>
-          <td>seller_mnl</td>
-          <td>Merchant</td>
-          <td>Yesterday</td>
-        </tr>
-      </tbody>
-    </table>
+{# --- Immutable Event Ledger --- #}
+<div class="console-panel">
+  <div class="console-panel__header">
+    <h2 class="console-panel__title">IMMUTABLE EVENT LEDGER</h2>
+    <span class="chip chip--elevated">LAST 20 ENTRIES</span>
   </div>
-  
-  <div class="console-panel">
-    <h3>Audit Trail</h3>
-    <table class="console-table">
-      <thead>
+  <div class="barcode-strip"></div>
+
+  <table class="dense-table" role="table" aria-label="System audit trail">
+    <thead>
+      <tr>
+        <th scope="col">TIMESTAMP (UTC)</th>
+        <th scope="col">ACTOR</th>
+        <th scope="col">ACTION</th>
+        <th scope="col">TARGET RESOURCE</th>
+        <th scope="col">DETAILS</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if recent_logs %}
+        {% for entry in recent_logs %}
         <tr>
-          <th>Action</th>
-          <th>User</th>
-          <th>Time</th>
+          <td class="td-mono td-muted">{{ entry.action_time|date:"Y-m-d H:i:s" }}</td>
+          <td>{{ entry.user.email|default:entry.user }}</td>
+          <td>
+            {% if entry.action_flag == 1 %}
+              <span class="chip chip--volt">ADDED</span>
+            {% elif entry.action_flag == 2 %}
+              <span class="chip chip--elevated">CHANGED</span>
+            {% elif entry.action_flag == 3 %}
+              <span class="chip chip--danger">DELETED</span>
+            {% else %}
+              <span class="chip chip--muted">UNKNOWN</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if entry.content_type %}
+              <span class="td-muted">{{ entry.content_type }}</span>
+            {% else %}
+              <span class="td-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="td-mono">{{ entry.object_repr|truncatechars:40 }}</td>
         </tr>
-      </thead>
-      <tbody>
+        {% endfor %}
+      {% else %}
         <tr>
-          <td>Created product 'Cargo Pants'</td>
-          <td>seller_mnl</td>
-          <td>2 hours ago</td>
+          <td colspan="5" class="td-muted" style="text-align:center; padding:var(--sp-2xl);">
+            No audit entries recorded yet.
+          </td>
         </tr>
-        <tr>
-          <td>Deleted order #1024</td>
-          <td>archim</td>
-          <td>1 day ago</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+      {% endif %}
+    </tbody>
+  </table>
 </div>
+
+<div class="barcode-strip"></div>
+
+{# --- Quick Links to managed models --- #}
+{% if available_apps %}
+<div class="console-panel" style="margin-top: var(--sp-lg);">
+  <div class="console-panel__header">
+    <h2 class="console-panel__title">MANAGED RESOURCES</h2>
+  </div>
+  <table class="dense-table" role="table" aria-label="Managed resources">
+    <thead>
+      <tr>
+        <th scope="col">RESOURCE</th>
+        <th scope="col">APP</th>
+        <th scope="col">ACTIONS</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for app in available_apps %}
+        {% for model in app.models %}
+        <tr>
+          <td>
+            <a href="{{ model.admin_url }}">{{ model.name }}</a>
+          </td>
+          <td class="td-mono td-muted">{{ app.name }}</td>
+          <td>
+            {% if model.add_url %}
+              <a href="{{ model.add_url }}" class="chip chip--volt" style="text-decoration:none;">+ ADD</a>
+            {% endif %}
+            <a href="{{ model.admin_url }}" class="chip chip--elevated" style="text-decoration:none;">VIEW</a>
+          </td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}

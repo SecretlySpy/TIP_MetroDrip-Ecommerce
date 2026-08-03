@@ -5,6 +5,11 @@ MetroDrip runs two independent Django admin sites rather than one:
     /admin/      AdministratorSite  — accounts, roles, platform settings, audit
     /merchant/   MerchantSite       — catalog, stock, orders, content, reviews
 
+Each site's ``each_context`` injects dashboard data (KPI aggregates, recent
+records) only when the request path is the console index. This avoids needless
+queries on every admin page while keeping index templates free of hard-coded mock
+data.
+
 Each model is registered on exactly one of them (see DECISIONS.md ADR-F-001), so
 "which console owns this?" has a single answer that lives next to the model
 rather than in a permissions spreadsheet. A merchant who reaches `/admin/` is
@@ -164,6 +169,24 @@ class AdministratorSite(ConsoleSite):
     index_title = "Platform administration"
     index_template = "admin/index.html"
 
+    def each_context(self, request):
+        """Inject dashboard KPIs and recent audit entries on the index page."""
+        context = super().each_context(request)
+        # Only query on the admin index — not every changelist/change form.
+        if request.path.rstrip("/") in ("/admin", ""):
+            from django.contrib.admin.models import LogEntry
+
+            from apps.accounts.models import Customer
+
+            context["staff_count"] = (
+                Customer.objects.filter(is_staff=True, is_active=True).count()
+            )
+            context["recent_logs"] = (
+                LogEntry.objects.select_related("user", "content_type")
+                .order_by("-action_time")[:20]
+            )
+        return context
+
 
 class MerchantSite(ConsoleSite):
     """Day-to-day selling: catalog, stock, orders, content, reviews."""
@@ -176,6 +199,38 @@ class MerchantSite(ConsoleSite):
     site_title = "MetroDrip Merchant Console"
     index_title = "Store management"
     index_template = "merchant/index.html"
+
+    def each_context(self, request):
+        """Inject dashboard KPIs and stock data on the merchant index page."""
+        context = super().each_context(request)
+        if request.path.rstrip("/") in ("/merchant", ""):
+            from django.db.models import F
+            from django.utils import timezone
+
+            from apps.inventory.models import Reservation, StockRecord
+            from apps.orders.models import Order
+
+            stocks = (
+                StockRecord.objects.select_related("variant", "variant__product")
+                .annotate(available_units=F("qty_on_hand") - F("qty_reserved"))
+                .order_by("available_units")[:20]
+            )
+            context["stock_records"] = stocks
+            context["total_skus"] = StockRecord.objects.count()
+            context["low_stock_count"] = (
+                StockRecord.objects
+                .annotate(available_units=F("qty_on_hand") - F("qty_reserved"))
+                .filter(available_units__lte=F("low_stock_threshold"))
+                .count()
+            )
+            context["active_reservations"] = (
+                Reservation.objects.filter(status="active").count()
+            )
+            today = timezone.localdate()
+            context["today_orders"] = (
+                Order.objects.filter(created_at__date=today).count()
+            )
+        return context
 
 
 #: The administrator console. `AdminConfig.default_site` points at

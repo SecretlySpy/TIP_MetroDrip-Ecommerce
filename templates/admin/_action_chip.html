@@ -1,0 +1,12 @@
+{% comment %}
+  Reusable action chip partial.
+
+  Usage:
+    {% include "admin/_action_chip.html" with text="ADDED" variant="volt" %}
+
+  Parameters:
+    text    — chip label
+    variant — "volt" | "danger" | "elevated" | "warning" | "success" | "muted"
+{% endcomment %}
+
+<span class="chip chip--{{ variant|default:'elevated' }}">{{ text }}</span>

@@ -1,0 +1,18 @@
+{% comment %}
+  Reusable KPI card partial — waybill-style dashed border with barcode strip.
+
+  Usage:
+    {% include "admin/_kpi_card.html" with label="ACTIVE STAFF" value="12" variant="" sub="accounts" %}
+
+  Parameters:
+    label   — uppercase mono label (e.g. "TOTAL SKUS")
+    value   — the KPI number
+    variant — "" | "volt" | "danger" | "warning" (colours the top strip and value)
+    sub     — optional subtitle text below the value
+{% endcomment %}
+
+<div class="kpi-card{% if variant %} kpi-card--{{ variant }}{% endif %}">
+  <div class="kpi-card__label">{{ label }}</div>
+  <div class="kpi-card__value{% if variant %} kpi-card__value--{{ variant }}{% endif %}">{{ value }}</div>
+  {% if sub %}<div class="kpi-card__sub">{{ sub }}</div>{% endif %}
+</div>

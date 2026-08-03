@@ -9,83 +9,203 @@ depending on the very context the refusal denies.
 
 The styling is inlined for the same reason it is on Django's own 403 page — this
 must render even if the admin's static files were never collected.
-{% endcomment %}<title>{{ title }} | {{ site_header }}</title>
-<style>
-  :root { color-scheme: light dark; }
-  body {
-    margin: 0; padding: 2rem 1rem;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    line-height: 1.5; color: #303030; background: #f8f8f8;
-  }
-  .panel {
-    max-width: 34rem; margin: 3rem auto; padding: 1.75rem;
-    background: #fff; border: 1px solid #e0e0e0; border-radius: 6px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
-  }
-  h1 { margin: 0 0 .75rem; font-size: 1.35rem; color: #ba2121; }
-  p { margin: 0 0 1rem; }
-  .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1.5rem; }
-  a.button {
-    display: inline-block; padding: .55rem 1rem; border-radius: 4px;
-    background: #417690; color: #fff; text-decoration: none; font-weight: 600;
-  }
-  a.button--muted, button.button--muted {
-    background: #fff; color: #417690; border: 1px solid #417690;
-  }
-  a.button:hover, a.button:focus-visible,
-  button.button:hover, button.button:focus-visible { background: #205067; color: #fff; }
-  a.button:focus-visible, button.button:focus-visible {
-    outline: 3px solid #f5dd5d; outline-offset: 2px;
-  }
-  button.button {
-    font: inherit; font-weight: 600; cursor: pointer;
-    padding: .55rem 1rem; border-radius: 4px;
-  }
-  form { margin: 0; }
-  @media (prefers-color-scheme: dark) {
-    body { background: #121212; color: #e8e8e8; }
-    .panel { background: #1c1c1c; border-color: #3a3a3a; }
-    h1 { color: #e97b7b; }
-    a.button--muted, button.button--muted {
-      background: transparent; color: #8ec9e3; border-color: #8ec9e3;
+
+Restyled to match the industrial / waybill-brutalist console aesthetic.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} | {{ site_header }}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
+    :root {
+      --c-base: #0F0F0F;
+      --c-surface: #1A1A1A;
+      --c-elevated: #252524;
+      --c-ink: #F2F2EF;
+      --c-muted: #A3A39A;
+      --c-border: #2E2E2C;
+      --c-volt: #D4FF3F;
+      --c-on-volt: #141414;
+      --c-danger: #FF7B7E;
     }
-  }
-</style>
 
-<div class="panel">
-  <h1>You are signed in to the wrong console</h1>
+    *, *::before, *::after { box-sizing: border-box; }
 
-  <p>
-    Your account does not have access to the <strong>{{ requested_console }}</strong>.
-    {% if own_console_label %}
-      It belongs to the <strong>{{ own_console_label }}</strong> console.
-    {% endif %}
-  </p>
+    body {
+      margin: 0;
+      padding: 2rem 1rem;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+      color: var(--c-ink);
+      background: var(--c-base);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-font-smoothing: antialiased;
+    }
 
-  <p>
-    MetroDrip keeps selling and platform governance on separate consoles, so an
-    account is admitted to one or the other. If you need access here, ask an
-    administrator to change your role.
-  </p>
+    .panel {
+      max-width: 36rem;
+      margin: 0 auto;
+      padding: 2rem;
+      background: var(--c-surface);
+      border: 2px dashed var(--c-border);
+      border-radius: 6px;
+      position: relative;
+    }
 
-  <div class="actions">
-    {% if own_console_url %}
-      <a class="button" href="{{ own_console_url }}">Go to my console</a>
-    {% endif %}
+    .panel::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      background: repeating-linear-gradient(
+        90deg,
+        var(--c-danger) 0px, var(--c-danger) 3px,
+        transparent 3px, transparent 6px,
+        var(--c-danger) 6px, var(--c-danger) 8px,
+        transparent 8px, transparent 14px
+      );
+      border-radius: 6px 6px 0 0;
+    }
 
-    {% comment %}
-    POST, not a link: signing someone out is a state change, so it carries a CSRF
-    token and cannot be triggered by a crafted <img> on another page. `next`
-    returns to *this* console's login, which is the whole reason for the button —
-    without it the swap lands on the storefront and the operator has to find the
-    console URL again.
-    {% endcomment %}
-    <form method="post" action="{% url 'accounts:logout' %}">
-      {% csrf_token %}
-      <input type="hidden" name="next" value="{{ login_url }}">
-      <button type="submit" class="button button--muted">Sign in as someone else</button>
-    </form>
+    .logo {
+      font-family: 'Anton', sans-serif;
+      font-size: 1.5rem;
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+      letter-spacing: 0.02em;
+    }
+    .logo-metro { color: var(--c-ink); }
+    .logo-drip { color: var(--c-volt); }
 
-    <a class="button button--muted" href="/">Back to the storefront</a>
+    h1 {
+      margin: 0 0 0.75rem;
+      font-family: 'Anton', sans-serif;
+      font-size: 1.35rem;
+      color: var(--c-danger);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+
+    p { margin: 0 0 1rem; color: var(--c-muted); }
+    p strong { color: var(--c-ink); }
+
+    .chip {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 3px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .chip--danger { background: rgba(255,123,126,0.15); color: var(--c-danger); }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+    }
+
+    a.button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.6rem 1.2rem;
+      border-radius: 3px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      text-decoration: none;
+      cursor: pointer;
+      min-height: 44px;
+      transition: filter 120ms ease;
+    }
+
+    a.button--primary {
+      background: var(--c-volt);
+      color: var(--c-on-volt);
+    }
+
+    a.button--ghost, button.button--ghost {
+      background: transparent;
+      color: var(--c-muted);
+      border: 1px solid var(--c-border);
+    }
+
+    button.button--ghost {
+      font: inherit;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      padding: 0.6rem 1.2rem;
+      border-radius: 3px;
+      min-height: 44px;
+    }
+
+    a.button:hover, button.button:hover {
+      filter: brightness(0.88);
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--c-volt);
+      outline-offset: 2px;
+    }
+
+    form { margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="panel" role="alert">
+    <div class="logo">
+      <span class="logo-metro">METRO</span><span class="logo-drip">DRIP</span>
+    </div>
+
+    <h1>Wrong Console <span class="chip chip--danger">403</span></h1>
+
+    <p>
+      Your account does not have access to the <strong>{{ requested_console }}</strong>.
+      {% if own_console_label %}
+        It belongs to the <strong>{{ own_console_label }}</strong> console.
+      {% endif %}
+    </p>
+
+    <p>
+      MetroDrip keeps selling and platform governance on separate consoles, so an
+      account is admitted to one or the other. If you need access here, ask an
+      administrator to change your role.
+    </p>
+
+    <div class="actions">
+      {% if own_console_url %}
+        <a class="button button--primary" href="{{ own_console_url }}">Go to my console</a>
+      {% endif %}
+
+      {% comment %}
+      POST, not a link: signing someone out is a state change, so it carries a CSRF
+      token and cannot be triggered by a crafted <img> on another page.
+      {% endcomment %}
+      <form method="post" action="{% url 'accounts:logout' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ login_url }}">
+        <button type="submit" class="button--ghost">Sign in as someone else</button>
+      </form>
+
+      <a class="button button--ghost" href="/">Back to storefront</a>
+    </div>
   </div>
-</div>
+</body>
+</html>
