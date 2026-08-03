@@ -2281,3 +2281,31 @@ Still outstanding, unchanged:
 - **Data Analysis Notes**: muted #63635C, danger #C2282D contrast on white
 - **Responsive & Accessibility Notes**: theme toggle ≥44×44; focus-visible volt ring
 - **Security Notes**: n/a
+
+# Module / File: seed_200.py
+## Function: run
+- **Purpose**: Generates logically suitable subcategories for existing root categories and fills them with placeholder products until exactly 200 products exist per root category.
+- **Inputs**: None.
+- **Outputs**: None (script execution).
+- **Dependencies**: apps.catalog.models (Category, Product, ProductVariant, Size, Fit), apps.inventory.models (StockRecord).
+- **Behavior**: Retrieves all root categories, creates Men/Women/Unisex subcategories if missing, counts existing products, and bulk-inserts new placeholder products to hit exactly 200 items per root. Also creates 1 variant and 1 stock record per new product.
+- **Side Effects**: Modifies the MySQL database via Django ORM.
+- **DSA Used**: O(N) generation iteration per root category; O(1) bulk_create operations minimizing database roundtrips.
+- **Data Analysis Notes**: The script accurately computes 
+eeded = 200 - current_count dynamically to prevent over-seeding on reruns.
+- **Responsive & Accessibility Notes**: N/A
+- **Security Notes**: Development/seeding utility only; should not run in production.
+
+# Module / File: seed_collections.py
+## Function: run
+- **Purpose**: Generates curated collection categories (New Arrivals, Best-Sellers, On-Sale, Pre-Order) and seeds 200 placeholder products for each.
+- **Inputs**: None.
+- **Outputs**: None (script execution).
+- **Dependencies**: apps.catalog.models (Category, Product, ProductVariant, Size, Fit), apps.inventory.models (StockRecord).
+- **Behavior**: Iterates over hardcoded collections, creates the root categories, computes required product count, and bulk-inserts items. Applies static discount logic to "On-Sale" and sets 0 initial stock for "Pre-Order".
+- **Side Effects**: Modifies the MySQL database via Django ORM.
+- **DSA Used**: O(N) generation loop with bulk database operations.
+- **Data Analysis Notes**: Avoids dynamic discount calculations by setting a lowered ase_price explicitly during generation, aligning with invariant #2 (no client-side price math).
+- **Responsive & Accessibility Notes**: N/A
+- **Security Notes**: Development/seeding utility only; should not run in production.
+
