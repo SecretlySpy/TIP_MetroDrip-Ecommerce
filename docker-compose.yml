@@ -82,13 +82,16 @@ services:
       ]
     environment:
       LOG_LEVEL: INFO
-      NOTIFICATION_SERVICE_TOKEN: "${NOTIFICATION_SERVICE_TOKEN:-}"
+      # A known local-dev value, not a fallback for deployments: the sidecar now
+      # refuses every request and reports not-ready without one. Staging and
+      # production supply real secrets and prod.py refuses to boot without them.
+      NOTIFICATION_SERVICE_TOKEN: "${NOTIFICATION_SERVICE_TOKEN:-local-dev-notifications-token}"
       PUSH_PROVIDER: "${PUSH_PROVIDER:-simulated}"
     expose:
       - "8002"
     ports:
-      # Host-mapped for local Django → sidecar smoke only; staging Caddy keeps them internal.
-      - "8002:8002"
+      # Loopback-only: local Django → sidecar smoke, never the host's LAN.
+      - "127.0.0.1:8002:8002"
     networks:
       - backend
       - internal
@@ -125,11 +128,12 @@ services:
       ]
     environment:
       LOG_LEVEL: INFO
-      SHIPPING_SERVICE_TOKEN: "${SHIPPING_SERVICE_TOKEN:-}"
+      SHIPPING_SERVICE_TOKEN: "${SHIPPING_SERVICE_TOKEN:-local-dev-fulfillment-token}"
     expose:
       - "8003"
     ports:
-      - "8003:8003"
+      # Loopback-only: local Django → sidecar smoke, never the host's LAN.
+      - "127.0.0.1:8003:8003"
     networks:
       - backend
       - internal

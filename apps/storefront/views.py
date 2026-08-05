@@ -12,7 +12,6 @@ import logging
 from django.conf import settings
 from django.core.paginator import Paginator
 from django.core.signing import BadSignature, Signer
-from django.db import transaction
 from django.db.models import Count
 from django.http import Http404, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import render
@@ -22,7 +21,7 @@ from django.views.decorators.http import require_GET
 from django.views.decorators.vary import vary_on_cookie
 
 from apps.accounts.models import WishlistItem
-from apps.catalog.models import Fit, Product, ProductVariant, Size
+from apps.catalog.models import Fit, Product, Size
 from apps.catalog.services import (
     get_all_categories,
     get_available_colors,
@@ -30,13 +29,13 @@ from apps.catalog.services import (
     get_product_detail,
 )
 from apps.cms.models import ContactMessage, HomepageBanner
-from apps.inventory.services import InsufficientStock, release_reservation, reserve_stock
+from apps.core.money import format_centavos
+from apps.inventory.services import InsufficientStock
 from apps.notifications.services import send_contact_alert, send_order_confirmation
 from apps.notifications.sms import send_sms
-from apps.orders.models import Order, OrderItem
-from apps.orders.money import format_centavos
-from apps.orders.services import next_order_no
-from apps.payments.services import PayMongoError, confirm_order_paid, create_checkout_session
+from apps.orders.checkout import CheckoutError, PaymentSessionError, place_order
+from apps.orders.models import Order
+from apps.payments.services import confirm_order_paid
 from apps.shipping.models import ShippingZone
 from apps.shipping.zones import resolve_zone
 from config.middleware import get_correlation_id
@@ -252,30 +251,6 @@ def cart_availability(request):
 # D-1/D-2: Checkout
 # ---------------------------------------------------------------------------
 
-MAX_CHECKOUT_LINES = 20
-MAX_LINE_QTY = 99
-
-
-def _parse_checkout_items(raw_items):
-    """Validate cart lines and merge duplicates; returns {variant_id: qty}."""
-    if not isinstance(raw_items, list) or not raw_items:
-        raise ValueError("Cart is empty.")
-    if len(raw_items) > MAX_CHECKOUT_LINES:
-        raise ValueError(f"A single order supports up to {MAX_CHECKOUT_LINES} lines.")
-
-    quantities = {}
-    for line in raw_items:
-        try:
-            variant_id = int(line["variant_id"])
-            qty = int(line["qty"])
-        # Every malformed line maps to the same public validation error.
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("Each cart line needs a variant_id and qty.") from None
-        if not 1 <= qty <= MAX_LINE_QTY:
-            raise ValueError(f"Quantities must be between 1 and {MAX_LINE_QTY}.")
-        quantities[variant_id] = quantities.get(variant_id, 0) + qty
-    return quantities
-
 
 @require_GET
 def resolve_shipping_zone(request):
@@ -325,96 +300,46 @@ def checkout_page(request):
     except json.JSONDecodeError:
         return _json_error("Invalid request body.")
 
-    try:
-        quantities = _parse_checkout_items(data.get("items"))
-    except ValueError as error:
-        return _json_error(str(error))
-
-    contact_name = str(data.get("customer_name", "")).strip()
-    contact_email = str(data.get("email", "")).strip()
-    if not contact_name or not contact_email:
-        return _json_error("Name and email are required.")
-
-    try:
-        zone = ShippingZone.objects.get(id=data.get("zone_id"), is_active=True)
-    # Missing and malformed identifiers are both invalid customer input.
-    except (ShippingZone.DoesNotExist, ValueError, TypeError):
-        return _json_error("Choose a valid shipping zone.")
-
     # Guests need a session so their holds can be traced before the order pays.
     if not request.session.session_key:
         request.session.create()
 
+    # place_order substitutes the signed status token once the order id exists,
+    # so the redirect target is templated rather than built here (H-4).
+    success_url = request.build_absolute_uri(
+        reverse("storefront:checkout-success", args=["__TOKEN__"])
+    )
+
     try:
-        with transaction.atomic():
-            variants = {
-                variant.pk: variant
-                for variant in ProductVariant.objects.select_related("product").filter(
-                    pk__in=quantities
-                )
-            }
-            missing = set(quantities) - set(variants)
-            if missing:
-                raise ValueError("Some cart items no longer exist — refresh your cart.")
-
-            # Effective price honors variant overrides (never raw base_price),
-            # and totals are correct at INSERT time so the DB reconciliation
-            # check (total = subtotal + shipping) holds from the first write.
-            subtotal = sum(variants[vid].price * qty for vid, qty in quantities.items())
-            order = Order.objects.create(
-                order_no=next_order_no(),
-                customer=request.user if request.user.is_authenticated else None,
-                subtotal=subtotal,
-                shipping_fee=zone.fee,
-                total=subtotal + zone.fee,
-                shipping_address={
-                    "name": contact_name,
-                    "email": contact_email,
-                    "phone": str(data.get("phone", "")).strip(),
-                    "address_line1": str(data.get("address_line1", "")).strip(),
-                    "city": str(data.get("city", "")).strip(),
-                    "zone": zone.name,
-                },
-            )
-
-            for variant_id, qty in quantities.items():
-                # Raising inside the atomic block rolls EVERYTHING back — no
-                # half-built orders, no stranded holds (Invariant 1).
-                reserve_stock(
-                    variant_id=variant_id,
-                    qty=qty,
-                    session_key=request.session.session_key or "",
-                    order=order,
-                )
-                OrderItem.objects.create(
-                    order=order,
-                    variant=variants[variant_id],
-                    qty=qty,
-                    unit_price_snapshot=variants[variant_id].price,
-                )
+        order, checkout_url = place_order(
+            items=data.get("items"),
+            zone_id=data.get("zone_id"),
+            contact={
+                "name": data.get("customer_name", ""),
+                "email": data.get("email", ""),
+                "phone": data.get("phone", ""),
+                "address_line1": data.get("address_line1", ""),
+                "city": data.get("city", ""),
+            },
+            customer=request.user if request.user.is_authenticated else None,
+            session_key=request.session.session_key or "",
+            success_url=success_url,
+            cancel_url=request.build_absolute_uri(reverse("storefront:cart")),
+        )
+    except CheckoutError as error:
+        return _json_error(str(error))
     except InsufficientStock as error:
         logger.info("Checkout rejected: %s", error)
         return _json_error("Some items just sold out. Review your cart and try again.", status=409)
-    except ValueError as error:
-        return _json_error(str(error))
-
-    logger.info("Checkout created order_no=%s", order.order_no)
-    token = Signer().sign(str(order.pk))
-    success_url = request.build_absolute_uri(reverse("storefront:checkout-success", args=[token]))
-    cancel_url = request.build_absolute_uri(reverse("storefront:cart"))
-
-    try:
-        checkout_url, _ = create_checkout_session(order, success_url, cancel_url)
-    except (PayMongoError, Exception) as error:  # noqa: BLE001 — provider boundary
-        # The order committed but no payment session exists: release the holds
-        # immediately instead of stranding them for the 15-minute TTL.
-        logger.error("Checkout session failed for %s: %s", order.order_no, error)
-        for reservation in order.reservations.filter(status="active"):
-            release_reservation(reservation.pk)
+    except PaymentSessionError as error:
+        # place_order already released the holds before raising.
+        logger.error("Checkout session failed: %s", error)
         return _json_error(
             "Payment provider is unavailable right now — please try again.",
             status=502,
         )
+
+    logger.info("Checkout created order_no=%s", order.order_no)
 
     return JsonResponse(
         {

@@ -21,15 +21,17 @@ from email.message import EmailMessage
 from typing import Any
 
 import requests
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
+
+from services._shared.security import ServiceAuth
 
 logger = logging.getLogger("metrodrip.notifications")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
 app = FastAPI(title="MetroDrip Notifications Service", version="v1")
 
-SERVICE_TOKEN = os.environ.get("NOTIFICATION_SERVICE_TOKEN", "")
+auth = ServiceAuth("NOTIFICATION_SERVICE_TOKEN")
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
 
@@ -54,28 +56,23 @@ class PushPayload(BaseModel):
     correlation_id: str | None = None
 
 
-def _authorize(authorization: str | None) -> None:
-    """Default-deny when a service token is configured."""
-    if not SERVICE_TOKEN:
-        return
-    expected = f"Bearer {SERVICE_TOKEN}"
-    if authorization != expected:
-        raise HTTPException(status_code=401, detail="unauthorized")
-
-
 @app.get("/healthz/live")
 def live() -> dict[str, str]:
+    """Liveness: the process is running. Says nothing about configuration."""
     return {"status": "ok"}
 
 
 @app.get("/healthz/ready")
-def ready() -> dict[str, str]:
-    return {"status": "ok"}
+def ready(response: Response) -> dict[str, str]:
+    """Readiness: this instance can actually serve an authenticated delivery."""
+    if not auth.configured:
+        response.status_code = 503
+        return {"status": "unavailable", "auth": "unconfigured"}
+    return {"status": "ok", "auth": "configured"}
 
 
-@app.post("/v1/email")
-def send_email(payload: EmailPayload, authorization: str | None = Header(default=None)):
-    _authorize(authorization)
+@app.post("/v1/email", dependencies=[Depends(auth)])
+def send_email(payload: EmailPayload):
     cid = payload.correlation_id or "-"
     host = os.environ.get("SMTP_HOST", "")
     if not host:
@@ -102,9 +99,8 @@ def send_email(payload: EmailPayload, authorization: str | None = Header(default
         raise HTTPException(status_code=502, detail="email_failed") from None
 
 
-@app.post("/v1/sms")
-def send_sms(payload: SmsPayload, authorization: str | None = Header(default=None)):
-    _authorize(authorization)
+@app.post("/v1/sms", dependencies=[Depends(auth)])
+def send_sms(payload: SmsPayload):
     cid = payload.correlation_id or "-"
     api_key = os.environ.get("SEMAPHORE_API_KEY", "")
     if not api_key:
@@ -129,9 +125,8 @@ def send_sms(payload: SmsPayload, authorization: str | None = Header(default=Non
         raise HTTPException(status_code=502, detail="sms_failed") from None
 
 
-@app.post("/v1/push")
-def send_push(payload: PushPayload, authorization: str | None = Header(default=None)):
-    _authorize(authorization)
+@app.post("/v1/push", dependencies=[Depends(auth)])
+def send_push(payload: PushPayload):
     cid = payload.correlation_id or "-"
     tokens = [t for t in payload.tokens if t]
     if not tokens:

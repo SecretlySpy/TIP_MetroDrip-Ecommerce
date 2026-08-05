@@ -29,11 +29,11 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from apps.accounts.models import Customer, WishlistItem
 from apps.catalog.services import get_all_categories, get_catalog_queryset, get_product_detail
+from apps.core.money import format_centavos
 from apps.inventory.services import InsufficientStock, get_stock_record
 from apps.notifications.models import DeviceToken, Notification
 from apps.orders.checkout import CheckoutError, PaymentSessionError, parse_items, place_order
 from apps.orders.models import Order, OrderStatus
-from apps.orders.money import format_centavos
 from apps.payments.services import confirm_order_paid
 from apps.reviews.models import Review, ReviewStatus
 from apps.shipping.models import ShippingZone

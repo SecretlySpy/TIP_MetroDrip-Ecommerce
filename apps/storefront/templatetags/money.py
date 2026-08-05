@@ -2,7 +2,7 @@
 
 from django import template
 
-from apps.orders.money import MoneyValueError, format_centavos
+from apps.core.money import MoneyValueError, format_centavos
 
 register = template.Library()
 

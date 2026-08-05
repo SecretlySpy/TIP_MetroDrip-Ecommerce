@@ -18,7 +18,12 @@ import pathlib
 import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-TARGETS = ("apps", "config", "jobs", "tests", "manage.py")
+# `services` and `contracts` are the FastAPI strangler tree and its shared
+# schemas. They were outside this gate while being the one part of the codebase
+# nobody runs locally — precisely where the syntax drift this test exists for
+# would survive longest. Missing targets are skipped below, so listing
+# `contracts` before it exists is safe.
+TARGETS = ("apps", "config", "contracts", "jobs", "services", "tests", "manage.py")
 
 
 def test_all_sources_compile() -> None:

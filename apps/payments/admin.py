@@ -8,7 +8,7 @@ transaction in front of them; the administrator console governs which payment
 
 from django.contrib import admin
 
-from apps.orders.money import format_centavos
+from apps.core.money import format_centavos
 from config.consoles import merchant_site
 
 from .models import Payment

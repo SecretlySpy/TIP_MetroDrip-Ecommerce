@@ -32,7 +32,7 @@ class ShippingZoneAdmin(admin.ModelAdmin):
         never a float), so an unformatted list column reads "35000" for ₱350.00
         — an easy way for an administrator to set a fee 100× too high.
         """
-        from apps.orders.money import format_centavos
+        from apps.core.money import format_centavos
 
         return format_centavos(obj.fee)
 

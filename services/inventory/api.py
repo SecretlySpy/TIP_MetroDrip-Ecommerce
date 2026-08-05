@@ -4,10 +4,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from services._shared.security import ServiceAuth
+
 from .database import get_db
 from .models import Reservation, ReservationStatus, StockRecord
 
-router = APIRouter()
+auth = ServiceAuth("INVENTORY_SERVICE_TOKEN")
+
+# Applied to the whole router, not just the mutating route. This is an internal
+# API with no user-scoped authorization of its own (ADR-H-001), and stock levels
+# are commercially sensitive — there is no route here that should answer an
+# unauthenticated caller. `POST /reservations` in particular was published on a
+# host port with no check at all.
+router = APIRouter(dependencies=[Depends(auth)])
 
 
 @router.get("/stock/{variant_id}")

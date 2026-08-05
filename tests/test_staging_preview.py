@@ -9,7 +9,7 @@ from django.test import override_settings
 
 from apps.catalog.management.commands.seed_demo import PRODUCT_SEEDS
 from apps.catalog.models import Category, Fit, Product, ProductVariant, Size
-from apps.orders.money import format_centavos
+from apps.core.money import format_centavos
 
 
 def test_staging_seed_preview_is_disabled_by_default():
