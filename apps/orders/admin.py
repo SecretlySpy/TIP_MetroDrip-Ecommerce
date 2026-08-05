@@ -12,7 +12,7 @@ second copy of this screen (ADR-F-001).
 from django.contrib import admin
 
 from apps.core.admin import ExportCsvMixin
-from apps.orders.money import format_centavos
+from apps.core.money import format_centavos
 from config.consoles import merchant_site
 
 from .models import Order, OrderItem

@@ -1,4 +1,11 @@
-"""Integer-centavo validation, arithmetic, and Philippine-peso formatting."""
+"""Integer-centavo validation, arithmetic, and Philippine-peso formatting.
+
+Lives in `core` rather than `orders` because seven apps format money and only
+one of them is Orders. Under the ADR-P3-003 service map that made Catalog,
+Fulfillment, and Content all import from Orders for a pure function with no
+state and no I/O — a dependency edge the split would have had to sever anyway.
+Shared kernel, not a domain module: nothing here may import from an app.
+"""
 
 from collections.abc import Iterable
 

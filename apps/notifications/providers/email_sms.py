@@ -7,7 +7,7 @@ import requests
 from django.conf import settings
 from django.core.mail import send_mail
 
-from apps.orders.money import format_centavos
+from apps.core.money import format_centavos
 
 from . import NotificationProvider, register_provider
 

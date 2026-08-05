@@ -986,7 +986,7 @@
 - **Behavior**: Rejects unsaved/unknown targets, locks a fresh row, validates the current-to-target edge, writes status through the parent save implementation, and refreshes caller state.
 - **Side Effects**: Updates one Order status atomically.
 
-# Module / File: apps/orders/money.py
+# Module / File: apps/core/money.py
 
 ## Function: require_centavos(value, field_name="amount", *, allow_negative=False)
 - **Purpose**: Enforce the shared integer-centavo type and MySQL range boundary.

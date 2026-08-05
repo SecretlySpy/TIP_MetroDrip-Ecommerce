@@ -150,19 +150,79 @@ def _required_password_environment(name):
     return value
 
 
+def _deployed_provider(name, *, allowed, default, forbidden=frozenset()):
+    """Return an operator-chosen provider key, narrowed to what may deploy.
+
+    Two rejections, for different reasons. A *forbidden* value is a real
+    provider that is development-only — enabling it in a deployed environment
+    would break a hard invariant. An *unrecognized* value is a typo, which
+    would otherwise survive until a registry lookup raised somewhere far from
+    the cause.
+
+    This replaced a check-then-overwrite pair per provider, which read the
+    environment only to reject one bad value and then assigned a hardcoded good
+    one. The operator's choice was discarded, so the `http` strangler opt-ins
+    (ADR-P3-003 steps 1 and 2) were unreachable in staging and production — the
+    two consoles could ship a sidecar but never cut over to it.
+    """
+    value = os.environ.get(name, "").strip() or default
+    if value in forbidden:
+        raise ImproperlyConfigured(f"{name}={value} cannot be enabled in production or staging.")
+    if value not in allowed:
+        raise ImproperlyConfigured(
+            f"{name}={value} is not a recognized provider; expected one of {sorted(allowed)}."
+        )
+    return value
+
+
+def _require_strangler_token(provider_name, provider_value, token_name):
+    """Refuse to boot an HTTP strangler provider that cannot authenticate.
+
+    Both ends fail *open* on an empty token: the Django adapters omit the
+    Authorization header, and the sidecars skip the check entirely. Those two
+    defaults compose into an unauthenticated internal API, so an unset token has
+    to mean "do not boot" rather than "no auth".
+    """
+    if provider_value == "http" and not os.environ.get(token_name, "").strip():
+        raise ImproperlyConfigured(f"{provider_name}=http requires {token_name} to be set.")
+
+
 # Mock payment completion must never exist outside development (Invariant 3:
-# webhooks are the only payment truth in any deployed environment).
+# webhooks are the only payment truth in any deployed environment). Unlike the
+# providers below this stays an unconditional assignment: there is genuinely one
+# legal value in a deployed environment, so there is no operator choice to make.
 if os.environ.get("PAYMENT_PROVIDER", "").strip() == "simulated":
     raise ImproperlyConfigured("Simulated payments cannot be enabled in production or staging.")
 PAYMENT_PROVIDER = "paymongo"
 
-if os.environ.get("SHIPPING_PROVIDER", "").strip() == "simulated":
-    raise ImproperlyConfigured("Simulated shipping cannot be enabled in production or staging.")
-SHIPPING_PROVIDER = "jnt"
+SHIPPING_PROVIDER = _deployed_provider(
+    "SHIPPING_PROVIDER",
+    allowed={"jnt", "http"},
+    default="jnt",
+    forbidden={"simulated"},
+)
+_require_strangler_token("SHIPPING_PROVIDER", SHIPPING_PROVIDER, "SHIPPING_SERVICE_TOKEN")
 
-if os.environ.get("NOTIFICATION_PROVIDER", "").strip() == "console":
-    raise ImproperlyConfigured("Console notifications cannot be enabled in production or staging.")
-NOTIFICATION_PROVIDER = "email_sms"
+NOTIFICATION_PROVIDER = _deployed_provider(
+    "NOTIFICATION_PROVIDER",
+    allowed={"email_sms", "http"},
+    default="email_sms",
+    forbidden={"console"},
+)
+_require_strangler_token(
+    "NOTIFICATION_PROVIDER", NOTIFICATION_PROVIDER, "NOTIFICATION_SERVICE_TOKEN"
+)
+
+# `service` is withheld until the parity gate in ADR-P3-005 passes: it still
+# stubs commits, adjustments, the TTL sweep, and the low-stock scan (ADR-P3-002),
+# and it is the one sidecar a deployed environment could otherwise reach.
+# Widening this set to {"local", "service"} is the cutover.
+INVENTORY_PROVIDER = _deployed_provider(
+    "INVENTORY_PROVIDER",
+    allowed={"local"},
+    default="local",
+    forbidden={"service"},
+)
 
 # Fail fast rather than silently using development credentials or hosts.
 SECRET_KEY = _required_secret_environment("DJANGO_SECRET_KEY")

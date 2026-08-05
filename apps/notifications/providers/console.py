@@ -2,7 +2,7 @@
 
 import logging
 
-from apps.orders.money import format_centavos
+from apps.core.money import format_centavos
 
 from . import NotificationProvider, register_provider
 

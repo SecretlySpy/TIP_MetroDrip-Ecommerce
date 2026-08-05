@@ -11,7 +11,7 @@ which both consoles admit.
 from django.contrib import admin
 from django.db import IntegrityError, transaction
 
-from apps.orders.money import format_centavos
+from apps.core.money import format_centavos
 from config.consoles import merchant_site
 
 from .models import Category, Fit, Product, ProductVariant, Size

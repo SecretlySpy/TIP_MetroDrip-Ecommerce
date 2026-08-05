@@ -4,6 +4,7 @@ signature-verified PayMongo webhook (D-3, Hard Invariant 3)."""
 import hashlib
 import hmac
 import json
+import pathlib
 
 import pytest
 from django.core import mail
@@ -360,3 +361,27 @@ def test_order_status_page_renders_via_token(client):
     assert "Order Status" in content
     # The raw sequential order number must not be a valid status URL.
     assert client.get(f"/order/{order.order_no}/").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# ADR-H-002: one checkout implementation, many clients
+# ---------------------------------------------------------------------------
+
+
+def test_web_checkout_delegates_instead_of_reimplementing_order_creation():
+    """The storefront view must call `place_order`, not copy it.
+
+    It previously carried a near-verbatim copy of the atomic block, and the
+    copy drifted: it never picked up the MySQL deadlock retry, so web and
+    mobile had different behaviour under concurrent checkout. This is asserted
+    structurally because the two implementations stayed observably identical
+    right up until the moment they did not.
+    """
+    views = pathlib.Path(__file__).resolve().parents[1] / "apps" / "storefront" / "views.py"
+    source = views.read_text(encoding="utf-8")
+
+    assert "place_order(" in source, "web checkout must route through the canonical service"
+    for reimplementation in ("Order.objects.create", "reserve_stock(", "next_order_no("):
+        assert reimplementation not in source, (
+            f"{reimplementation} belongs to apps/orders/checkout.py, not the web view"
+        )

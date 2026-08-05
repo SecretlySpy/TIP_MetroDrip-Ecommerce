@@ -3,8 +3,8 @@
 from django import template
 from django.core.signing import Signer
 
-from apps.orders.money import MoneyValueError
-from apps.orders.money import format_centavos as _format_centavos
+from apps.core.money import MoneyValueError
+from apps.core.money import format_centavos as _format_centavos
 
 register = template.Library()
 

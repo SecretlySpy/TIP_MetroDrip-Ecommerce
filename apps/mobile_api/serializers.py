@@ -8,8 +8,8 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from apps.accounts.models import Customer
+from apps.core.money import format_centavos
 from apps.notifications.models import DevicePlatform, DeviceToken, Notification
-from apps.orders.money import format_centavos
 
 
 class RegisterSerializer(serializers.Serializer):

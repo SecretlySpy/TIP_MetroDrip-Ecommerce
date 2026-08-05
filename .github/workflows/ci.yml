@@ -39,8 +39,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       # Compilation catches parser/runtime-version drift before lint rules run.
+      # `services` is the FastAPI strangler tree; it is the one part of the
+      # codebase nobody runs locally, so it needs this gate most.
       - name: Compile Python sources
-        run: python -m compileall -q apps config jobs tests manage.py
+        run: python -m compileall -q apps config contracts jobs services tests manage.py
       - name: Lint (ruff)
         run: ruff check .
       - name: Format contract (ruff)

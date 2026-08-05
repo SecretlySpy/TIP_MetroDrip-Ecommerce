@@ -14,14 +14,16 @@ import logging
 import os
 import random
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Response
 from pydantic import BaseModel
+
+from services._shared.security import ServiceAuth
 
 logger = logging.getLogger("metrodrip.fulfillment")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
 app = FastAPI(title="MetroDrip Fulfillment Service", version="v1")
-SERVICE_TOKEN = os.environ.get("SHIPPING_SERVICE_TOKEN", "")
+auth = ServiceAuth("SHIPPING_SERVICE_TOKEN")
 
 
 class BookShipmentRequest(BaseModel):
@@ -41,29 +43,32 @@ class BookShipmentResponse(BaseModel):
     mode: str = "simulated"
 
 
-def _authorize(authorization: str | None) -> None:
-    if not SERVICE_TOKEN:
-        return
-    if authorization != f"Bearer {SERVICE_TOKEN}":
-        raise HTTPException(status_code=401, detail="unauthorized")
-
-
 @app.get("/healthz/live")
 def live() -> dict[str, str]:
+    """Liveness: the process is running. Says nothing about configuration."""
     return {"status": "ok"}
 
 
 @app.get("/healthz/ready")
-def ready() -> dict[str, str]:
-    return {"status": "ok"}
+def ready(response: Response) -> dict[str, str]:
+    """Readiness: this instance can actually serve an authenticated booking.
+
+    A sidecar with no service token cannot authenticate anyone, so reporting it
+    ready would put a container into rotation that answers 503 to every real
+    request.
+    """
+    if not auth.configured:
+        response.status_code = 503
+        return {"status": "unavailable", "auth": "unconfigured"}
+    return {"status": "ok", "auth": "configured"}
 
 
-@app.post("/v1/shipments/book", response_model=BookShipmentResponse)
-def book_shipment(
-    payload: BookShipmentRequest,
-    authorization: str | None = Header(default=None),
-) -> BookShipmentResponse:
-    _authorize(authorization)
+@app.post(
+    "/v1/shipments/book",
+    response_model=BookShipmentResponse,
+    dependencies=[Depends(auth)],
+)
+def book_shipment(payload: BookShipmentRequest) -> BookShipmentResponse:
     cid = payload.correlation_id or "-"
     # Real J&T credentials are enhancement-tier; without them we mint a
     # deterministic-format simulated waybill so packing still progresses.

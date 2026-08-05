@@ -54,7 +54,11 @@ def _import_staging_settings(environment_overrides=None):
             "'hsts_seconds': s.SECURE_HSTS_SECONDS, "
             "'silenced_checks': s.SILENCED_SYSTEM_CHECKS, "
             "'whitenoise': 'whitenoise.middleware.WhiteNoiseMiddleware' in s.MIDDLEWARE, "
-            "'static_backend': s.STORAGES['staticfiles']['BACKEND']"
+            "'static_backend': s.STORAGES['staticfiles']['BACKEND'], "
+            "'payment_provider': s.PAYMENT_PROVIDER, "
+            "'shipping_provider': s.SHIPPING_PROVIDER, "
+            "'notification_provider': s.NOTIFICATION_PROVIDER, "
+            "'inventory_provider': s.INVENTORY_PROVIDER"
             "}))"
         ),
     ]
@@ -88,6 +92,10 @@ def test_staging_settings_parse_valid_environment_and_keep_https_enabled():
         "silenced_checks": ["security.W021"],
         "whitenoise": True,
         "static_backend": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "payment_provider": "paymongo",
+        "shipping_provider": "jnt",
+        "notification_provider": "email_sms",
+        "inventory_provider": "local",
     }
 
 
@@ -264,3 +272,89 @@ def test_staging_local_smoke_override_disables_https_redirect_only_explicitly():
     assert parsed["ssl_redirect"] is False
     assert parsed["session_secure"] is False
     assert parsed["csrf_secure"] is False
+
+
+# --- Strangler provider gating (ADR-P3-003 steps 1 and 2) ---------------------
+#
+# These settings previously read the environment only to reject one bad value
+# and then assigned a hardcoded good one, so `http` was silently discarded and
+# no deployed environment could reach a sidecar. The first two tests are the
+# regression: they fail against that implementation.
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "token_name", "parsed_key"),
+    [
+        ("SHIPPING_PROVIDER", "SHIPPING_SERVICE_TOKEN", "shipping_provider"),
+        ("NOTIFICATION_PROVIDER", "NOTIFICATION_SERVICE_TOKEN", "notification_provider"),
+    ],
+)
+def test_staging_settings_allow_http_strangler_opt_in(provider_name, token_name, parsed_key):
+    """An operator must be able to actually cut a seam over to its sidecar."""
+    result = _import_staging_settings(
+        {provider_name: "http", token_name: "test-only-service-token"}
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)[parsed_key] == "http"
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "token_name"),
+    [
+        ("SHIPPING_PROVIDER", "SHIPPING_SERVICE_TOKEN"),
+        ("NOTIFICATION_PROVIDER", "NOTIFICATION_SERVICE_TOKEN"),
+    ],
+)
+def test_staging_settings_reject_http_provider_without_service_token(provider_name, token_name):
+    """Both ends fail open on an empty token, so an unset one must not boot."""
+    result = _import_staging_settings({provider_name: "http", token_name: "   "})
+
+    assert result.returncode != 0
+    assert f"{provider_name}=http requires {token_name} to be set." in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "forbidden_value"),
+    [
+        ("SHIPPING_PROVIDER", "simulated"),
+        ("NOTIFICATION_PROVIDER", "console"),
+        # Withheld until the ADR-P3-005 parity gate passes: the sidecar still
+        # stubs commits, adjustments, the sweep, and the low-stock scan.
+        ("INVENTORY_PROVIDER", "service"),
+    ],
+)
+def test_staging_settings_reject_development_only_providers(provider_name, forbidden_value):
+    """Development-only providers must not be reachable in a deployment."""
+    result = _import_staging_settings({provider_name: forbidden_value})
+
+    assert result.returncode != 0
+    assert (
+        f"{provider_name}={forbidden_value} cannot be enabled in production or staging."
+        in result.stderr
+    )
+
+
+@pytest.mark.parametrize(
+    "provider_name",
+    ["SHIPPING_PROVIDER", "NOTIFICATION_PROVIDER", "INVENTORY_PROVIDER"],
+)
+def test_staging_settings_reject_unrecognized_providers(provider_name):
+    """A typo must fail at import, not at some later registry lookup."""
+    result = _import_staging_settings({provider_name: "htp"})
+
+    assert result.returncode != 0
+    assert f"{provider_name}=htp is not a recognized provider" in result.stderr
+
+
+def test_staging_settings_still_pin_payment_provider_unconditionally():
+    """Invariant 3 leaves no operator choice: webhooks are the only truth."""
+    result = _import_staging_settings({"PAYMENT_PROVIDER": "paymongo"})
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["payment_provider"] == "paymongo"
+
+    refused = _import_staging_settings({"PAYMENT_PROVIDER": "simulated"})
+
+    assert refused.returncode != 0
+    assert "Simulated payments cannot be enabled" in refused.stderr

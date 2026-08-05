@@ -12,7 +12,7 @@ from django.conf import settings
 from django.template import Context, Template
 from django.test import override_settings
 
-from apps.orders.money import (
+from apps.core.money import (
     MAX_CENTAVOS,
     MoneyValueError,
     format_centavos,
