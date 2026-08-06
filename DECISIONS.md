@@ -548,3 +548,16 @@
 - **G5 found a real bug on its first run.** `LocalInventoryProvider.reserve_lines` guarded replays with a plain `SELECT` on `checkout_id`. That is not a guard: five concurrent retries of one id each saw "nothing reserved yet" and all five proceeded, holding **9 units instead of 3**. Serial idempotency passed; concurrent idempotency did not, and only a concurrent test could tell them apart.
 - **Fix:** the guard is now a *write*. `reserve_lines` claims a uniquely-keyed `IdempotencyRecord` inside the transaction, so the primary key arbitrates: the loser blocks until the winner commits and then takes the replay path via a locking read. This is the same mechanism the service already used (ADR-P3-016) — the local path needed it for the same reason, because a client can have several retries in flight at once.
 - **Lesson worth keeping:** "in-process callers do not retry over a network" was the comment justifying the weaker guard. It was wrong. Concurrency, not remoteness, is what breaks a read-then-write check.
+
+## ADR-P3-021 — The service provider now implements the whole contract
+
+- **Status:** Accepted
+- **Decision:** `ServiceInventoryProvider` implements `adjust_stock`, `release_expired_reservations`, and `scan_low_stock` against the ledger's endpoints. All three were stubs.
+- **What the stubs actually meant**, which is worse than "incomplete":
+  - `adjust_stock` **raised**, so a merchant could not restock at all.
+  - `release_expired_reservations` **returned 0** behind a comment claiming the service ran its own sweep. It did not — nothing scheduled one — so abandoned holds would never expire and their stock would be silently unsellable forever.
+  - `scan_low_stock` **returned `[]`**, so low-stock alerting stopped without a single error.
+  These are exactly the gaps ADR-P3-002 reverted over, and every one of them fails silently. That is why parity has to be tested rather than reasoned about.
+- **Shape parity, not just behaviour parity.** `send_low_stock_alert` renders `record.variant.sku`. A naive implementation would have returned integers and quietly changed every alert email from SKUs to numbers — a regression no test would have caught, because no test ever ran the alert under this provider. The ledger therefore joins `catalog_productvariant` and returns the SKU in the payload; the join stays local because catalog and inventory share a schema (ADR-P3-003), which is a concrete dividend of grouping them.
+- **A routing bug the parity test caught:** `/v1/stock/{variant_id}` was declared before `/v1/stock/low`, so FastAPI matched the parameterised path first and rejected `"low"` as an invalid integer. The literal route is now declared first.
+- **Cutover criteria, and where they stand.** Met: full contract implemented; 30 parity assertions across both providers; 9 live round trips; idempotency proven serially *and* concurrently; G3/G4 checkout gates green. **Not yet met:** G3/G4 have only been run against `local`, and the reserve-before-order restructure (ADR-P3-004's amended step order) is not built, so a failed order insert after a remote reserve still relies on the TTL rather than explicit compensation. `INVENTORY_PROVIDER` therefore stays pinned to `{local}`.

@@ -9,6 +9,7 @@ learned, and what removes any need for it to read these tables.
 import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -19,12 +20,15 @@ from contracts.inventory_v1 import (
     ROUTE_RELEASE,
     ROUTE_RESERVATIONS,
     ROUTE_STOCK_BATCH,
+    ROUTE_STOCK_LOW,
     ROUTE_STOCK_ONE,
     ROUTE_SWEEP,
     AdjustRequest,
     AdjustResponse,
     CommitRequest,
     CommitResponse,
+    LowStockItem,
+    LowStockResponse,
     ReleaseResponse,
     ReservationOut,
     ReserveRequest,
@@ -97,6 +101,56 @@ async def get_stock_batch(
     return StockBatchResponse(records=[_as_out(found[vid]) for vid in wanted if vid in found])
 
 
+@router.get(ROUTE_STOCK_LOW, response_model=LowStockResponse)
+async def scan_low_stock(db: AsyncSession = Depends(get_db)):  # noqa: B008
+    """SKUs at or below threshold on *availability*, not shelf count.
+
+    The SKU and product name are joined in and returned in the payload. Catalog
+    and inventory are the same target service (ADR-P3-003) sharing one schema,
+    so this stays a local join — which is precisely the dividend of grouping
+    them, and what lets the low-stock alert render SKUs rather than the bare
+    integers a naive client-side lookup would leave it with.
+    """
+    rows = (
+        (
+            await db.execute(
+                text(
+                    """
+                SELECT s.variant_id,
+                       s.qty_on_hand - s.qty_reserved AS available,
+                       s.low_stock_threshold,
+                       v.sku,
+                       p.name AS product_name
+                  FROM inventory_stockrecord s
+                  JOIN catalog_productvariant v ON v.id = s.variant_id
+                  JOIN catalog_product p        ON p.id = v.product_id
+                 WHERE (s.qty_on_hand - s.qty_reserved) <= s.low_stock_threshold
+                 ORDER BY v.sku
+                """
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+
+    return LowStockResponse(
+        items=[
+            LowStockItem(
+                variant_id=row["variant_id"],
+                sku=row["sku"] or "",
+                product_name=row["product_name"] or "",
+                available=int(row["available"]),
+                low_stock_threshold=row["low_stock_threshold"],
+            )
+            for row in rows
+        ]
+    )
+
+
+# Registered before the `/v1/stock/{variant_id}` route below: FastAPI matches
+# in declaration order, so the parameterised path would otherwise capture
+# "low" and fail to parse it as an integer.
 @router.get(ROUTE_STOCK_ONE, response_model=StockRecordOut)
 async def get_stock(variant_id: int, db: AsyncSession = Depends(get_db)):  # noqa: B008
     record = await db.get(StockRecord, variant_id)
@@ -433,30 +487,3 @@ async def expire_reservations(db: AsyncSession = Depends(get_db)):  # noqa: B008
     expired = await _release_all(db, list(locked.scalars().all()), ReservationStatus.EXPIRED)
     await db.commit()
     return SweepResponse(expired=expired)
-
-
-@router.get("/v1/stock/low")
-async def scan_low_stock(db: AsyncSession = Depends(get_db)):  # noqa: B008
-    """SKUs at or below threshold on *availability*, not shelf count.
-
-    Catalog and inventory are the same target service (ADR-P3-003), so joining
-    to the variant for its SKU stays a local query — which is why the low-stock
-    alert can render SKUs rather than bare integers.
-    """
-    available = StockRecord.qty_on_hand - StockRecord.qty_reserved
-    result = await db.execute(
-        select(StockRecord)
-        .where(available <= StockRecord.low_stock_threshold)
-        .order_by(StockRecord.variant_id)
-    )
-    rows = result.scalars().all()
-    return {
-        "items": [
-            {
-                "variant_id": row.variant_id,
-                "available": row.available,
-                "low_stock_threshold": row.low_stock_threshold,
-            }
-            for row in rows
-        ]
-    }

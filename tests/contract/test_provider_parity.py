@@ -213,3 +213,88 @@ def test_reservation_rows_carry_the_checkout_id(any_provider):
     held = Reservation.objects.get(checkout_id=checkout_id)
     assert held.status == ReservationStatus.ACTIVE
     assert held.variant_id == variant.pk
+
+
+# --- Operations that were stubs until ADR-P3-021 ----------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_adjust_stock_restocks_with_an_audit_row(any_provider):
+    """A merchant must be able to restock under either provider.
+
+    This raised outright under `service` — one of the gaps ADR-P3-002 reverted
+    over, and invisible to any suite that only exercised `local`.
+    """
+    from apps.inventory.services import adjust_stock
+
+    variant = _variant(sku=f"PAR-ADJ-{any_provider}", qty_on_hand=4)
+
+    adjust_stock(variant_id=variant.pk, delta=6, reason=MovementReason.RESTOCK)
+
+    assert StockRecord.objects.get(variant=variant).qty_on_hand == 10
+    movement = StockMovement.objects.get(variant=variant, reason=MovementReason.RESTOCK)
+    assert movement.delta == 6
+
+
+@pytest.mark.django_db(transaction=True)
+def test_adjust_stock_cannot_push_on_hand_below_reserved(any_provider):
+    """Hard Invariant 1 again, from the adjustment side."""
+    from apps.inventory.exceptions import InvalidStockAdjustment
+    from apps.inventory.services import adjust_stock
+
+    variant = _variant(sku=f"PAR-ADJDOWN-{any_provider}", qty_on_hand=10)
+    reserve_lines(
+        checkout_id=f"par-adjdown-{any_provider}", lines=[{"variant_id": variant.pk, "qty": 8}]
+    )
+
+    with pytest.raises(InvalidStockAdjustment):
+        adjust_stock(variant_id=variant.pk, delta=-5, reason=MovementReason.ADJUSTMENT)
+
+    record = StockRecord.objects.get(variant=variant)
+    assert (record.qty_on_hand, record.qty_reserved) == (10, 8)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_expired_holds_are_swept_back_to_availability(any_provider):
+    """Under `service` this returned 0 unconditionally, so holds never expired.
+
+    An abandoned cart would have kept its stock permanently — the failure is
+    silent, and only shows up as inventory that cannot be sold.
+    """
+    import datetime
+
+    from django.utils import timezone
+
+    from apps.inventory.services import release_expired_reservations
+
+    variant = _variant(sku=f"PAR-SWEEP-{any_provider}", qty_on_hand=10)
+    checkout_id = f"par-sweep-{any_provider}"
+    reserve_lines(checkout_id=checkout_id, lines=[{"variant_id": variant.pk, "qty": 4}])
+    Reservation.objects.filter(checkout_id=checkout_id).update(
+        expires_at=timezone.now() - datetime.timedelta(minutes=1)
+    )
+
+    assert release_expired_reservations() == 1
+
+    record = StockRecord.objects.get(variant=variant)
+    assert (record.qty_on_hand, record.qty_reserved) == (10, 0)
+    assert Reservation.objects.get(checkout_id=checkout_id).status == ReservationStatus.EXPIRED
+
+
+@pytest.mark.django_db(transaction=True)
+def test_low_stock_scan_reports_skus_not_bare_ids(any_provider):
+    """The alert email renders `record.variant.sku`.
+
+    Under `service` the scan returned `[]`, so alerting stopped silently; a
+    naive fix would have returned integers and quietly changed every alert
+    from SKUs to numbers. Both providers must yield the same readable shape.
+    """
+    from apps.inventory.services import scan_low_stock
+
+    variant = _variant(sku=f"PAR-LOW-{any_provider}", qty_on_hand=2)
+    StockRecord.objects.filter(variant=variant).update(low_stock_threshold=5)
+
+    flagged = list(scan_low_stock())
+
+    skus = {row.variant.sku for row in flagged}
+    assert variant.sku in skus, f"expected {variant.sku} among {skus}"

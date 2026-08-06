@@ -1,15 +1,31 @@
-"""FastAPI microservice inventory provider (D-07 experiment — OPT-IN ONLY).
+"""HTTP client for the stock ledger (`INVENTORY_PROVIDER=service`).
 
-Preserves the HTTP/Redis client from the microservice extraction. This provider
-does NOT yet satisfy the full inventory contract: commits and releases are
-fire-and-forget events, and adjust/sweep/scan are stubs. Until the service
-implements them transactionally, `INVENTORY_PROVIDER = "service"` must never
-run in an environment where the hard invariants are load-bearing.
+Implements the full inventory contract over versioned sync REST: batch reads,
+all-or-nothing reserve, commit and release by `checkout_id`, adjustments, the
+TTL sweep, and the low-stock scan. Every mutation carries an idempotency key,
+so a retry after an uncertain outcome cannot double-apply (ADR-P3-016).
+
+Three things this deliberately does **not** do, each because an earlier version
+did and it caused a revert (ADR-P3-002, ADR-P3-012):
+
+* it never writes Django's tables — the ledger owns its rows, and the order
+  link lives on Orders' own `StockHold`;
+* it never returns a Django model, only scalars and read-only shapes;
+* it never silently degrades a mutation to a no-op. `adjust_stock` used to
+  raise, the sweep used to return 0, and the scan used to return `[]`, which
+  meant abandoned holds never expired and low-stock alerting stopped without
+  a single error.
+
+Still opt-in: `prod.py` pins `INVENTORY_PROVIDER` to `local` until the cutover
+criteria in ADR-P3-021 are met.
 """
 
+import hashlib
+import json
 import logging
 import os
 import uuid
+from types import SimpleNamespace
 
 from django.conf import settings
 
@@ -20,17 +36,24 @@ from apps.inventory.exceptions import (
     ReservationUnavailable,
 )
 from contracts.inventory_v1 import (
+    ROUTE_ADJUSTMENTS,
     ROUTE_COMMIT,
     ROUTE_RELEASE,
     ROUTE_RESERVATIONS,
     ROUTE_STOCK_BATCH,
+    ROUTE_STOCK_LOW,
+    ROUTE_SWEEP,
+    AdjustRequest,
+    AdjustResponse,
     CommitRequest,
     CommitResponse,
+    LowStockResponse,
     ReleaseResponse,
     ReserveRequest,
     ReserveResponse,
     StockBatchRequest,
     StockBatchResponse,
+    SweepResponse,
 )
 
 from . import InventoryProvider
@@ -96,6 +119,22 @@ class DummyStockRecord:
         self.qty_reserved = data.get("qty_reserved", 0)
         self.low_stock_threshold = data.get("low_stock_threshold", 5)
         self.available = data.get("available", 0)
+
+
+class _LowStockRow:
+    """Duck-types the fields `send_low_stock_alert` reads off a StockRecord."""
+
+    def __init__(self, item):
+        self.variant_id = item.variant_id
+        self.available = item.available
+        self.low_stock_threshold = item.low_stock_threshold
+        self.qty_on_hand = 0
+        self.qty_reserved = 0
+        self.variant = SimpleNamespace(
+            pk=item.variant_id,
+            sku=item.sku,
+            product=SimpleNamespace(name=item.product_name),
+        )
 
 
 class ServiceInventoryProvider(InventoryProvider):
@@ -207,19 +246,89 @@ class ServiceInventoryProvider(InventoryProvider):
             "use commit_holds(checkout_id=...)."
         )
 
-    def adjust_stock(self, *, variant_id, delta, reason, ref_order=None):
-        raise InvalidStockAdjustment(
-            "adjust_stock is not implemented by the inventory microservice yet; "
-            "use INVENTORY_PROVIDER='local' for stock adjustments."
+    def adjust_stock(self, *, variant_id, delta, reason, ref_order=None, ref_order_no=""):
+        """Apply a non-sale physical stock change through the ledger.
+
+        Previously raised outright, which meant a merchant could not restock at
+        all under this provider — one of the gaps ADR-P3-002 reverted over.
+        """
+        if isinstance(delta, bool) or not isinstance(delta, int) or delta == 0:
+            raise InvalidStockAdjustment("delta must be a nonzero integer.")
+
+        order_no = ref_order_no or (getattr(ref_order, "order_no", "") if ref_order else "")
+        payload = AdjustRequest(
+            variant_id=variant_id,
+            delta=delta,
+            reason=str(reason),
+            ref_order_no=order_no,
         )
+        # The key is derived from the request itself: an adjustment has no
+        # natural client-side id, and a retry of the *same* adjustment must not
+        # apply twice while a genuinely new one must not be mistaken for a replay.
+        key = hashlib.sha256(json.dumps(payload.model_dump(), sort_keys=True).encode()).hexdigest()
+        try:
+            data = call(
+                "POST",
+                f"{_base_url()}{ROUTE_ADJUSTMENTS}",
+                policy=_WRITE_POLICY,
+                json=payload.model_dump(),
+                service_token=_service_token(),
+                token_setting_name="INVENTORY_SERVICE_TOKEN",
+                idempotency_key=key,
+            )
+        except ServiceRejected as error:
+            raise InvalidStockAdjustment(error.message or str(error)) from None
+        except ServiceCallError as error:
+            raise ReservationUnavailable(str(error)) from error
+        return DummyStockRecord(AdjustResponse.model_validate(data).model_dump())
 
     def release_expired_reservations(self, now=None):
-        # The microservice owns its own sweep; nothing to do from Django.
-        return 0
+        """Drive the ledger's TTL sweep.
+
+        This used to return 0 unconditionally with a comment claiming the
+        service ran its own sweep. It does not — nothing scheduled one — so
+        abandoned holds would never expire and their stock would be lost until
+        someone noticed. The scheduler still owns the cadence; the ledger owns
+        the transaction.
+        """
+        try:
+            data = call(
+                "POST",
+                f"{_base_url()}{ROUTE_SWEEP}",
+                policy=_WRITE_POLICY,
+                json={},
+                service_token=_service_token(),
+                token_setting_name="INVENTORY_SERVICE_TOKEN",
+                idempotency_key=f"sweep:{uuid.uuid4().hex}",
+            )
+        except ServiceCallError as error:
+            # Log and report nothing swept; the next tick retries. Raising here
+            # would take down the whole scheduler job.
+            logger.warning("inventory sweep unavailable: %s", error)
+            return 0
+        return SweepResponse.model_validate(data).expired
 
     def scan_low_stock(self):
-        logger.warning("scan_low_stock is not implemented by the inventory microservice yet.")
-        return []
+        """SKUs at or below threshold, shaped like the in-process result.
+
+        Returns objects exposing `.variant.sku` and `.variant.product.name`
+        because that is what `send_low_stock_alert` renders. Without it the
+        alert email silently degrades from SKUs to bare integers the moment
+        this provider is selected — a parity break invisible to any test that
+        only ever exercised the local provider.
+        """
+        try:
+            data = call(
+                "GET",
+                f"{_base_url()}{ROUTE_STOCK_LOW}",
+                policy=_READ_POLICY,
+                service_token=_service_token(),
+                token_setting_name="INVENTORY_SERVICE_TOKEN",
+            )
+        except ServiceCallError as error:
+            logger.warning("inventory low-stock scan unavailable: %s", error)
+            return []
+        return [_LowStockRow(item) for item in LowStockResponse.model_validate(data).items]
 
     def get_stock_record(self, variant_id):
         return self.get_stock_records([variant_id])[variant_id]
