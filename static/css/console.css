@@ -1,0 +1,1479 @@
+/* =============================================================================
+   MetroDrip Console Design System — console.css
+   =============================================================================
+   Dark-mode native industrial / waybill-brutalist aesthetic for both the
+   Administrator (/admin/) and Merchant (/merchant/) consoles.
+
+   Tokens are the single source of truth for colour, typography, spacing, and
+   motifs. This file is SEPARATE from storefront.css — the storefront uses a
+   light-mode palette; the console is dark-mode native. They must never bleed.
+
+   Design tokens (§ Design System Tokens):
+     Typography: Anton (display), Inter (body), IBM Plex Mono (mono)
+     Palette:    #0F0F0F base → #1A1A1A surface → #252524 elevated
+                 #F2F2EF ink, #D4FF3F volt, #FF7B7E danger, #F0D070 warning
+     Motifs:     dashed waybill borders, barcode strips, action chips, KPI cards
+
+   WCAG 2.1 AA compliance:
+     ink on base:      #F2F2EF on #0F0F0F → 18.3:1 ✓
+     ink on surface:   #F2F2EF on #1A1A1A → 15.6:1 ✓
+     muted on surface: #A3A39A on #1A1A1A →  7.3:1 ✓
+     on-volt on volt:  #141414 on #D4FF3F → 14.1:1 ✓
+     danger on surface:#FF7B7E on #1A1A1A →  6.4:1 ✓
+     warning on surface:#F0D070 on #1A1A1A → 10.8:1 ✓
+   ============================================================================= */
+
+/* --- Google Fonts --- */
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+/* --- CSS Custom Properties (Design Tokens) --- */
+:root {
+  /* Palette — dark-mode native */
+  --c-base:       #0F0F0F;
+  --c-surface:    #1A1A1A;
+  --c-elevated:   #252524;
+  --c-ink:        #F2F2EF;
+  --c-muted:      #A3A39A;
+  --c-border:     #2E2E2C;
+  --c-volt:       #D4FF3F;
+  --c-on-volt:    #141414;
+  --c-danger:     #FF7B7E;
+  --c-on-danger:  #1A1A1A;
+  --c-warning:    #F0D070;
+  --c-on-warning: #1A1A1A;
+  --c-success:    #7DFFB3;
+
+  /* Typography */
+  --font-display: 'Anton', sans-serif;
+  --font-body:    'Inter', sans-serif;
+  --font-mono:    'IBM Plex Mono', monospace;
+
+  /* Spacing scale */
+  --sp-2xs: 2px;
+  --sp-xs:  4px;
+  --sp-sm:  8px;
+  --sp-md:  12px;
+  --sp-lg:  16px;
+  --sp-xl:  20px;
+  --sp-2xl: 24px;
+  --sp-3xl: 32px;
+  --sp-4xl: 40px;
+
+  /* Radii */
+  --r-sm:   3px;
+  --r-md:   6px;
+  --r-lg:   8px;
+  --r-pill: 9999px;
+
+  /* Sidebar */
+  --sidebar-w: 260px;
+
+  /* Transitions */
+  --ease-fast: 120ms ease;
+  --ease-base: 200ms ease;
+}
+
+
+/* =============================================================================
+   1. BASE RESETS
+   ============================================================================= */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--c-base);
+  color: var(--c-ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* =============================================================================
+   2. LAYOUT GRID — sidebar + main
+   ============================================================================= */
+
+#container {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: 1fr;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* Hide Django's default header — replaced by our sidebar + topbar */
+#header { display: none !important; }
+
+/* Hide Django's default nav-sidebar toggle */
+#nav-sidebar, .toggle-nav-sidebar { display: none !important; }
+
+
+/* =============================================================================
+   3. CONSOLE SIDEBAR
+   ============================================================================= */
+
+.console-sidebar {
+  background: var(--c-surface);
+  border-right: 1px solid var(--c-border);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  z-index: 100;
+}
+
+/* --- Logo --- */
+.console-sidebar__brand {
+  padding: var(--sp-2xl) var(--sp-xl);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.console-sidebar__logo {
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.console-sidebar__logo-metro { color: var(--c-ink); }
+.console-sidebar__logo-drip  { color: var(--c-volt); }
+
+.console-sidebar__role {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  margin-top: var(--sp-sm);
+}
+
+/* --- Navigation --- */
+.console-sidebar__nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-lg) var(--sp-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2xs);
+}
+
+.console-sidebar__section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  padding: var(--sp-lg) var(--sp-md) var(--sp-xs) var(--sp-md);
+  margin: 0;
+}
+
+.console-sidebar__link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm) var(--sp-md);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-muted);
+  text-decoration: none;
+  border-radius: var(--r-md);
+  border-left: 3px solid transparent;
+  transition: all var(--ease-fast);
+  min-height: 36px;
+}
+
+.console-sidebar__link:hover {
+  background: var(--c-elevated);
+  color: var(--c-ink);
+}
+
+.console-sidebar__link--active {
+  background: var(--c-elevated);
+  color: var(--c-volt);
+  border-left-color: var(--c-volt);
+  font-weight: 600;
+}
+
+/* --- User panel at bottom --- */
+.console-sidebar__user {
+  padding: var(--sp-lg);
+  border-top: 1px solid var(--c-border);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+
+.console-sidebar__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--c-volt);
+  color: var(--c-on-volt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  font-family: var(--font-body);
+  flex-shrink: 0;
+}
+
+.console-sidebar__user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-ink);
+}
+
+.console-sidebar__user-role {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+}
+
+
+/* =============================================================================
+   4. MAIN CONTENT AREA
+   ============================================================================= */
+
+#main {
+  background: var(--c-base);
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Topbar */
+.console-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-xl) var(--sp-3xl);
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-base);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  min-height: 64px;
+  flex-shrink: 0;
+}
+
+.console-topbar__title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--c-ink);
+  margin: 0;
+}
+
+.console-topbar__meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-muted);
+  letter-spacing: 0.05em;
+}
+
+.console-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-lg);
+}
+
+.console-topbar__profile-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-xs) var(--sp-md);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  color: var(--c-muted);
+  text-decoration: none;
+  transition: border-color var(--ease-fast);
+}
+.console-topbar__profile-chip:hover {
+  border-color: var(--c-volt);
+  color: var(--c-ink);
+}
+
+/* Hamburger toggle for mobile */
+.console-sidebar-toggle {
+  display: none; /* shown at mobile breakpoint */
+  background: none;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  color: var(--c-ink);
+  padding: var(--sp-sm);
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Content */
+.content, #content {
+  padding: var(--sp-2xl) var(--sp-3xl);
+  flex: 1;
+}
+
+
+/* =============================================================================
+   5. KPI CARDS — dashed waybill-style
+   ============================================================================= */
+
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-lg);
+  margin-bottom: var(--sp-2xl);
+}
+
+.kpi-card {
+  background: var(--c-surface);
+  border: 2px dashed var(--c-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-xl);
+  position: relative;
+  overflow: hidden;
+}
+
+.kpi-card::before {
+  /* Barcode-strip decoration along the top */
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--c-border) 0px,
+    var(--c-border) 3px,
+    transparent 3px,
+    transparent 6px,
+    var(--c-border) 6px,
+    var(--c-border) 8px,
+    transparent 8px,
+    transparent 14px
+  );
+}
+
+.kpi-card--volt::before  { background: var(--c-volt); height: 3px; }
+.kpi-card--danger::before { background: var(--c-danger); height: 3px; }
+.kpi-card--warning::before { background: var(--c-warning); height: 3px; }
+
+.kpi-card__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  margin-bottom: var(--sp-sm);
+}
+
+.kpi-card__value {
+  font-family: var(--font-display);
+  font-size: 32px;
+  color: var(--c-ink);
+  line-height: 1;
+}
+
+.kpi-card__value--volt    { color: var(--c-volt); }
+.kpi-card__value--danger  { color: var(--c-danger); }
+.kpi-card__value--warning { color: var(--c-warning); }
+
+.kpi-card__sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-muted);
+  margin-top: var(--sp-xs);
+}
+
+
+/* =============================================================================
+   6. ACTION CHIPS
+   ============================================================================= */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  padding: 3px 10px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.chip--volt {
+  background: var(--c-volt);
+  color: var(--c-on-volt);
+}
+
+.chip--danger {
+  background: var(--c-danger);
+  color: var(--c-on-danger);
+}
+
+.chip--warning {
+  background: var(--c-warning);
+  color: var(--c-on-warning);
+}
+
+.chip--elevated {
+  background: var(--c-elevated);
+  color: var(--c-ink);
+  border: 1px solid var(--c-border);
+}
+
+.chip--success {
+  background: var(--c-success);
+  color: var(--c-on-volt);
+}
+
+.chip--muted {
+  background: transparent;
+  color: var(--c-muted);
+  border: 1px solid var(--c-border);
+}
+
+
+/* =============================================================================
+   7. DENSE TABLES
+   ============================================================================= */
+
+.dense-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  color: var(--c-ink);
+}
+
+.dense-table thead th {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  text-align: left;
+  padding: var(--sp-sm) var(--sp-md);
+  border-bottom: 1px solid var(--c-border);
+  white-space: nowrap;
+}
+
+.dense-table tbody td {
+  padding: var(--sp-sm) var(--sp-md);
+  border-bottom: 1px dashed var(--c-border);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.dense-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.dense-table tbody tr:hover {
+  background: var(--c-elevated);
+}
+
+/* Monospace columns for IDs, SKUs, prices, timestamps */
+.td-mono {
+  font-family: var(--font-mono) !important;
+}
+
+.td-muted {
+  color: var(--c-muted);
+}
+
+/* Low-stock row warning */
+.dense-table tbody tr.row-warning {
+  border-left: 3px solid var(--c-warning);
+}
+
+.dense-table tbody tr.row-danger {
+  border-left: 3px solid var(--c-danger);
+}
+
+
+/* =============================================================================
+   8. WAYBILL & BARCODE MOTIFS
+   ============================================================================= */
+
+.waybill-border {
+  border: 2px dashed var(--c-border);
+  border-radius: var(--r-md);
+}
+
+.barcode-strip {
+  height: 4px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--c-muted) 0px,
+    var(--c-muted) 2px,
+    transparent 2px,
+    transparent 5px,
+    var(--c-muted) 5px,
+    var(--c-muted) 7px,
+    transparent 7px,
+    transparent 12px,
+    var(--c-muted) 12px,
+    var(--c-muted) 13px,
+    transparent 13px,
+    transparent 18px
+  );
+  width: 100%;
+  margin: var(--sp-lg) 0;
+  opacity: 0.4;
+}
+
+.barcode-strip--volt {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--c-volt) 0px,
+    var(--c-volt) 2px,
+    transparent 2px,
+    transparent 5px,
+    var(--c-volt) 5px,
+    var(--c-volt) 7px,
+    transparent 7px,
+    transparent 12px,
+    var(--c-volt) 12px,
+    var(--c-volt) 13px,
+    transparent 13px,
+    transparent 18px
+  );
+  opacity: 0.6;
+}
+
+
+/* =============================================================================
+   9. CONSOLE PANELS
+   ============================================================================= */
+
+.console-panel {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-2xl);
+}
+
+.console-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-lg);
+}
+
+.console-panel__title {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--c-ink);
+  margin: 0;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-xl);
+}
+
+
+/* =============================================================================
+   10. BUTTONS
+   ============================================================================= */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm) var(--sp-lg);
+  border: none;
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all var(--ease-fast);
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.btn--volt {
+  background: var(--c-volt);
+  color: var(--c-on-volt);
+}
+.btn--volt:hover { filter: brightness(0.92); }
+
+.btn--danger {
+  background: var(--c-danger);
+  color: var(--c-on-danger);
+}
+.btn--danger:hover { filter: brightness(0.9); }
+
+.btn--elevated {
+  background: var(--c-elevated);
+  color: var(--c-ink);
+  border: 1px solid var(--c-border);
+}
+.btn--elevated:hover { background: var(--c-surface); }
+
+.btn--ghost {
+  background: transparent;
+  color: var(--c-muted);
+  border: 1px solid var(--c-border);
+}
+.btn--ghost:hover { color: var(--c-ink); border-color: var(--c-muted); }
+
+
+/* =============================================================================
+   11. DJANGO ADMIN OVERRIDES — Global
+   ============================================================================= */
+
+/* --- Module headings (app group headers) --- */
+.module h2, .module caption, .inline-group h2 {
+  background: var(--c-elevated) !important;
+  color: var(--c-ink) !important;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: var(--sp-sm) var(--sp-md) !important;
+  border-bottom: 1px solid var(--c-border);
+}
+
+/* --- Content heading --- */
+#content h1, #content-main h1 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--c-ink);
+  margin-bottom: var(--sp-xl);
+}
+
+/* --- Breadcrumbs: hidden, replaced by topbar --- */
+.breadcrumbs { display: none !important; }
+
+/* --- Links --- */
+a, a:link, a:visited {
+  color: var(--c-volt);
+  text-decoration: none;
+  transition: color var(--ease-fast);
+}
+a:hover, a:focus {
+  color: var(--c-ink);
+  text-decoration: underline;
+}
+
+/* Links inside tables should be quieter */
+.dense-table a, #result_list a,
+#changelist-form a, .change-list a {
+  color: var(--c-ink);
+}
+.dense-table a:hover, #result_list a:hover {
+  color: var(--c-volt);
+}
+
+/* --- Django buttons and submit inputs --- */
+.button, input[type="submit"], input[type="button"],
+.submit-row input, a.button, .addlink, .changelink {
+  background: var(--c-volt) !important;
+  color: var(--c-on-volt) !important;
+  border: none !important;
+  border-radius: var(--r-sm) !important;
+  padding: var(--sp-sm) var(--sp-lg) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none !important;
+  cursor: pointer;
+  min-height: 36px;
+  transition: filter var(--ease-fast);
+}
+
+.button:hover, input[type="submit"]:hover,
+input[type="button"]:hover, a.button:hover {
+  filter: brightness(0.92);
+}
+
+/* Default button (save) */
+input[type="submit"].default, .button.default {
+  background: var(--c-volt) !important;
+  color: var(--c-on-volt) !important;
+}
+
+/* Delete / danger buttons */
+.deletelink, a.deletelink, .button.cancel-link,
+input[type="submit"][name="post"][value="Yes, I'm sure"],
+.delete-confirmation input[type="submit"] {
+  background: var(--c-danger) !important;
+  color: var(--c-on-danger) !important;
+}
+
+/* Secondary / cancel buttons */
+.button:not(.default):not(.deletelink), a.button:not(.default) {
+  background: var(--c-elevated) !important;
+  color: var(--c-ink) !important;
+  border: 1px solid var(--c-border) !important;
+}
+
+/* Re-assert primary on .default after the secondary rule */
+input[type="submit"].default, .button.default,
+.submit-row input[type="submit"]:not(.deletelink) {
+  background: var(--c-volt) !important;
+  color: var(--c-on-volt) !important;
+  border: none !important;
+}
+
+
+/* =============================================================================
+   12. DJANGO ADMIN OVERRIDES — Changelist tables
+   ============================================================================= */
+
+#changelist {
+  background: transparent;
+}
+
+#changelist-form {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+/* Changelist table */
+#result_list {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#result_list thead th {
+  background: var(--c-elevated);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  padding: var(--sp-sm) var(--sp-md);
+  border-bottom: 1px solid var(--c-border);
+  white-space: nowrap;
+}
+
+#result_list thead th a {
+  color: var(--c-muted) !important;
+  text-decoration: none;
+}
+#result_list thead th a:hover {
+  color: var(--c-volt) !important;
+}
+
+#result_list thead th.sorted {
+  background: var(--c-surface);
+}
+
+#result_list tbody td {
+  padding: var(--sp-sm) var(--sp-md);
+  border-bottom: 1px dashed var(--c-border);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--c-ink);
+  vertical-align: middle;
+}
+
+#result_list tbody tr:hover td {
+  background: var(--c-elevated);
+}
+
+#result_list tbody tr:last-child td {
+  border-bottom: none;
+}
+
+#result_list tbody td a {
+  color: var(--c-ink);
+  font-weight: 500;
+}
+#result_list tbody td a:hover {
+  color: var(--c-volt);
+}
+
+/* Checkbox column */
+#result_list th.action-checkbox-column,
+#result_list td .action-checkbox {
+  width: 32px;
+}
+
+/* Sort arrows */
+table thead th .text span.sortremove,
+table thead th .text span.sorting {
+  color: var(--c-muted);
+}
+
+/* Date hierarchy */
+.xfull .toplinks {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-sm) var(--sp-md);
+  margin-bottom: var(--sp-lg);
+}
+
+.xfull .toplinks a {
+  color: var(--c-volt);
+}
+
+
+/* =============================================================================
+   13. DJANGO ADMIN OVERRIDES — Actions bar & toolbar
+   ============================================================================= */
+
+.actions, .changelist-actions {
+  background: var(--c-elevated) !important;
+  padding: var(--sp-sm) var(--sp-md) !important;
+  border-bottom: 1px solid var(--c-border);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+.actions select, .changelist-actions select {
+  background: var(--c-surface);
+  color: var(--c-ink);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  padding: var(--sp-xs) var(--sp-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-height: 36px;
+}
+
+.actions label {
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* Toolbar (search) */
+#toolbar, #changelist-search {
+  background: var(--c-surface);
+  padding: var(--sp-md) var(--sp-lg);
+  border-bottom: 1px solid var(--c-border);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+#searchbar, #changelist-search input[type="text"],
+input[type="text"], input[type="email"], input[type="password"],
+input[type="number"], input[type="url"], textarea, select {
+  background: var(--c-elevated) !important;
+  color: var(--c-ink) !important;
+  border: 1px solid var(--c-border) !important;
+  border-radius: var(--r-sm) !important;
+  padding: var(--sp-sm) var(--sp-md) !important;
+  font-family: var(--font-body) !important;
+  font-size: 13px !important;
+  min-height: 36px;
+  outline: none;
+  transition: border-color var(--ease-fast);
+}
+
+input[type="text"]:focus, input[type="email"]:focus,
+input[type="password"]:focus, input[type="number"]:focus,
+textarea:focus, select:focus {
+  border-color: var(--c-volt) !important;
+  outline: 2px solid rgba(212, 255, 63, 0.3);
+  outline-offset: 1px;
+}
+
+
+/* =============================================================================
+   14. DJANGO ADMIN OVERRIDES — Filters sidebar
+   ============================================================================= */
+
+#changelist-filter {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-lg);
+  margin-bottom: var(--sp-lg);
+}
+
+#changelist-filter h2 {
+  font-family: var(--font-mono) !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  background: none !important;
+  padding: 0 0 var(--sp-sm) 0 !important;
+  margin-bottom: var(--sp-md);
+  border-bottom: 1px dashed var(--c-border);
+}
+
+#changelist-filter h3 {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: var(--sp-md) 0 var(--sp-xs);
+}
+
+#changelist-filter ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#changelist-filter li {
+  margin: 0;
+}
+
+#changelist-filter li a {
+  display: block;
+  padding: var(--sp-xs) var(--sp-sm);
+  color: var(--c-muted);
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+#changelist-filter li a:hover {
+  background: var(--c-elevated);
+  color: var(--c-ink);
+  text-decoration: none;
+}
+
+#changelist-filter li.selected a {
+  color: var(--c-volt);
+  font-weight: 600;
+}
+
+
+/* =============================================================================
+   15. DJANGO ADMIN OVERRIDES — Change forms
+   ============================================================================= */
+
+.form-row {
+  padding: var(--sp-md) 0;
+  border-bottom: 1px dashed var(--c-border);
+}
+
+.form-row:last-child {
+  border-bottom: none;
+}
+
+.form-row label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+}
+
+.form-row .help, .form-row .helptext {
+  color: var(--c-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+fieldset {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-lg) var(--sp-xl);
+  margin-bottom: var(--sp-lg);
+}
+
+fieldset .description {
+  color: var(--c-muted);
+  font-size: 12px;
+  margin-bottom: var(--sp-md);
+  padding-bottom: var(--sp-md);
+  border-bottom: 1px dashed var(--c-border);
+}
+
+/* Submit row */
+.submit-row {
+  background: var(--c-surface) !important;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-md) var(--sp-lg) !important;
+  margin-top: var(--sp-xl);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+/* Inline formsets */
+.inline-group .tabular fieldset.module {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+}
+
+.inline-group .tabular table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.inline-group .tabular thead th {
+  background: var(--c-elevated);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  padding: var(--sp-sm) var(--sp-md);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.inline-group .tabular tbody td {
+  padding: var(--sp-sm) var(--sp-md);
+  border-bottom: 1px dashed var(--c-border);
+}
+
+
+/* =============================================================================
+   16. DJANGO ADMIN OVERRIDES — Pagination
+   ============================================================================= */
+
+.paginator, p.paginator {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--c-muted);
+  padding: var(--sp-md) var(--sp-lg);
+  border-top: 1px solid var(--c-border);
+  background: var(--c-surface);
+}
+
+.paginator a {
+  color: var(--c-volt);
+  padding: var(--sp-xs) var(--sp-sm);
+  border-radius: var(--r-sm);
+}
+
+.paginator a:hover {
+  background: var(--c-elevated);
+}
+
+
+/* =============================================================================
+   17. DJANGO ADMIN OVERRIDES — Delete confirmation
+   ============================================================================= */
+
+.delete-confirmation {
+  background: var(--c-surface);
+  border: 2px dashed var(--c-danger);
+  border-radius: var(--r-md);
+  padding: var(--sp-2xl);
+}
+
+.delete-confirmation h2 {
+  color: var(--c-danger) !important;
+  background: none !important;
+}
+
+.delete-confirmation ul {
+  color: var(--c-muted);
+}
+
+/* Error list */
+.errorlist li {
+  color: var(--c-danger);
+  font-size: 12px;
+}
+
+.errornote {
+  background: rgba(255, 123, 126, 0.1);
+  border: 1px solid var(--c-danger);
+  color: var(--c-danger);
+  padding: var(--sp-md);
+  border-radius: var(--r-md);
+  margin-bottom: var(--sp-lg);
+}
+
+/* Success message */
+.messagelist .success {
+  background: rgba(125, 255, 179, 0.1);
+  border-left: 4px solid var(--c-success);
+  color: var(--c-success);
+}
+
+.messagelist .warning {
+  background: rgba(240, 208, 112, 0.1);
+  border-left: 4px solid var(--c-warning);
+  color: var(--c-warning);
+}
+
+.messagelist .error {
+  background: rgba(255, 123, 126, 0.1);
+  border-left: 4px solid var(--c-danger);
+  color: var(--c-danger);
+}
+
+.messagelist li {
+  padding: var(--sp-md) var(--sp-lg);
+  margin-bottom: var(--sp-sm);
+  border-radius: var(--r-md);
+  font-size: 13px;
+}
+
+
+/* =============================================================================
+   18. DJANGO ADMIN OVERRIDES — App index / model index
+   ============================================================================= */
+
+/* The default Django admin index table */
+#content-main .module {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  margin-bottom: var(--sp-lg);
+  overflow: hidden;
+}
+
+#content-main .module table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#content-main .module table th {
+  background: var(--c-elevated);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  padding: var(--sp-sm) var(--sp-md);
+  border-bottom: 1px solid var(--c-border);
+  text-align: left;
+}
+
+#content-main .module table td {
+  padding: var(--sp-sm) var(--sp-md);
+  border-bottom: 1px dashed var(--c-border);
+  font-size: 13px;
+}
+
+#content-main .module table tr:last-child td {
+  border-bottom: none;
+}
+
+#content-main .module table tr:hover td {
+  background: var(--c-elevated);
+}
+
+/* Recent actions sidebar */
+#recent-actions-module {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+}
+
+#recent-actions-module h2 {
+  background: var(--c-elevated) !important;
+  color: var(--c-ink) !important;
+}
+
+#recent-actions-module li {
+  border-bottom: 1px dashed var(--c-border);
+  padding: var(--sp-sm) var(--sp-md);
+}
+
+
+/* =============================================================================
+   19. DJANGO ADMIN OVERRIDES — Login page
+   ============================================================================= */
+
+body.login {
+  background: var(--c-base);
+}
+
+body.login #container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  grid-template-columns: 1fr;
+}
+
+body.login #header {
+  display: block !important;
+  background: none;
+  text-align: center;
+  padding: var(--sp-2xl);
+}
+
+body.login #header h1 {
+  font-family: var(--font-display);
+  font-size: 32px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+body.login #header h1 a {
+  color: var(--c-ink) !important;
+}
+
+body.login #content {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-3xl);
+  max-width: 420px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+body.login #content h1 {
+  font-family: var(--font-display);
+  font-size: 24px;
+  text-align: center;
+  margin-bottom: var(--sp-2xl);
+}
+
+body.login .form-row {
+  margin-bottom: var(--sp-lg);
+  border-bottom: none;
+}
+
+body.login input[type="submit"] {
+  width: 100%;
+  min-height: 44px;
+}
+
+
+/* =============================================================================
+   20. ACCESSIBILITY
+   ============================================================================= */
+
+/* Focus indicators — WCAG 2.1 AA requirement */
+:focus-visible {
+  outline: 2px solid var(--c-volt);
+  outline-offset: 2px;
+}
+
+/* Remove focus outline for mouse clicks */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Skip link (hidden until focused) */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: var(--sp-lg);
+  background: var(--c-volt);
+  color: var(--c-on-volt);
+  padding: var(--sp-sm) var(--sp-lg);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 9999;
+  transition: top var(--ease-fast);
+}
+
+.skip-link:focus {
+  top: var(--sp-md);
+}
+
+/* Touch targets: minimum 44×44px */
+.console-sidebar__link,
+.console-topbar__profile-chip,
+.btn, .button, input[type="submit"],
+#changelist-filter li a {
+  min-height: 44px;
+}
+
+
+/* =============================================================================
+   21. RESPONSIVE — Sidebar collapses at ≤768px
+   ============================================================================= */
+
+@media (max-width: 768px) {
+  #container {
+    grid-template-columns: 1fr;
+  }
+
+  .console-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: var(--sidebar-w);
+    transform: translateX(-100%);
+    transition: transform var(--ease-base);
+    box-shadow: 4px 0 20px rgba(0,0,0,0.5);
+  }
+
+  .console-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  /* Overlay behind sidebar */
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+  }
+
+  .sidebar-overlay.is-open {
+    display: block;
+  }
+
+  .console-sidebar-toggle {
+    display: flex;
+  }
+
+  .console-topbar {
+    padding: var(--sp-md) var(--sp-lg);
+  }
+
+  .content, #content {
+    padding: var(--sp-lg);
+  }
+
+  .kpi-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Stack form rows vertically */
+  .form-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-sm);
+  }
+}
+
+@media (max-width: 480px) {
+  .kpi-row {
+    grid-template-columns: 1fr;
+  }
+
+  .console-topbar__title {
+    font-size: 18px;
+  }
+
+  .console-topbar__meta {
+    display: none;
+  }
+}
+
+
+/* =============================================================================
+   22. OBJECT TOOLS (add/change links at top of changelist)
+   ============================================================================= */
+
+.object-tools {
+  list-style: none;
+  margin: 0 0 var(--sp-lg) 0;
+  padding: 0;
+  display: flex;
+  gap: var(--sp-sm);
+  justify-content: flex-end;
+}
+
+.object-tools li {
+  margin: 0;
+}
+
+.object-tools a {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--sp-sm) var(--sp-lg);
+  background: var(--c-volt);
+  color: var(--c-on-volt) !important;
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  min-height: 36px;
+}
+
+.object-tools a:hover {
+  filter: brightness(0.92);
+  text-decoration: none;
+}
+
+
+/* =============================================================================
+   23. RELATED WIDGET / AUTOCOMPLETE
+   ============================================================================= */
+
+.related-widget-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+.related-widget-wrapper select {
+  flex: 1;
+}
+
+.related-widget-wrapper .change-related,
+.related-widget-wrapper .add-related,
+.related-widget-wrapper .delete-related {
+  padding: var(--sp-xs);
+  min-width: 32px;
+  min-height: 32px;
+}
+
+/* Calendar and clock widgets */
+.calendarbox, .clockbox {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  color: var(--c-ink);
+}
+
+.calendar td a {
+  color: var(--c-ink);
+}
+
+.calendar td.selected a {
+  background: var(--c-volt);
+  color: var(--c-on-volt);
+}

@@ -1,0 +1,67 @@
+{% comment %}
+  Console sidebar partial — included by admin/base_site.html.
+  Renders the METRO+DRIP logo, console role label, navigation links from
+  available_apps, and user panel. Shared by both AdminSite and MerchantSite.
+
+  Context variables used (injected by ConsoleSite.each_context):
+    - console_role:  StaffRole enum value
+    - console_label: human-readable string ("administrator console" / "merchant console")
+    - available_apps: Django admin's standard app/model list
+    - user:          request.user (Customer model, email-based auth per ADR-A-003)
+    - site_url:      link back to storefront
+{% endcomment %}
+{% load static %}
+
+<aside class="console-sidebar" id="consoleSidebar"
+       role="navigation" aria-label="Console navigation">
+
+  {# --- Logo --- #}
+  <div class="console-sidebar__brand">
+    <div class="console-sidebar__logo">
+      <span class="console-sidebar__logo-metro">METRO</span><span class="console-sidebar__logo-drip">DRIP</span>
+    </div>
+    <div class="console-sidebar__role">
+      {% if console_label == "administrator console" %}
+        ADMINISTRATION
+      {% else %}
+        MERCHANT DESK
+      {% endif %}
+    </div>
+  </div>
+
+  {# --- Navigation from available_apps --- #}
+  <nav class="console-sidebar__nav" aria-label="Console models">
+    {# Dashboard link #}
+    <a href="{{ site_url|default:'/' }}"
+       class="console-sidebar__link {% if request.path == '/admin/' or request.path == '/merchant/' %}console-sidebar__link--active{% endif %}"
+       {% if request.path == '/admin/' or request.path == '/merchant/' %}aria-current="page"{% endif %}>
+      &#9632; Dashboard
+    </a>
+
+    {% if available_apps %}
+      {% for app in available_apps %}
+        <p class="console-sidebar__section-label">{{ app.name }}</p>
+        {% for model in app.models %}
+          <a href="{{ model.admin_url }}"
+             class="console-sidebar__link {% if model.admin_url in request.path %}console-sidebar__link--active{% endif %}"
+             {% if model.admin_url in request.path %}aria-current="page"{% endif %}>
+            {{ model.name }}
+          </a>
+        {% endfor %}
+      {% endfor %}
+    {% endif %}
+  </nav>
+
+  {# --- User panel --- #}
+  <div class="console-sidebar__user">
+    <div class="console-sidebar__avatar" aria-hidden="true">
+      {{ user.name|default:user.email|slice:":1"|upper }}
+    </div>
+    <div>
+      <div class="console-sidebar__user-name">{{ user.name|default:user.email }}</div>
+      <div class="console-sidebar__user-role">
+        {% if console_label == "administrator console" %}ADMINISTRATOR{% else %}MERCHANT{% endif %}
+      </div>
+    </div>
+  </div>
+</aside>

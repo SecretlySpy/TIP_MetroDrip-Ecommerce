@@ -1,62 +1,131 @@
 {% extends "admin/base_site.html" %}
+{% load i18n storefront_tags %}
+{# =============================================================================
+   Merchant Dashboard — Variant-Level Stock Control
+   =============================================================================
+   Replaces the hard-coded mock data with real Django context injected by
+   MerchantSite.each_context():
+     - stock_records:       20 lowest-availability StockRecord rows
+     - total_skus:          total StockRecord count
+     - low_stock_count:     count of SKUs at or below threshold
+     - active_reservations: count of active checkout holds
+     - today_orders:        orders placed today
+
+   Layout: KPI row (waybill cards) + dense stock table with status chips.
+   Prices use the storefront_tags `peso` filter (integer centavos → display).
+   ============================================================================= #}
 
 {% block content %}
-<div class="console-header">
-  <div>
-    <h1 class="console-title">Merchant Dashboard</h1>
-    <div class="console-meta">/merchant/ &middot; STORE MANAGEMENT</div>
-  </div>
+<div class="barcode-strip barcode-strip--volt"></div>
+
+{# --- KPI Row --- #}
+<div class="kpi-row">
+  {% include "admin/_kpi_card.html" with label="TOTAL SKUS" value=total_skus|default:"0" variant="" sub="tracked variants" %}
+  {% include "admin/_kpi_card.html" with label="LOW STOCK ALERTS" value=low_stock_count|default:"0" variant="danger" sub="at or below threshold" %}
+  {% include "admin/_kpi_card.html" with label="ACTIVE RESERVATIONS" value=active_reservations|default:"0" variant="warning" sub="checkout holds" %}
+  {% include "admin/_kpi_card.html" with label="TODAY'S ORDERS" value=today_orders|default:"0" variant="volt" sub="placed today" %}
 </div>
 
-<div class="dashboard-grid">
-  <div class="console-panel">
-    <h3>Low-Stock Alerts</h3>
-    <table class="console-table">
-      <thead>
-        <tr>
-          <th>Product</th>
-          <th>Variant</th>
-          <th>Stock</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Oversized Tee</td>
-          <td>Black / M</td>
-          <td style="color: var(--color-danger)">2 left</td>
-        </tr>
-        <tr>
-          <td>Cargo Pants</td>
-          <td>Olive / 32</td>
-          <td style="color: var(--color-danger)">0 left</td>
-        </tr>
-      </tbody>
-    </table>
+{# --- Variant-Level Stock Control Table --- #}
+<div class="console-panel">
+  <div class="console-panel__header">
+    <h2 class="console-panel__title">VARIANT-LEVEL STOCK CONTROL</h2>
+    <span class="chip chip--elevated">LOWEST AVAILABILITY FIRST</span>
   </div>
-  
-  <div class="console-panel">
-    <h3>Recent Orders</h3>
-    <table class="console-table">
-      <thead>
-        <tr>
-          <th>Order</th>
-          <th>Total</th>
-          <th>Status</th>
+  <div class="barcode-strip"></div>
+
+  <table class="dense-table" role="table" aria-label="Stock control">
+    <thead>
+      <tr>
+        <th scope="col">PRODUCT & VARIANT</th>
+        <th scope="col">SKU CODE</th>
+        <th scope="col">BASE PRICE</th>
+        <th scope="col">ON HAND</th>
+        <th scope="col">RESERVED</th>
+        <th scope="col">AVAILABLE</th>
+        <th scope="col">STATUS</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if stock_records %}
+        {% for sr in stock_records %}
+        <tr{% if sr.available_units <= 0 %} class="row-danger"{% elif sr.available_units <= sr.low_stock_threshold %} class="row-warning"{% endif %}>
+          <td>
+            {{ sr.variant.product.name|default:"—" }}
+            <span class="td-muted" style="display:block; font-size:11px;">
+              {{ sr.variant.size }} · {{ sr.variant.color }} · {{ sr.variant.fit }}
+            </span>
+          </td>
+          <td class="td-mono">{{ sr.variant.sku }}</td>
+          <td class="td-mono">{{ sr.variant.price|format_centavos }}</td>
+          <td class="td-mono">{{ sr.qty_on_hand }}</td>
+          <td class="td-mono">{{ sr.qty_reserved }}</td>
+          <td class="td-mono">
+            {% if sr.available_units <= 0 %}
+              <strong style="color: var(--c-danger);">{{ sr.available_units }}</strong>
+            {% elif sr.available_units <= sr.low_stock_threshold %}
+              <strong style="color: var(--c-warning);">{{ sr.available_units }}</strong>
+            {% else %}
+              {{ sr.available_units }}
+            {% endif %}
+          </td>
+          <td>
+            {% if sr.available_units <= 0 %}
+              <span class="chip chip--danger">OUT</span>
+            {% elif sr.available_units <= sr.low_stock_threshold %}
+              <span class="chip chip--warning">LOW</span>
+            {% else %}
+              <span class="chip chip--muted">OK</span>
+            {% endif %}
+          </td>
         </tr>
-      </thead>
-      <tbody>
+        {% endfor %}
+      {% else %}
         <tr>
-          <td>#MD-1025</td>
-          <td>₱2,500</td>
-          <td>Pending</td>
+          <td colspan="7" class="td-muted" style="text-align:center; padding:var(--sp-2xl);">
+            No stock records found. Run <code>seed_demo</code> to populate inventory.
+          </td>
         </tr>
-        <tr>
-          <td>#MD-1024</td>
-          <td>₱4,200</td>
-          <td>Shipped</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+      {% endif %}
+    </tbody>
+  </table>
 </div>
+
+<div class="barcode-strip"></div>
+
+{# --- Quick Links to managed models --- #}
+{% if available_apps %}
+<div class="console-panel" style="margin-top: var(--sp-lg);">
+  <div class="console-panel__header">
+    <h2 class="console-panel__title">MANAGED RESOURCES</h2>
+  </div>
+  <table class="dense-table" role="table" aria-label="Managed resources">
+    <thead>
+      <tr>
+        <th scope="col">RESOURCE</th>
+        <th scope="col">APP</th>
+        <th scope="col">ACTIONS</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for app in available_apps %}
+        {% for model in app.models %}
+        <tr>
+          <td>
+            <a href="{{ model.admin_url }}">{{ model.name }}</a>
+          </td>
+          <td class="td-mono td-muted">{{ app.name }}</td>
+          <td>
+            {% if model.add_url %}
+              <a href="{{ model.add_url }}" class="chip chip--volt" style="text-decoration:none;">+ ADD</a>
+            {% endif %}
+            <a href="{{ model.admin_url }}" class="chip chip--elevated" style="text-decoration:none;">VIEW</a>
+          </td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}

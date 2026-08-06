@@ -417,6 +417,13 @@
   4. Re-point M2 gate at Catalog reserve endpoint; both web and mobile checkout must pass.
   5. Only then introduce saga module with ValidateCart → CreateOrder → ReserveStock → CreatePaymentSession.
 
+## ADR-C-005 — Curated collection categories
+
+- **Status:** Accepted
+- **Decision:** The catalog supports thematic collections ("New Arrivals", "Best-Sellers", "On-Sale", "Pre-Order") as top-level root categories. These categories do not require gendered subcategories (e.g. "Men", "Women").
+- **Rationale:** Marketing and curation require flexible grouping that breaks the strict structural taxonomy (Tops/Bottoms). Treating collections as root categories reuses the existing category navigation and filtering logic without requiring a separate "Collections" data model.
+- **Consequences:** Product.category can point directly to a root collection category. Mass seeding scripts (seed_collections.py) apply static discount math (e.g., 30% off for "On-Sale") at generation time to preserve the no-client-math invariant.
+
 ## ADR-P3-008 — Deployed provider selection is an allowlist, not a hardcoded pin
 
 - **Status:** Accepted (amends ADR-P3-003 steps 1 and 2)
