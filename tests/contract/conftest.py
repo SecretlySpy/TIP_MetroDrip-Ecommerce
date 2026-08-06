@@ -14,6 +14,7 @@ FastAPI app — no sockets, no fixtures, no running container.
 
 from __future__ import annotations
 
+import asyncio
 from urllib.parse import urlsplit
 
 import pytest
@@ -51,3 +52,60 @@ def _reset_breaker():
     core_http.BREAKER.reset()
     yield
     core_http.BREAKER.reset()
+
+
+def _run(coroutine):
+    """Run one coroutine to completion on a throwaway loop."""
+    return asyncio.new_event_loop().run_until_complete(coroutine)
+
+
+@pytest.fixture
+def live_ledger(db):
+    """Bind the stock ledger to Django's active test schema for one test.
+
+    This is the harness ADR-P3-017 named as the gate on any parity claim, and
+    it is deliberately not a return to the old arrangement. Previously
+    `conftest.py` set `MYSQL_DATABASE_INVENTORY=test_metrodrip` at session
+    scope with no test using it: accidental, unexercised, and it masked the
+    dual-write bug because both sides silently addressed the same rows
+    (ADR-P3-012).
+
+    Pointing the service at Django's schema is nonetheless *correct* —
+    ADR-P3-013 chose "shared schema, exclusive writer" so that rollback stays
+    an environment variable. What was missing was making it deliberate and
+    actually testing it.
+
+    Callers must also use `transaction=True`: the service reads on its own
+    SQLAlchemy connection and cannot see an uncommitted Django transaction, so
+    without a real COMMIT every read returns empty and the test proves the
+    opposite of what it claims.
+    """
+    from django.db import connection
+
+    from services.inventory import database
+
+    schema = connection.settings_dict["NAME"]
+    _run(database.configure(database=schema, echo=False, pooled=False))
+    try:
+        yield schema
+    finally:
+        # Drop the pool before Django's teardown truncates these tables.
+        _run(database.engine.dispose())
+
+
+@pytest.fixture
+def service_provider(settings, monkeypatch, live_ledger, bridge):
+    """Route Django's inventory calls over HTTP into the in-process ledger.
+
+    Combines the three things a real round trip needs: the provider selected, a
+    reachable and authenticated service, and the egress point redirected at the
+    actual FastAPI app rather than at a mock.
+    """
+    from services.inventory.main import app
+
+    token = "ledger-test-token"
+    monkeypatch.setenv("INVENTORY_SERVICE_TOKEN", token)
+    settings.INVENTORY_PROVIDER = "service"
+    settings.INVENTORY_SERVICE_URL = "http://inventory.test"
+    settings.INVENTORY_SERVICE_TOKEN = token
+    return bridge(app)

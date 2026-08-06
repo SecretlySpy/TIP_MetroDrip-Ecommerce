@@ -10,8 +10,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response
 
-from . import api
-from .database import Base, engine
+from . import api, database
+from .database import Base
 from .events import start_redis_listener, stop_redis_listener
 
 logger = logging.getLogger("metrodrip.inventory")
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
         # No longer swallowed. A service that cannot reach or create its own
         # schema has nothing to serve, and hiding that behind a green container
         # is how two schema authorities over the same table names went unnoticed.
-        async with engine.begin() as conn:
+        async with database.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
     if os.environ.get("INVENTORY_DISABLE_REDIS", "").strip() not in {"1", "true", "yes"}:
@@ -76,7 +76,7 @@ async def ready(response: Response):
     try:
         from sqlalchemy import text
 
-        async with engine.connect() as conn:
+        async with database.engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
     except Exception:
         logger.exception("Readiness probe failed: inventory database is unreachable.")

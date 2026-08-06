@@ -149,13 +149,17 @@ async def create_reservations(
                 ),
             )
         if record.available < line.qty:
+            # Read the counters *before* rolling back. A rollback expires every
+            # loaded instance, so touching `record.available` afterwards would
+            # trigger a lazy refresh outside the async greenlet and surface as
+            # MissingGreenlet — a 500 in place of this deliberate 409.
+            available = record.available
             await db.rollback()
             raise HTTPException(
                 status_code=409,
                 detail=envelope(
                     "insufficient_stock",
-                    f"Variant {line.variant_id}: requested {line.qty}, "
-                    f"available {record.available}.",
+                    f"Variant {line.variant_id}: requested {line.qty}, available {available}.",
                 ),
             )
 
@@ -228,12 +232,13 @@ async def commit_reservations(
         )
         record = stock_result.scalars().first()
         if record is None or record.qty_on_hand < reservation.qty:
+            variant_id = reservation.variant_id  # captured before the rollback expires it
             await db.rollback()
             raise HTTPException(
                 status_code=409,
                 detail=envelope(
                     "counters_cannot_cover_sale",
-                    f"Variant {reservation.variant_id} cannot cover the committed sale.",
+                    f"Variant {variant_id} cannot cover the committed sale.",
                 ),
             )
 
@@ -315,12 +320,13 @@ async def _release_all(db, reservations, terminal_status) -> int:
         if record is None or record.qty_reserved < reservation.qty:
             # Only reachable if something outside this service wrote the
             # counters. Fail loudly rather than storing a negative.
+            variant_id = reservation.variant_id  # captured before the rollback expires it
             await db.rollback()
             raise HTTPException(
                 status_code=409,
                 detail=envelope(
                     "reserved_underflow",
-                    f"Variant {reservation.variant_id}: qty_reserved would go negative.",
+                    f"Variant {variant_id}: qty_reserved would go negative.",
                 ),
             )
         record.qty_reserved -= reservation.qty

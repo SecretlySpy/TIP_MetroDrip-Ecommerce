@@ -528,3 +528,14 @@
   - `attempts` is incremented while the claim lock is held, so a message that reliably kills its worker still counts a try instead of retrying forever.
   - The dead-letter queue is an `OutboxMessage` changelist filtered to `dead` — at this budget that is the right amount of infrastructure, and a better demo than a broker console.
   - Background work runs inside `bind_correlation_id`, so ADR-P2-002's "one checkout is greppable end to end" survives the move to asynchronous delivery.
+
+## ADR-P3-019 — The live-ledger harness, and parity as evidence
+
+- **Status:** Accepted (closes the gate ADR-P3-017 named)
+- **Decision:** `tests/contract/conftest.py` provides a `live_ledger` fixture that rebinds the service's SQLAlchemy engine to Django's active test schema, and a `service_provider` fixture that additionally selects the provider, supplies a token, and redirects `apps/core/http.py` at the in-process FastAPI app. `tests/contract/test_provider_parity.py` runs every scenario against **both** providers.
+- **Why this is not a return to the old arrangement:** ADR-P3-012 removed a session-scoped fixture that set `MYSQL_DATABASE_INVENTORY=test_metrodrip` — Django's own test database — with *no test using it*. Pointing the service at Django's schema is nonetheless correct under ADR-P3-013's shared-schema/exclusive-writer decision. What was wrong was that it was accidental, unexercised, and it masked the dual-write bug. It is now deliberate, documented, and exercised by 31 assertions.
+- **Two details the harness depends on, both non-obvious:**
+  - **`transaction=True` on every test.** The ledger reads on its own connection and cannot see an uncommitted Django transaction. Without a real COMMIT every read returns empty and the tests would assert the opposite of what they claim — the same failure mode as ADR-P3-012, one level up.
+  - **`NullPool` for the test binding.** Starlette's `TestClient` runs each request on a fresh event loop, while a pooled aiomysql connection stays bound to the loop that opened it. The second request in a test would reuse a connection whose transport belongs to a closed loop and fail with `Event loop is closed`, which names nothing useful.
+- **A real bug it caught immediately:** the insufficient-stock path returned **500 instead of 409**. `await db.rollback()` expires every loaded instance, so building the error message afterwards from `record.available` triggered lazy IO outside the async greenlet (`MissingGreenlet`). Every oversell rejection would have been a server error in production. Values are now read before the rollback, on all three rollback paths.
+- **Consequence:** ADR-P3-005's "never flip a default until parity" now has evidence behind it for the reserve/commit/release/read surface. The remaining gates before a cutover decision are the concurrency ones (G3–G6) through the real checkout endpoints.
