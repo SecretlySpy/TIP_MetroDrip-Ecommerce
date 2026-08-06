@@ -497,3 +497,20 @@
 - **Decision:** `get_stock_records(variant_ids)` is the read primitive; `POST /v1/stock/batch` serves it. Every page that reads stock for a set of variants uses it.
 - **Rationale:** the product page read one variant at a time — about 36 sequential HTTP calls per page on the seeded catalog under `INVENTORY_PROVIDER=service`, each with its own timeout budget, and the availability endpoint accepted 50 ids the same way. This alone made the service provider unshippable independent of correctness.
 - **Consequences:** unknown ids read as zero availability rather than raising, matching the in-process provider — a never-stocked SKU and a sold-out SKU are the same answer to a shopper. Pinned by a call-count assertion, not by inspection.
+
+## ADR-P3-016 — Idempotency by insert-then-mutate in one transaction
+
+- **Status:** Accepted
+- **Decision:** Every mutating ledger route claims an `IdempotencyRecord` row with `status_code = 0` and applies its stock mutation **in the same transaction**, then records the real status and body before commit. Missing `Idempotency-Key` on a mutating route is a 400.
+- **Rationale:** under sync REST a read timeout is indistinguishable from success — the request was sent, so the mutation may or may not have landed (`ServiceUncertain`). Without a replay guard the caller's only safe move is to give up and compensate, turning every network blip into a lost checkout. Because the key row and the mutation commit together, "key present with a terminal status" is true exactly when the mutation was applied; a crash between them rolls back both, so a retry re-runs cleanly rather than finding a claim with nothing behind it. **The ordering is the guarantee — the table alone would not be one.**
+- **Three distinct collision outcomes:** differing request fingerprint → `422 idempotency_key_reuse` (a client bug, never a retry; replaying the first response would be a lie); `status_code == 0` → `409 in_progress` with `Retry-After` (answering now would either double-apply or guess); otherwise replay the stored status and body with `Idempotency-Replayed: true`.
+- **Consequences:** keys are namespaced by route (`sha256("{route}:{key}")`) so one `checkout_id` can guard reserve *and* commit without the commit replaying the reserve's response. Django owns the DDL; the service writes the rows (shared schema, exclusive writer).
+
+## ADR-P3-017 — What Phase B has and has not proven
+
+- **Status:** Accepted
+- **Decision:** Record the boundary of the evidence, so no later reader mistakes "implemented" for "verified".
+- **Implemented and tested:** the `StockHold` receipt and the paid path that reads it; `reserve_lines` / `commit_holds` / `release_holds` on the in-process provider; batch reads end to end; the ledger's v1 HTTP surface including reserve, commit, release, adjust, sweep and low-stock; the idempotency protocol; auth on every route.
+- **Implemented but NOT verified against a live ledger:** the service provider's reserve/commit/release round trips. Driving them needs a database that is **not** pytest-django's own test database — pointing the service there is exactly what made every previous service-provider test a false green (ADR-P3-012). Standing that harness up is the gate.
+- **Not started:** reserve-before-order checkout restructure; the transactional outbox on the paid-commit path; the reconciliation job that resolves `StockHoldState.UNKNOWN`; concurrency gates G3–G6 through the real web and mobile checkout endpoints; the provider-equivalence suite.
+- **Therefore `INVENTORY_PROVIDER` stays pinned to `{local}` in `prod.py`.** ADR-P3-005's rule holds: never flip a default until parity is *proven*, and parity is not proven by code existing.

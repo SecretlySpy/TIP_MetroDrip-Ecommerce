@@ -2,6 +2,7 @@ import datetime
 import enum
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     Column,
     DateTime,
@@ -72,12 +73,19 @@ class Reservation(Base):
     qty = Column(Integer, nullable=False)
     status = Column(String(9), default=ReservationStatus.ACTIVE.value, nullable=False)
     session_key = Column(String(64), default="", nullable=False)
+    # The caller's identity for this hold group. Every mutation addresses a
+    # reservation through this, never through an id this service minted, so a
+    # caller can compensate for a request whose outcome it never learned.
+    checkout_id = Column(String(64), default="", nullable=False, index=True)
 
-    # We just store order_id here without foreign key because orders are in a different DB
+    # order_id carries no foreign key: Orders is a separate bounded context and
+    # the link is owned by its StockHold row, not by this table.
     order_id = Column(Integer, nullable=True)
 
     expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime, default=lambda: datetime.datetime.now(datetime.UTC), nullable=False
+    )
     ended_at = Column(DateTime, nullable=True)
 
 
@@ -97,4 +105,29 @@ class StockMovement(Base):
     reason = Column(String(12), nullable=False)
     delta = Column(Integer, nullable=False)
     ref_order_id = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime, default=lambda: datetime.datetime.now(datetime.UTC), nullable=False
+    )
+
+
+class IdempotencyRecord(Base):
+    """Mirrors `apps.inventory.models.IdempotencyRecord`; Django owns the DDL.
+
+    The guarantee is in the *ordering*, not the table: this row and the stock
+    mutation it guards are inserted in one transaction, so a key present with a
+    terminal status means the mutation was applied. There is no window where
+    one exists without the other.
+    """
+
+    __tablename__ = "inventory_idempotencyrecord"
+    __table_args__ = (table_args,)
+
+    key_hash = Column(String(64), primary_key=True, autoincrement=False)
+    request_fingerprint = Column(String(64), nullable=False)
+    # 0 means "claimed but not yet committed" — a concurrent caller must wait
+    # rather than assume either outcome.
+    status_code = Column(Integer, default=0, nullable=False)
+    response_body = Column(JSON, nullable=False, default=dict)
+    created_at = Column(
+        DateTime, default=lambda: datetime.datetime.now(datetime.UTC), nullable=False
+    )
