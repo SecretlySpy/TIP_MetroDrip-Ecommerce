@@ -26,11 +26,13 @@ FastAPI sidecars under `services/` are opt-in; every default stays in-process:
 |---|---|---|---|
 | `notifications` | email/SMS/push delivery I/O | `NOTIFICATION_PROVIDER=http` | cut-over capable |
 | `fulfillment` | courier booking I/O | `SHIPPING_PROVIDER=http` | cut-over capable |
-| `inventory` | — | `INVENTORY_PROVIDER=service` | **experimental; refused in staging/prod** |
+| `inventory` | stock ledger: reserve/commit/release, adjustments, TTL sweep, low-stock | `INVENTORY_PROVIDER=service` | full contract + parity proven; **still refused in staging/prod** |
 
 The first two became genuinely cut-over capable only recently: `prod.py` previously discarded the provider environment variable and reassigned a hardcoded value, so `=http` was unreachable in every deployed environment (ADR-P3-008). Both ends of each seam also failed *open* on an unset token (ADR-P3-009).
 
-Remaining strangler steps: **3** stock ownership (in progress), **4** schema split (designed and deliberately not executed — ADR-P3-013), **5** checkout saga (gated on 3, ADR-P3-007). See `DECISIONS.md` ADR-P3-003.
+Remaining strangler steps: **3** stock ownership — the ledger implements the full contract, parity is proven across both providers (30 assertions), and the M2 no-oversell gate passes with stock reserved *over HTTP*; the reserve-before-order restructure is the last piece before cutover. **4** schema split is designed and deliberately not executed (ADR-P3-013). **5** checkout saga stays gated on 3 (ADR-P3-007).
+
+`INVENTORY_PROVIDER` remains pinned to `local` in deployed environments. See `DECISIONS.md` ADR-P3-017 for exactly what is and is not proven.
 
 ## Local development
 

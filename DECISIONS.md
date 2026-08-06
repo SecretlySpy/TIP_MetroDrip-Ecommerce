@@ -510,11 +510,13 @@
 
 - **Status:** Accepted
 - **Decision:** Record the boundary of the evidence, so no later reader mistakes "implemented" for "verified".
-- **Implemented and tested:** the `StockHold` receipt and the paid path that reads it; `reserve_lines` / `commit_holds` / `release_holds` on the in-process provider; batch reads end to end; the ledger's v1 HTTP surface including reserve, commit, release, adjust, sweep and low-stock; the idempotency protocol; auth on every route.
-- **Implemented but NOT verified against a live ledger:** the service provider's reserve/commit/release round trips. Driving them needs a database that is **not** pytest-django's own test database — pointing the service there is exactly what made every previous service-provider test a false green (ADR-P3-012). Standing that harness up is the gate.
-- **Since added (ADR-P3-018):** the transactional outbox on the paid-commit path, its drain job, and correlation-id binding for background work.
-- **Not started:** the reserve-before-order checkout restructure; the reconciliation job that resolves `StockHoldState.UNKNOWN` holds; concurrency gates G3–G6 through the real web and mobile checkout endpoints; the provider-equivalence suite. Checkout remains order-then-reserve inside one atomic block, which is correct for the in-process ledger and is why nothing shippable is blocked on the restructure.
-- **Therefore `INVENTORY_PROVIDER` stays pinned to `{local}` in `prod.py`.** ADR-P3-005's rule holds: never flip a default until parity is *proven*, and parity is not proven by code existing.
+**Superseded in large part by ADR-P3-019/020/021 — kept for the record of what was true when written.** Current state:
+
+- **Verified against a live ledger** (ADR-P3-019): reserve, commit, release, batch reads, and idempotency, via a harness that binds the service to Django's test schema deliberately rather than accidentally.
+- **Parity proven, not asserted** (ADR-P3-021): 30 assertions across 15 scenarios and both providers, including adjustments, the TTL sweep, and low-stock SKU rendering.
+- **Concurrency proven** (ADR-P3-020): G3 web and G4 mobile checkout gates, G5 concurrent idempotency, and G3 re-run with stock reserved **over HTTP** — 20 buyers, 10 units, exactly 10 sales with the lock behind a network call. That last result is the load-bearing one: it shows the row lock never needed to share the order's transaction, only to be atomic per reserve.
+- **Still not built:** the reserve-before-order restructure (ADR-P3-004's amended step order). Checkout remains order-then-reserve inside one atomic block. That is correct for the in-process ledger, so nothing shippable is blocked; under a remote ledger a failed order insert after a successful reserve currently relies on the 15-minute TTL rather than explicit compensation. The failure mode is under-selling for at most the TTL, never over-selling.
+- **`INVENTORY_PROVIDER` stays pinned to `{local}`** until that restructure lands. ADR-P3-005's rule holds, and the remaining gap is a real one rather than paperwork.
 
 ## ADR-P3-018 — Transactional outbox instead of a broker
 
