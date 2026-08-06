@@ -188,6 +188,10 @@ STAGING_SEED_PREVIEW_ENABLED = False
 # an abandoned cart restores availability within the M3 gate's 16-minute bound.
 RESERVATION_TTL_MINUTES = 15
 RESERVATION_SWEEP_INTERVAL_SECONDS = 60
+# How often the transactional outbox is drained. Short, because an undelivered
+# stock commit means a paid order whose stock has not moved yet — the window in
+# which the two disagree should be seconds, not minutes.
+OUTBOX_DRAIN_INTERVAL_SECONDS = 5
 LOW_STOCK_SCAN_INTERVAL_MINUTES = 60
 # Empty recipient list disables the email leg of low-stock alerts without
 # breaking the scan itself (the dashboard flag in FR-8/F epics reads the scan).

@@ -309,3 +309,57 @@ class StockHold(models.Model):
 
     def __str__(self):
         return f"{self.checkout_id} ({self.state})"
+
+
+class OutboxState(models.TextChoices):
+    PENDING = "pending", "Pending"
+    SENT = "sent", "Sent"
+    # Exhausted its retries. A human decides what happens next; the merchant
+    # console lists these rather than a broker's dead-letter queue.
+    DEAD = "dead", "Dead"
+
+
+class OutboxMessage(models.Model):
+    """Durable intent for work that must outlive the request that decided it.
+
+    The problem it solves is specific. Today `confirm_order_paid` flips
+    `Payment.status` and consumes stock in one transaction, so the two cannot
+    disagree. Once the ledger is a separate service that atomicity is gone: if
+    the commit call fails after the payment row commits, money is taken and
+    stock is never decremented.
+
+    Writing this row *inside the payment transaction* restores atomicity of
+    **intent** — either the payment and the instruction to consume stock both
+    commit, or neither does. Delivery becomes asynchronous, and at-least-once
+    delivery against the ledger's idempotency keys (ADR-P3-016) gives
+    exactly-once effect.
+
+    ADR-P3-003 forbids a broker, and none is needed: MySQL 8's
+    `SELECT ... FOR UPDATE SKIP LOCKED` lets several pollers drain this table
+    concurrently without seeing each other's rows. That single feature is what
+    makes a database-backed queue viable here, and it also relaxes the
+    single-scheduler constraint from a correctness requirement to an efficiency
+    one.
+    """
+
+    topic = models.CharField(max_length=48)
+    payload = models.JSONField(default=dict, blank=True)
+    state = models.CharField(max_length=7, choices=OutboxState.choices, default=OutboxState.PENDING)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    #: Exponential backoff with jitter is applied by the poller, not stored.
+    next_attempt_at = models.DateTimeField(db_index=True)
+    #: Lets one checkout be traced end to end through the logs (ADR-P2-002)
+    #: even though delivery happens on a scheduler thread, not the request.
+    correlation_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    last_error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            # The poller's only query.
+            models.Index(fields=["state", "next_attempt_at"], name="idx_outbox_ready"),
+        ]
+
+    def __str__(self):
+        return f"{self.topic} ({self.state}, attempt {self.attempts})"

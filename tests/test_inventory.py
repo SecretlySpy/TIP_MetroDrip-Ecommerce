@@ -333,7 +333,10 @@ def test_low_stock_alert_degrades_to_noop_without_recipients():
     assert mail.outbox == []
 
 
-def test_scheduler_registers_both_inventory_jobs():
+def test_scheduler_registers_every_background_job():
+    """Exact set, not a subset: a job silently dropped from the scheduler is
+    indistinguishable from one that never runs, and two of these three are what
+    keep stock and paid orders from drifting apart."""
     scheduler = build_scheduler()
     job_ids = {job.id for job in scheduler.get_jobs()}
-    assert job_ids == {"reservation-sweep", "low-stock-scan"}
+    assert job_ids == {"reservation-sweep", "low-stock-scan", "outbox-drain"}

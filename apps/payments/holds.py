@@ -24,24 +24,56 @@ from apps.inventory.services import (
     commit_holds,
     reserve_stock,
 )
-from apps.orders.models import StockHoldState
+from apps.orders.models import OutboxState, StockHoldState
+from apps.orders.outbox import enqueue, register_handler
+from config.middleware import get_correlation_id
 
 logger = logging.getLogger(__name__)
+
+
+def _retire(message):
+    """Mark a queued instruction as satisfied by the synchronous attempt."""
+    from apps.orders.models import OutboxMessage
+
+    OutboxMessage.objects.filter(pk=message.pk).update(
+        state=OutboxState.SENT, sent_at=timezone.now()
+    )
+
+
+TOPIC_STOCK_COMMIT = "stock.commit"
 
 
 def consume_order_holds(order):
     """Commit every active hold on `order`, then cover any shortfall.
 
-    Must be called inside the same transaction as the payment status flip, so
-    that "paid" and "stock consumed" cannot disagree while both live in one
-    database. Once the ledger is remote that atomicity is replaced by an
-    outbox row written in this transaction (ADR-P3-004 unlock item, Phase B6).
+    Called inside the same transaction as the payment status flip. While the
+    ledger is in-process that makes "paid" and "stock consumed" atomic. Once it
+    is remote they are two systems, so durable intent is recorded first: an
+    outbox row committed with the payment (ADR-P3-018). Delivery is then
+    at-least-once against the ledger's idempotency keys, which is exactly-once
+    in effect.
+
+    The synchronous attempt below is kept because it is what makes stock move
+    *immediately* in the common case; the outbox exists for when it does not.
 
     Returns `{variant_id: qty}` actually committed.
     """
     committed_by_variant: dict[int, int] = {}
 
     for hold in order.stock_holds.filter(state=StockHoldState.ACTIVE):
+        # Written before the attempt and inside the payment transaction, so a
+        # crash between the payment flip and the commit call cannot lose the
+        # instruction. The poller retries it; the ledger de-duplicates it.
+        message = enqueue(
+            topic=TOPIC_STOCK_COMMIT,
+            payload={
+                "checkout_id": hold.checkout_id,
+                "order_no": order.order_no,
+                "order_id": order.pk,
+            },
+            correlation_id=get_correlation_id(),
+        )
+
         try:
             result = commit_holds(
                 checkout_id=hold.checkout_id,
@@ -50,14 +82,19 @@ def consume_order_holds(order):
             )
         except ReservationUnavailable:
             # The ledger may or may not have applied it. Leave the hold in
-            # `unknown` for reconciliation rather than guessing; the shortfall
-            # pass below still protects the customer's order.
+            # `unknown` and let the outbox row drive the retry rather than
+            # guessing an outcome here; the shortfall pass below still
+            # protects the customer's order in the meantime.
             logger.exception(
                 "Order %s: commit uncertain for hold %s", order.order_no, hold.checkout_id
             )
             hold.state = StockHoldState.UNKNOWN
             hold.save(update_fields=["state"])
             continue
+
+        # The synchronous attempt succeeded, so the queued instruction is
+        # redundant. Retiring it here keeps the poller's backlog honest.
+        _retire(message)
 
         for variant_id, qty in (result or {}).items():
             committed_by_variant[variant_id] = committed_by_variant.get(variant_id, 0) + qty
@@ -106,3 +143,24 @@ def _cover_shortfall(order, committed_by_variant):
                 item.variant_id,
                 shortfall,
             )
+
+
+@register_handler(TOPIC_STOCK_COMMIT)
+def deliver_stock_commit(payload):
+    """Outbox handler: retry a stock commit the request could not complete.
+
+    Raising propagates to the poller, which schedules a backoff retry. The
+    ledger de-duplicates on `checkout_id`, so re-delivery cannot double-consume
+    even if an earlier attempt actually landed and only the reply was lost.
+    """
+    from apps.orders.models import StockHold, StockHoldState
+
+    checkout_id = payload["checkout_id"]
+    commit_holds(
+        checkout_id=checkout_id,
+        order_no=payload.get("order_no", ""),
+        order_id=payload.get("order_id"),
+    )
+    StockHold.objects.filter(checkout_id=checkout_id).update(
+        state=StockHoldState.COMMITTED, committed_at=timezone.now()
+    )

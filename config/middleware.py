@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from contextlib import contextmanager
 from contextvars import ContextVar
 
 CORRELATION_HEADER = "X-Correlation-ID"
@@ -23,6 +24,22 @@ CORRELATION_HEADER = "X-Correlation-ID"
 _INBOUND_ID_RE = re.compile(r"^[A-Za-z0-9._-]{8,128}$")
 
 _correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
+
+
+@contextmanager
+def bind_correlation_id(correlation_id: str):
+    """Attach a correlation id to work happening outside a request.
+
+    Scheduler jobs and the outbox poller act on decisions made during some
+    earlier request. Without this they log under `cid=-`, so the one thing
+    ADR-P2-002 promises — that a single checkout is greppable end to end —
+    breaks exactly where the work became asynchronous and hardest to follow.
+    """
+    token = _correlation_id.set(correlation_id or uuid.uuid4().hex)
+    try:
+        yield
+    finally:
+        _correlation_id.reset(token)
 
 
 def get_correlation_id() -> str:

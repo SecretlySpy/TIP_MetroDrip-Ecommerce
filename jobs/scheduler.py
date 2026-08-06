@@ -45,6 +45,26 @@ def run_low_stock_scan():
         close_old_connections()
 
 
+def drain_outbox_messages():
+    """Deliver durable intent that its originating request could not complete.
+
+    Unlike the two jobs above this one is safe to run in several processes at
+    once: the poller claims rows with `FOR UPDATE SKIP LOCKED`, so concurrent
+    drainers take disjoint batches. The single-scheduler rule in ADR-A-014
+    still applies to the sweep and the scan, which would duplicate work and
+    alert emails respectively.
+    """
+    close_old_connections()
+    try:
+        from apps.orders.outbox import drain_outbox
+
+        delivered, failed = drain_outbox()
+        if delivered or failed:
+            logger.info("Outbox drained: %d delivered, %d failed.", delivered, failed)
+    finally:
+        close_old_connections()
+
+
 def build_scheduler(scheduler_class=BackgroundScheduler):
     """Assemble the configured scheduler without starting it (testable seam)."""
     scheduler = scheduler_class(timezone=zoneinfo.ZoneInfo(settings.TIME_ZONE))
@@ -63,6 +83,16 @@ def build_scheduler(scheduler_class=BackgroundScheduler):
         "interval",
         minutes=settings.LOW_STOCK_SCAN_INTERVAL_MINUTES,
         id="low-stock-scan",
+        coalesce=True,
+        max_instances=1,
+    )
+    # Runs often: an undelivered stock commit means a paid order whose stock has
+    # not moved, so the window where the two disagree should be seconds.
+    scheduler.add_job(
+        drain_outbox_messages,
+        "interval",
+        seconds=settings.OUTBOX_DRAIN_INTERVAL_SECONDS,
+        id="outbox-drain",
         coalesce=True,
         max_instances=1,
     )

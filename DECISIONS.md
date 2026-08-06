@@ -514,3 +514,16 @@
 - **Implemented but NOT verified against a live ledger:** the service provider's reserve/commit/release round trips. Driving them needs a database that is **not** pytest-django's own test database — pointing the service there is exactly what made every previous service-provider test a false green (ADR-P3-012). Standing that harness up is the gate.
 - **Not started:** reserve-before-order checkout restructure; the transactional outbox on the paid-commit path; the reconciliation job that resolves `StockHoldState.UNKNOWN`; concurrency gates G3–G6 through the real web and mobile checkout endpoints; the provider-equivalence suite.
 - **Therefore `INVENTORY_PROVIDER` stays pinned to `{local}` in `prod.py`.** ADR-P3-005's rule holds: never flip a default until parity is *proven*, and parity is not proven by code existing.
+
+## ADR-P3-018 — Transactional outbox instead of a broker
+
+- **Status:** Accepted
+- **Decision:** `apps/orders/outbox.py` holds durable intent. `consume_order_holds` writes a `stock.commit` message **inside the payment transaction**, attempts the commit synchronously, and retires the message on success. A scheduler job drains anything left with `SELECT ... FOR UPDATE SKIP LOCKED`, exponential backoff with jitter, and a dead-letter state after 8 attempts.
+- **Rationale:** while the ledger is in-process, the payment flip and the stock commit share a transaction and cannot disagree. Once the ledger is remote they are two systems: a commit that fails *after* the payment row commits means money taken and stock never decremented. Writing the instruction in the same transaction as the payment restores atomicity of **intent** — either both commit or neither does — and at-least-once delivery against the ledger's idempotency keys (ADR-P3-016) is exactly-once in effect.
+- **Why no broker is needed:** MySQL 8's `FOR UPDATE SKIP LOCKED` lets concurrent drainers claim disjoint batches without blocking each other. That one feature is what makes a database-backed queue viable under ADR-P3-003's "no broker" constraint, and it also relaxes ADR-A-014's single-scheduler rule from a *correctness* requirement to an efficiency one — the sweep and the low-stock scan still need exactly one process, the drainer does not.
+- **Sequencing correction to the Phase B plan:** the outbox is a **prerequisite** for flipping `INVENTORY_PROVIDER`, not a follow-on to it. It is built now, before cutover.
+- **Consequences:**
+  - Claiming and delivering are separate transactions. Holding a database transaction open across an HTTP call would put network latency inside a row lock, which is how a slow sidecar becomes a stalled database.
+  - `attempts` is incremented while the claim lock is held, so a message that reliably kills its worker still counts a try instead of retrying forever.
+  - The dead-letter queue is an `OutboxMessage` changelist filtered to `dead` — at this budget that is the right amount of infrastructure, and a better demo than a broker console.
+  - Background work runs inside `bind_correlation_id`, so ADR-P2-002's "one checkout is greppable end to end" survives the move to asynchronous delivery.
