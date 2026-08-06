@@ -512,7 +512,8 @@
 - **Decision:** Record the boundary of the evidence, so no later reader mistakes "implemented" for "verified".
 - **Implemented and tested:** the `StockHold` receipt and the paid path that reads it; `reserve_lines` / `commit_holds` / `release_holds` on the in-process provider; batch reads end to end; the ledger's v1 HTTP surface including reserve, commit, release, adjust, sweep and low-stock; the idempotency protocol; auth on every route.
 - **Implemented but NOT verified against a live ledger:** the service provider's reserve/commit/release round trips. Driving them needs a database that is **not** pytest-django's own test database — pointing the service there is exactly what made every previous service-provider test a false green (ADR-P3-012). Standing that harness up is the gate.
-- **Not started:** reserve-before-order checkout restructure; the transactional outbox on the paid-commit path; the reconciliation job that resolves `StockHoldState.UNKNOWN`; concurrency gates G3–G6 through the real web and mobile checkout endpoints; the provider-equivalence suite.
+- **Since added (ADR-P3-018):** the transactional outbox on the paid-commit path, its drain job, and correlation-id binding for background work.
+- **Not started:** the reserve-before-order checkout restructure; the reconciliation job that resolves `StockHoldState.UNKNOWN` holds; concurrency gates G3–G6 through the real web and mobile checkout endpoints; the provider-equivalence suite. Checkout remains order-then-reserve inside one atomic block, which is correct for the in-process ledger and is why nothing shippable is blocked on the restructure.
 - **Therefore `INVENTORY_PROVIDER` stays pinned to `{local}` in `prod.py`.** ADR-P3-005's rule holds: never flip a default until parity is *proven*, and parity is not proven by code existing.
 
 ## ADR-P3-018 — Transactional outbox instead of a broker
