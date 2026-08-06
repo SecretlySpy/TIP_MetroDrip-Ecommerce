@@ -15,6 +15,7 @@ FastAPI app — no sockets, no fixtures, no running container.
 from __future__ import annotations
 
 import asyncio
+import threading
 from urllib.parse import urlsplit
 
 import pytest
@@ -28,14 +29,31 @@ def bridge(monkeypatch):
     """Return a factory: `bridge(app)` -> list of recorded outbound requests."""
 
     def _install(app):
-        client = TestClient(app, raise_server_exceptions=False)
         recorded: list[dict] = []
+        record_lock = threading.Lock()
 
         def _request(method, url, *, json=None, params=None, headers=None, timeout=None, **kwargs):
             path = urlsplit(url).path
-            recorded.append(
-                {"method": method, "path": path, "json": json, "headers": dict(headers or {})}
-            )
+            with record_lock:
+                recorded.append(
+                    {"method": method, "path": path, "json": json, "headers": dict(headers or {})}
+                )
+            # A TestClient per call, not one shared across the fixture.
+            #
+            # Starlette's TestClient drives the ASGI app through a blocking
+            # portal, and a single instance is not safe to call from many
+            # threads at once: the concurrency gates deadlocked on it. That was
+            # invisible while checkout reserved stock *inside* a Django
+            # transaction, because the row lock serialised the callers and only
+            # one ever reached the client at a time. Reserving before the order
+            # row (ADR-P3-022) removed that accidental serialisation and the
+            # harness limit surfaced immediately.
+            #
+            # Constructing a client per call is cheap, and requests still
+            # execute concurrently against MySQL — which is the property these
+            # gates actually test. Serialising with a lock instead would have
+            # made them prove nothing.
+            client = TestClient(app, raise_server_exceptions=False)
             return client.request(method, path, json=json, params=params, headers=headers)
 
         # `requests.request` is what apps/core/http.py calls. The sidecars' own

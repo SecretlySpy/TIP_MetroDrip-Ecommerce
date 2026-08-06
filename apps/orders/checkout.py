@@ -16,8 +16,8 @@ from django.db import OperationalError, transaction
 from django.utils import timezone
 
 from apps.catalog.models import ProductVariant
-from apps.inventory.services import release_holds, reserve_stock
-from apps.orders.models import Order, OrderItem, StockHold, StockHoldState
+from apps.inventory.services import ReservationUnavailable, release_holds, reserve_lines
+from apps.orders.models import Order, OrderItem, OrderStatus, StockHold, StockHoldState
 from apps.orders.services import next_order_no
 from apps.payments.services import create_checkout_session
 from apps.shipping.models import ShippingZone
@@ -39,6 +39,26 @@ class CheckoutError(ValueError):
 
 class PaymentSessionError(Exception):
     """The payment provider could not produce a session; holds were released."""
+
+
+def _release_quietly(checkout_id):
+    """Give stock back on a failed checkout. Returns whether it succeeded.
+
+    Compensation must never replace the error that caused it — a caller that
+    fails to release should still surface the original failure, not a
+    release failure. When this returns False the TTL sweep is the backstop, so
+    the cost is bounded at RESERVATION_TTL_MINUTES of under-selling and can
+    never become an oversell.
+
+    Releasing an id that was never reserved is a documented no-op, so this is
+    safe to call on any failure branch without first establishing what landed.
+    """
+    try:
+        release_holds(checkout_id=checkout_id)
+        return True
+    except Exception:
+        logger.exception("Failed to release holds for checkout %s", checkout_id)
+        return False
 
 
 def parse_items(raw_items):
@@ -73,8 +93,19 @@ def place_order(
 ):
     """Create the order with its holds and a payment session; returns (order, checkout_url).
 
-    Raises CheckoutError (400-class), InsufficientStock (409-class), or
-    PaymentSessionError (502-class, holds already released).
+    Stock is secured before the order row exists (ADR-P3-022), so a rejected
+    cart leaves nothing behind at all — no order, no line, no burnt order
+    number. Every failure after the reserve compensates by releasing the
+    `checkout_id`, which is a documented no-op when nothing was held.
+
+    Raises:
+        CheckoutError            400-class: bad lines, zone, or contact.
+        InsufficientStock        409-class: nothing was written anywhere.
+        ReservationUnavailable   502-class: the stock ledger could not be
+                                 reached or its answer was uncertain. Held
+                                 stock, if any, has been released.
+        PaymentSessionError      502-class: the order exists but is unpayable,
+                                 so it is cancelled and its holds released.
     """
     quantities = parse_items(items)
 
@@ -88,25 +119,57 @@ def place_order(
     except (ShippingZone.DoesNotExist, ValueError, TypeError):
         raise CheckoutError("Choose a valid shipping zone.") from None
 
+    # --- S0: price the cart. Still no writes anywhere. ---------------------
+    variants = {
+        variant.pk: variant
+        for variant in ProductVariant.objects.select_related("product").filter(pk__in=quantities)
+    }
+    if set(quantities) - set(variants):
+        raise CheckoutError("Some cart items no longer exist — refresh your cart.")
+
+    # Effective price honors variant overrides; totals are computed once here so
+    # chk_order_total_reconciles holds from the order's first write.
+    subtotal = sum(variants[vid].price * qty for vid, qty in quantities.items())
+
     # Minted before any write, so it exists while the Order still does not. It
     # is the only identity that crosses to the stock ledger: compensation says
     # "release this checkout_id", never "delete the rows you created for me".
     checkout_id = uuid.uuid4().hex
 
+    # --- S1: secure the stock BEFORE an order row exists -------------------
+    #
+    # ADR-P3-004 originally specified CreateOrder → ReserveStock. That ordering
+    # is the more dangerous one and ADR-P3-022 amends it. Reserving first means
+    # a sold-out cart writes *nothing*: no burnt order number (the public
+    # format allows only 99,999 a year), no committed `pending` order visible in
+    # the merchant console and at /order/<token>/ before its stock is secured,
+    # and no window in which a payment webhook could arrive for an order that
+    # holds nothing. Deleting such an order is not an option either — the
+    # PROTECT edges from StockMovement and Review exist precisely to stop it.
+    #
+    # InsufficientStock propagates untouched: reserve is all-or-nothing, so
+    # there is nothing to compensate.
+    try:
+        reserve_lines(
+            checkout_id=checkout_id,
+            lines=[{"variant_id": vid, "qty": qty} for vid, qty in quantities.items()],
+            session_key=session_key,
+        )
+    except ReservationUnavailable:
+        # The ledger may or may not be holding stock for this checkout_id.
+        # Releasing it is a no-op if it is not, so this is always safe and
+        # never depends on knowing which happened.
+        #
+        # Re-raised as itself rather than folded into PaymentSessionError: both
+        # are 502-class, but telling a shopper "the payment provider is down"
+        # when the stock service is down sends them to the wrong conclusion and
+        # sends an on-call engineer to the wrong system.
+        _release_quietly(checkout_id)
+        raise
+
+    # --- S2: the order row. Pure Django, so the retry replays only local work ---
     def _build_order():
         with transaction.atomic():
-            variants = {
-                variant.pk: variant
-                for variant in ProductVariant.objects.select_related("product").filter(
-                    pk__in=quantities
-                )
-            }
-            if set(quantities) - set(variants):
-                raise CheckoutError("Some cart items no longer exist — refresh your cart.")
-
-            # Effective price honors variant overrides; totals are correct at
-            # INSERT so chk_order_total_reconciles holds from the first write.
-            subtotal = sum(variants[vid].price * qty for vid, qty in quantities.items())
             order = Order.objects.create(
                 order_no=next_order_no(),
                 customer=customer,
@@ -123,14 +186,6 @@ def place_order(
                 },
             )
             for variant_id, qty in quantities.items():
-                # Raising here rolls back everything — no half-built orders.
-                reserve_stock(
-                    variant_id=variant_id,
-                    qty=qty,
-                    session_key=session_key,
-                    order=order,
-                    checkout_id=checkout_id,
-                )
                 OrderItem.objects.create(
                     order=order,
                     variant=variants[variant_id],
@@ -138,7 +193,7 @@ def place_order(
                     unit_price_snapshot=variants[variant_id].price,
                 )
 
-            # Orders' own receipt for the stock it is holding. Everything
+            # Orders' own receipt for the stock the ledger is holding. Everything
             # downstream — the payment commit, compensation, reconciliation —
             # reads this instead of following a reverse FK into the ledger's
             # tables, which returns empty the moment the ledger is a separate
@@ -159,11 +214,20 @@ def place_order(
         except OperationalError as error:
             deadlocked = error.args and error.args[0] == _MYSQL_DEADLOCK
             if not deadlocked or attempt == _DEADLOCK_ATTEMPTS:
+                # Out of retries, or a different database fault. The stock is
+                # held and no order will ever claim it, so give it back now
+                # rather than leaving it stranded for the full TTL.
+                _release_quietly(checkout_id)
                 raise
             # The victim's transaction rolled back completely (order number
-            # included) — brief backoff, then rebuild from scratch.
+            # included) — brief backoff, then rebuild. The holds are untouched
+            # by that rollback because they were taken before it began, which
+            # is the point: the retry replays local work only.
             logger.warning("Checkout deadlock (attempt %d); retrying.", attempt)
             time.sleep(0.05 * attempt)
+        except Exception:
+            _release_quietly(checkout_id)
+            raise
 
     # Mobile deep links need the signed status token inside the redirect URL,
     # but the token needs the order id — substitute after the order exists.
@@ -182,14 +246,22 @@ def place_order(
         # checkout_id works whichever side owns the ledger, and is a no-op if
         # nothing was ever reserved.
         logger.error("Checkout session failed for %s: %s", order.order_no, error)
-        try:
-            release_holds(checkout_id=checkout_id)
+        if _release_quietly(checkout_id):
             StockHold.objects.filter(order=order).update(state=StockHoldState.RELEASED)
-        except Exception:
+        else:
             # The TTL sweep is the backstop, so a failed compensation costs at
             # most RESERVATION_TTL_MINUTES of under-selling — never an oversell.
-            logger.exception("Failed to release holds for %s", order.order_no)
             StockHold.objects.filter(order=order).update(state=StockHoldState.UNKNOWN)
+
+        # The order is unpayable and previously stayed `pending` forever, which
+        # left it in the merchant console indefinitely and kept open the window
+        # where a late webhook could pay an order holding no stock. Cancelling
+        # closes both. A failure here must not mask the original error.
+        try:
+            order.transition_to(OrderStatus.CANCELLED)
+        except Exception:
+            logger.exception("Could not cancel unpayable order %s", order.order_no)
+
         raise PaymentSessionError("Payment provider is unavailable right now.") from error
 
     return order, checkout_url

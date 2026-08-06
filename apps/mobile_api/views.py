@@ -32,6 +32,7 @@ from apps.catalog.services import get_all_categories, get_catalog_queryset, get_
 from apps.core.money import format_centavos
 from apps.inventory.services import (
     InsufficientStock,
+    ReservationUnavailable,
     get_stock_record,
     get_stock_records,
 )
@@ -399,6 +400,14 @@ class CheckoutView(APIView):
                     "Some items just sold out. Review your cart and try again.",
                 ),
                 status=status.HTTP_409_CONFLICT,
+            )
+        except ReservationUnavailable:
+            return Response(
+                error_payload(
+                    "stock_service_unavailable",
+                    "We could not confirm stock right now — please try again in a moment.",
+                ),
+                status=status.HTTP_502_BAD_GATEWAY,
             )
         except PaymentSessionError:
             return Response(

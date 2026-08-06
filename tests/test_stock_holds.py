@@ -293,3 +293,135 @@ def test_product_page_reads_stock_once_regardless_of_variant_count(client):
     assert batched.call_count == 1, (
         f"{len(sizes)} variants must cost one stock read, not {batched.call_count}"
     )
+
+
+# --- ADR-P3-022: stock is secured before the order row exists ---------------
+
+
+@pytest.mark.django_db
+def test_sold_out_checkout_writes_nothing_at_all():
+    """A rejected checkout must not leave an order, a line, or a burnt number.
+
+    Under order-then-reserve this consumed an OrderNumberSequence value on
+    every failed attempt — against a public format that allows only 99,999 a
+    year — and briefly committed a `pending` order that held no stock.
+    """
+    from django.utils import timezone
+
+    from apps.orders.checkout import place_order
+    from apps.orders.models import Order, OrderItem, OrderNumberSequence
+
+    variant = _variant(sku="ORDER-SOLDOUT", qty_on_hand=1)
+    zone = _zone()
+    year = timezone.now().year
+    sequence_before = OrderNumberSequence.objects.filter(year=year).first()
+    burnt_before = sequence_before.last_value if sequence_before else 0
+
+    with pytest.raises(InsufficientStock):
+        place_order(
+            items=[{"variant_id": variant.pk, "qty": 5}],
+            zone_id=zone.pk,
+            contact={"name": "Ada", "email": "ada@example.test"},
+            success_url="https://example.test/ok",
+            cancel_url="https://example.test/no",
+        )
+
+    assert Order.objects.count() == 0, "no order may exist for stock that was never secured"
+    assert OrderItem.objects.count() == 0
+    assert StockHold.objects.count() == 0
+    assert StockRecord.objects.get(variant=variant).qty_reserved == 0
+
+    sequence_after = (
+        OrderNumberSequence.objects.filter(year=sequence_before.year).first()
+        if sequence_before
+        else None
+    )
+    burnt_after = sequence_after.last_value if sequence_after else 0
+    assert burnt_after == burnt_before, "a sold-out attempt must not consume an order number"
+
+
+@pytest.mark.django_db
+def test_payment_session_failure_cancels_the_order_and_frees_the_stock():
+    """An unpayable order must not linger as `pending` holding stock.
+
+    It previously stayed pending forever: visible in the merchant console
+    indefinitely, and leaving open a window where a late webhook could pay an
+    order that held nothing.
+    """
+    from unittest.mock import patch
+
+    from apps.orders.checkout import PaymentSessionError, place_order
+    from apps.orders.models import Order, OrderStatus
+
+    variant = _variant(sku="ORDER-NOPAY", qty_on_hand=10)
+    zone = _zone()
+
+    with patch(
+        "apps.orders.checkout.create_checkout_session",
+        side_effect=RuntimeError("provider down"),
+    ):
+        with pytest.raises(PaymentSessionError):
+            place_order(
+                items=[{"variant_id": variant.pk, "qty": 3}],
+                zone_id=zone.pk,
+                contact={"name": "Ada", "email": "ada@example.test"},
+                success_url="https://example.test/ok",
+                cancel_url="https://example.test/no",
+            )
+
+    order = Order.objects.get()
+    assert order.status == OrderStatus.CANCELLED
+    assert StockRecord.objects.get(variant=variant).qty_reserved == 0, "holds must be returned"
+    assert StockHold.objects.get(order=order).state == StockHoldState.RELEASED
+
+
+@pytest.mark.django_db
+def test_reserve_happens_before_any_order_row_is_written():
+    """Structural: the ledger call must precede Order.objects.create.
+
+    Ordering is the entire content of this change, and a refactor could
+    reorder the two without any behavioural test noticing while stock happens
+    to be plentiful.
+    """
+    import inspect
+
+    from apps.orders import checkout
+
+    source = inspect.getsource(checkout.place_order)
+    assert source.index("reserve_lines(") < source.index("Order.objects.create("), (
+        "stock must be secured before an order row exists (ADR-P3-022)"
+    )
+
+
+@pytest.mark.django_db
+def test_stock_service_outage_is_not_reported_as_a_payment_failure():
+    """A ledger outage and a payment outage are different incidents.
+
+    Both are 502-class, but folding one into the other tells a shopper the
+    wrong thing and sends whoever is on call to the wrong system.
+    """
+    from unittest.mock import patch
+
+    from apps.inventory.services import ReservationUnavailable
+    from apps.orders.checkout import place_order
+    from apps.orders.models import Order
+
+    variant = _variant(sku="ORDER-LEDGERDOWN", qty_on_hand=10)
+    zone = _zone()
+
+    with patch(
+        "apps.orders.checkout.reserve_lines",
+        side_effect=ReservationUnavailable("ledger unreachable"),
+    ):
+        with pytest.raises(ReservationUnavailable):
+            place_order(
+                items=[{"variant_id": variant.pk, "qty": 2}],
+                zone_id=zone.pk,
+                contact={"name": "Ada", "email": "ada@example.test"},
+                success_url="https://example.test/ok",
+                cancel_url="https://example.test/no",
+            )
+
+    # Nothing was written, because nothing had been written yet when it failed.
+    assert Order.objects.count() == 0
+    assert StockHold.objects.count() == 0

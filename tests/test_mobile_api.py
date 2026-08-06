@@ -13,7 +13,7 @@ from django.urls import reverse
 
 from apps.accounts.models import Customer
 from apps.catalog.models import Category, Fit, Product, ProductVariant, Size
-from apps.inventory.models import ReservationStatus, StockRecord
+from apps.inventory.models import Reservation, ReservationStatus, StockRecord
 from apps.notifications.models import DeviceToken, Notification
 from apps.orders.models import Order, OrderStatus
 from apps.payments.models import Payment, PaymentStatus
@@ -279,7 +279,9 @@ def test_checkout_ignores_client_prices_and_links_holds(api):
     order = Order.objects.get(order_no=data["order_no"])
     assert order.total == 2 * 120_00 + zone.fee  # server-computed, tamper ignored
     assert data["total"] == order.total
-    assert order.reservations.get().status == ReservationStatus.ACTIVE
+    hold = order.stock_holds.get()
+    reservation = Reservation.objects.get(checkout_id=hold.checkout_id)
+    assert reservation.status == ReservationStatus.ACTIVE
     assert Payment.objects.get(order=order).status == PaymentStatus.PENDING
     assert data["checkout_url"].startswith("metrodrip://")
     assert "token=" in data["checkout_url"]

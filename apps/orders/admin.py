@@ -244,18 +244,23 @@ class OrderAdmin(ExportCsvMixin, admin.ModelAdmin):
 
     @admin.action(description="Transition selected to CANCELLED (releases reservation)")
     def mark_as_cancelled(self, request, queryset):
-        from apps.inventory.models import Reservation
-        from apps.inventory.services import release_reservation
-        from apps.orders.models import IllegalTransition, OrderStatus
+        from apps.inventory.services import release_holds
+        from apps.orders.models import IllegalTransition, OrderStatus, StockHoldState
 
         success, failed = 0, 0
         for order in queryset:
             try:
                 order.transition_to(OrderStatus.CANCELLED)
-                # Cancelling a pending order returns its holds (ADR-A-011);
-                # only active holds need releasing and release is idempotent.
-                for res in Reservation.objects.filter(order=order, status="active"):
-                    release_reservation(res.pk)
+                # Cancelling a pending order returns its holds (ADR-A-011).
+                # Released by `checkout_id` rather than by reading the ledger's
+                # rows: an active hold belongs to a checkout attempt, and only
+                # becomes linked to an order when it is committed as a sale. The
+                # StockHold receipt is what ties the two together on this side.
+                for hold in order.stock_holds.filter(state=StockHoldState.ACTIVE):
+                    release_holds(checkout_id=hold.checkout_id)
+                order.stock_holds.filter(state=StockHoldState.ACTIVE).update(
+                    state=StockHoldState.RELEASED
+                )
                 success += 1
             except IllegalTransition as e:
                 self.message_user(request, str(e), level="ERROR")

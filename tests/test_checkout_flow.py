@@ -97,7 +97,11 @@ def test_checkout_creates_order_holds_and_payment(client):
     item = order.items.get()
     assert item.unit_price_snapshot == 120_00
 
-    reservation = order.reservations.get()
+    # An ACTIVE hold belongs to a *checkout attempt*, not yet to an order: stock
+    # is reserved before the order row exists (ADR-P3-022). The StockHold
+    # receipt is what ties the two together until the hold becomes a sale.
+    hold = order.stock_holds.get()
+    reservation = Reservation.objects.get(checkout_id=hold.checkout_id)
     assert reservation.status == ReservationStatus.ACTIVE
     assert reservation.qty == 2
 
@@ -176,6 +180,8 @@ def test_mock_success_page_confirms_payment_idempotently(client):
     movement = StockMovement.objects.get()
     assert (movement.delta, movement.reason) == (-2, MovementReason.SALE)
     assert movement.ref_order == order
+    # Committing the hold is what links the reservation to the order, because
+    # that is the point at which it stops being a hold and becomes a sale.
     assert order.reservations.get().status == ReservationStatus.COMMITTED
 
     # FR-11: confirmation email with the tokenized tracking link.

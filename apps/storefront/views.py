@@ -30,7 +30,11 @@ from apps.catalog.services import (
 )
 from apps.cms.models import ContactMessage, HomepageBanner
 from apps.core.money import format_centavos
-from apps.inventory.services import InsufficientStock, get_stock_records
+from apps.inventory.services import (
+    InsufficientStock,
+    ReservationUnavailable,
+    get_stock_records,
+)
 from apps.notifications.services import send_contact_alert, send_order_confirmation
 from apps.notifications.sms import send_sms
 from apps.orders.checkout import CheckoutError, PaymentSessionError, place_order
@@ -326,6 +330,13 @@ def checkout_page(request):
     except InsufficientStock as error:
         logger.info("Checkout rejected: %s", error)
         return _json_error("Some items just sold out. Review your cart and try again.", status=409)
+    except ReservationUnavailable as error:
+        # place_order already released the holds before raising.
+        logger.error("Stock service unavailable during checkout: %s", error)
+        return _json_error(
+            "We could not confirm stock right now — please try again in a moment.",
+            status=502,
+        )
     except PaymentSessionError as error:
         # place_order already released the holds before raising.
         logger.error("Checkout session failed: %s", error)
