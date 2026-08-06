@@ -66,6 +66,12 @@ class Reservation(models.Model):
     )
     # Correlates the hold with a checkout session before an Order exists (D-1).
     session_key = models.CharField(max_length=64, blank=True, default="")
+    # Groups every hold placed by one checkout attempt, and is the identity that
+    # crosses the service boundary (ADR-P3-003 step 3). Minted before any write,
+    # so it exists while the Order still does not — which is what lets stock be
+    # reserved *before* the order row and compensated by a caller that never has
+    # to reach into the ledger's own tables to find what it created.
+    checkout_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
     # Set when the hold converts into a sale; SET_NULL because a reservation is
     # operational state, not audit evidence (StockMovement carries the audit).
     order = models.ForeignKey(
@@ -92,6 +98,43 @@ class Reservation(models.Model):
 
     def __str__(self):
         return f"{self.variant_id} × {self.qty} ({self.status})"
+
+
+class IdempotencyRecord(models.Model):
+    """Makes a retried stock mutation safe to replay.
+
+    Under synchronous REST a read timeout is indistinguishable from success:
+    the request was sent, so the mutation may or may not have been applied
+    (`ServiceUncertain` in `apps/core/http.py`). Without a replay guard the
+    only safe response is to give up and compensate, which turns every blip
+    into a lost checkout.
+
+    The guarantee comes from *ordering*, not from the table itself: the key row
+    and the stock mutation are written in one transaction, so "key present with
+    a terminal status" is true exactly when the mutation was applied. There is
+    no window in which one exists without the other.
+
+    Django owns this DDL even though the service writes the rows — one schema
+    authority, per ADR-P3-013's shared-schema/exclusive-writer decision.
+    """
+
+    #: sha256(f"{route}:{key}") — hashed so an opaque client key of any shape
+    #: fits a fixed-width primary key and never lands in a log verbatim.
+    key_hash = models.CharField(max_length=64, primary_key=True)
+    #: sha256 of the canonical request body. A second call with the same key but
+    #: a different body is a client bug, not a retry, and must not replay.
+    request_fingerprint = models.CharField(max_length=64)
+    #: 0 means "in flight" — claimed by a request that has not yet committed.
+    status_code = models.PositiveSmallIntegerField(default=0)
+    response_body = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "idempotency record"
+        verbose_name_plural = "idempotency records"
+
+    def __str__(self):
+        return f"{self.key_hash[:12]}… → {self.status_code or 'in flight'}"
 
 
 class MovementReason(models.TextChoices):

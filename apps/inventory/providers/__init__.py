@@ -14,7 +14,25 @@ from django.conf import settings
 
 class InventoryProvider(abc.ABC):
     @abc.abstractmethod
-    def reserve_stock(self, *, variant_id, qty, session_key="", order=None): ...
+    def reserve_stock(self, *, variant_id, qty, session_key="", order=None, checkout_id=""): ...
+
+    @abc.abstractmethod
+    def reserve_lines(self, *, checkout_id, lines, session_key="", ttl_minutes=None):
+        """Reserve every line atomically under one `checkout_id`, or nothing.
+
+        `checkout_id` is minted by the caller *before* any write, so it exists
+        while the Order still does not. That is what lets a caller compensate
+        by telling the ledger to undo an id it supplied, instead of reaching
+        into the ledger's tables to find rows the ledger created.
+        """
+
+    @abc.abstractmethod
+    def commit_holds(self, *, checkout_id, order_no="", order_id=None):
+        """Convert a checkout group's ACTIVE holds into sales. Returns a count."""
+
+    @abc.abstractmethod
+    def release_holds(self, *, checkout_id):
+        """Release a checkout group's ACTIVE holds. Unknown ids are a no-op."""
 
     @abc.abstractmethod
     def release_reservation(self, reservation_id): ...
@@ -33,6 +51,18 @@ class InventoryProvider(abc.ABC):
 
     @abc.abstractmethod
     def get_stock_record(self, variant_id): ...
+
+    @abc.abstractmethod
+    def get_stock_records(self, variant_ids):
+        """Counters for many SKUs at once, as `{variant_id: record}`.
+
+        Batch rather than a loop over `get_stock_record` because under the
+        `service` provider each call is a separate HTTP round trip. The product
+        detail page reads every variant of a product — 36 on the seeded catalog
+        — which made a listing page ~36 sequential requests. Unknown ids read
+        as zero availability, exactly as the single-record accessor does, so
+        callers never have to distinguish "unstocked" from "missing".
+        """
 
 
 def get_inventory_provider() -> InventoryProvider:

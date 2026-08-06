@@ -6,14 +6,18 @@ details, and a zone. Prices, totals, and stock decisions are computed here
 atomic block leaves no order, line, hold, or counter change behind.
 """
 
+import datetime
 import logging
 import time
+import uuid
 
+from django.conf import settings
 from django.db import OperationalError, transaction
+from django.utils import timezone
 
 from apps.catalog.models import ProductVariant
-from apps.inventory.services import release_reservation, reserve_stock
-from apps.orders.models import Order, OrderItem
+from apps.inventory.services import release_holds, reserve_stock
+from apps.orders.models import Order, OrderItem, StockHold, StockHoldState
 from apps.orders.services import next_order_no
 from apps.payments.services import create_checkout_session
 from apps.shipping.models import ShippingZone
@@ -84,6 +88,11 @@ def place_order(
     except (ShippingZone.DoesNotExist, ValueError, TypeError):
         raise CheckoutError("Choose a valid shipping zone.") from None
 
+    # Minted before any write, so it exists while the Order still does not. It
+    # is the only identity that crosses to the stock ledger: compensation says
+    # "release this checkout_id", never "delete the rows you created for me".
+    checkout_id = uuid.uuid4().hex
+
     def _build_order():
         with transaction.atomic():
             variants = {
@@ -115,13 +124,31 @@ def place_order(
             )
             for variant_id, qty in quantities.items():
                 # Raising here rolls back everything — no half-built orders.
-                reserve_stock(variant_id=variant_id, qty=qty, session_key=session_key, order=order)
+                reserve_stock(
+                    variant_id=variant_id,
+                    qty=qty,
+                    session_key=session_key,
+                    order=order,
+                    checkout_id=checkout_id,
+                )
                 OrderItem.objects.create(
                     order=order,
                     variant=variants[variant_id],
                     qty=qty,
                     unit_price_snapshot=variants[variant_id].price,
                 )
+
+            # Orders' own receipt for the stock it is holding. Everything
+            # downstream — the payment commit, compensation, reconciliation —
+            # reads this instead of following a reverse FK into the ledger's
+            # tables, which returns empty the moment the ledger is a separate
+            # service and silently commits nothing (ADR-P3-012).
+            StockHold.objects.create(
+                order=order,
+                checkout_id=checkout_id,
+                expires_at=timezone.now()
+                + datetime.timedelta(minutes=settings.RESERVATION_TTL_MINUTES),
+            )
             return order
 
     order = None
@@ -151,10 +178,18 @@ def place_order(
         checkout_url, _ = create_checkout_session(order, success_url, cancel_url)
     except Exception as error:
         # The order committed but no payment session exists: free the holds now
-        # instead of stranding them for the 15-minute TTL.
+        # instead of stranding them for the 15-minute TTL. Releasing by
+        # checkout_id works whichever side owns the ledger, and is a no-op if
+        # nothing was ever reserved.
         logger.error("Checkout session failed for %s: %s", order.order_no, error)
-        for reservation in order.reservations.filter(status="active"):
-            release_reservation(reservation.pk)
+        try:
+            release_holds(checkout_id=checkout_id)
+            StockHold.objects.filter(order=order).update(state=StockHoldState.RELEASED)
+        except Exception:
+            # The TTL sweep is the backstop, so a failed compensation costs at
+            # most RESERVATION_TTL_MINUTES of under-selling — never an oversell.
+            logger.exception("Failed to release holds for %s", order.order_no)
+            StockHold.objects.filter(order=order).update(state=StockHoldState.UNKNOWN)
         raise PaymentSessionError("Payment provider is unavailable right now.") from error
 
     return order, checkout_url

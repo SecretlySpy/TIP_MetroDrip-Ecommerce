@@ -32,6 +32,10 @@ class MovementReason(enum.StrEnum):
     SALE = "sale"
     RESTOCK = "restock"
     ADJUSTMENT = "adjustment"
+    # Django's MovementReason has always had this (apps/inventory/models.py); its
+    # absence here meant a returned item could be written by the monolith and
+    # then fail to round-trip through the service's own enum.
+    RETURN = "return"
 
 
 class StockRecord(Base):
@@ -79,7 +83,12 @@ class Reservation(Base):
 
 class StockMovement(Base):
     __tablename__ = "inventory_stockmovement"
-    __table_args__ = (CheckConstraint("qty > 0", name="chk_stockmovement_qty_min1"), table_args)
+    # The constraint here used to read `qty > 0` on a table that has no `qty`
+    # column — a copy-paste from Reservation. It was never caught because
+    # SKIP_CREATE_ALL meant it was rarely emitted, which is exactly the class of
+    # drift that having two schema authorities over one table name produces.
+    # Django owns this DDL (chk_movement_reason_delta); nothing is declared here.
+    __table_args__ = (table_args,)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     variant_id = Column(

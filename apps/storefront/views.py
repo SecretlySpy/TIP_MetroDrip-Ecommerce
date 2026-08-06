@@ -30,7 +30,7 @@ from apps.catalog.services import (
 )
 from apps.cms.models import ContactMessage, HomepageBanner
 from apps.core.money import format_centavos
-from apps.inventory.services import InsufficientStock
+from apps.inventory.services import InsufficientStock, get_stock_records
 from apps.notifications.services import send_contact_alert, send_order_confirmation
 from apps.notifications.sms import send_sms
 from apps.orders.checkout import CheckoutError, PaymentSessionError, place_order
@@ -153,28 +153,28 @@ def product_detail(request, slug):
     if product is None:
         raise Http404
 
-    variants_data = []
-    for variant in product.variants.all():
-        try:
-            from apps.inventory.services import get_stock_record
+    # One stock read for the whole page. Looping `get_stock_record` here meant
+    # one HTTP round trip per variant under INVENTORY_PROVIDER=service — around
+    # 36 sequential calls on the seeded catalog, each with its own timeout.
+    variants = list(product.variants.all())
+    stock = get_stock_records([variant.pk for variant in variants])
 
-            available = get_stock_record(variant.pk).available
-        except Exception:
-            # An unstocked variant renders as sold out rather than sellable.
-            available = 0
-        variants_data.append(
-            {
-                "id": variant.pk,
-                "sku": variant.sku,
-                "size": variant.size,
-                "color": variant.color,
-                "fit": variant.fit,
-                "price": variant.price,
-                "price_display": format_centavos(variant.price),
-                "available": available,
-                "product_name": product.name,
-            }
-        )
+    variants_data = [
+        {
+            "id": variant.pk,
+            "sku": variant.sku,
+            "size": variant.size,
+            "color": variant.color,
+            "fit": variant.fit,
+            "price": variant.price,
+            "price_display": format_centavos(variant.price),
+            # An unstocked variant reads as zero, so it renders sold out rather
+            # than sellable — the batch accessor guarantees a row for every id.
+            "available": stock[variant.pk].available,
+            "product_name": product.name,
+        }
+        for variant in variants
+    ]
 
     def _size_sort_key(size_value):
         try:
@@ -234,15 +234,10 @@ def cart_availability(request):
     if not variant_ids or len(variant_ids) > 50:
         return _json_error("Provide 1–50 variant IDs")
 
-    from apps.inventory.services import get_stock_record
-
-    availability = {}
-    for variant_id in variant_ids:
-        try:
-            rec = get_stock_record(variant_id)
-            availability[str(variant_id)] = rec.available
-        except Exception:
-            availability[str(variant_id)] = 0
+    # This endpoint accepts up to 50 ids; reading them one at a time was 50
+    # sequential round trips under the service provider.
+    stock = get_stock_records(variant_ids)
+    availability = {str(variant_id): stock[variant_id].available for variant_id in variant_ids}
 
     return JsonResponse({"availability": availability})
 

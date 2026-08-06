@@ -40,6 +40,22 @@ def _require_positive_int(value, name):
     return value
 
 
+def _absent_stock_record(variant_id):
+    """A variant with no StockRecord reads as zero, never as an error.
+
+    A SKU that was never stocked and a SKU that sold out are the same answer to
+    every caller — "you cannot buy this" — and making the former raise would
+    turn a merchandising gap into a 500 on a product page.
+    """
+    return SimpleNamespace(
+        variant_id=variant_id,
+        qty_on_hand=0,
+        qty_reserved=0,
+        low_stock_threshold=0,
+        available=0,
+    )
+
+
 def _end_active_reservation(reservation, terminal_status):
     """Return an ACTIVE reservation's units to availability (lock already held)."""
     stock = StockRecord.objects.select_for_update().get(variant_id=reservation.variant_id)
@@ -61,7 +77,7 @@ def _end_active_reservation(reservation, terminal_status):
 class LocalInventoryProvider(InventoryProvider):
     """Monolith implementation: the only writer of stock counters and movements."""
 
-    def reserve_stock(self, *, variant_id, qty, session_key="", order=None):
+    def reserve_stock(self, *, variant_id, qty, session_key="", order=None, checkout_id=""):
         """Place a TTL-bound hold on `qty` units of one SKU (B-1/B-2, FR-5)."""
         _require_positive_int(qty, "qty")
 
@@ -83,9 +99,104 @@ class LocalInventoryProvider(InventoryProvider):
                 qty=qty,
                 session_key=session_key,
                 order=order,
+                checkout_id=checkout_id,
                 expires_at=timezone.now()
                 + datetime.timedelta(minutes=settings.RESERVATION_TTL_MINUTES),
             )
+
+    def reserve_lines(self, *, checkout_id, lines, session_key="", ttl_minutes=None):
+        """Reserve every line under one `checkout_id`, or reserve nothing.
+
+        All-or-nothing because a partially reserved cart leaves stock held for
+        an order the caller is about to abandon. Lines are locked in
+        `variant_id` order — one global lock order, so two carts sharing SKUs
+        can block but never form a cycle.
+        """
+        if not checkout_id:
+            raise ValueError("checkout_id is required.")
+        lines = list(lines)
+        if not lines:
+            raise ValueError("At least one line is required.")
+
+        ttl = ttl_minutes or settings.RESERVATION_TTL_MINUTES
+        expires_at = timezone.now() + datetime.timedelta(minutes=ttl)
+        ordered = sorted(lines, key=lambda line: int(line["variant_id"]))
+
+        with transaction.atomic():
+            # Replay guard. In-process callers do not retry across a network,
+            # so this only catches a caller reusing an id; the service provider
+            # gets the real protocol via IdempotencyRecord.
+            already = list(Reservation.objects.filter(checkout_id=checkout_id))
+            if already:
+                return already
+
+            created = []
+            for line in ordered:
+                variant_id = int(line["variant_id"])
+                qty = _require_positive_int(int(line["qty"]), "qty")
+                stock = StockRecord.objects.select_for_update().get(variant_id=variant_id)
+                if stock.available < qty:
+                    raise InsufficientStock(
+                        f"variant {variant_id}: requested {qty}, available {stock.available}"
+                    )
+                stock.qty_reserved += qty
+                stock.save(update_fields=["qty_reserved"])
+                created.append(
+                    Reservation.objects.create(
+                        variant_id=variant_id,
+                        qty=qty,
+                        session_key=session_key,
+                        checkout_id=checkout_id,
+                        expires_at=expires_at,
+                    )
+                )
+            return created
+
+    def commit_holds(self, *, checkout_id, order_no="", order_id=None):
+        """Convert every ACTIVE hold in a checkout group into a sale.
+
+        Returns `{variant_id: qty}` for what was actually committed. The paid
+        path needs per-variant totals to detect a shortfall (a hold that
+        expired before payment landed), and it must get them from the ledger
+        rather than by reading reservation rows it does not own.
+
+        An already-committed group returns `{}` rather than raising, so a
+        replayed payment webhook is a no-op — the webhook is the only payment
+        truth (Invariant 3) and providers retry it.
+        """
+        committed: dict[int, int] = {}
+        reservations = list(
+            Reservation.objects.filter(
+                checkout_id=checkout_id, status=ReservationStatus.ACTIVE
+            ).values_list("pk", "variant_id", "qty")
+        )
+        for reservation_id, variant_id, qty in reservations:
+            try:
+                self.commit_reservation(reservation_id=reservation_id, order_id=order_id)
+            except InvalidReservationState:
+                # Lost a race with the sweep or another commit; the shortfall
+                # loop downstream re-reserves whatever is missing.
+                logger.warning("reservation %s was not committable", reservation_id)
+                continue
+            committed[variant_id] = committed.get(variant_id, 0) + qty
+        return committed
+
+    def release_holds(self, *, checkout_id):
+        """Release every ACTIVE hold in a checkout group; unknown ids are a no-op.
+
+        Compensation runs where the caller cannot know whether a reserve landed,
+        so "nothing to release" has to be success rather than an error.
+        """
+        released = 0
+        reservation_ids = list(
+            Reservation.objects.filter(
+                checkout_id=checkout_id, status=ReservationStatus.ACTIVE
+            ).values_list("pk", flat=True)
+        )
+        for reservation_id in reservation_ids:
+            self.release_reservation(reservation_id)
+            released += 1
+        return released
 
     def release_reservation(self, reservation_id):
         """Give an abandoned/cancelled hold back to availability (idempotent)."""
@@ -99,8 +210,14 @@ class LocalInventoryProvider(InventoryProvider):
                 )
             return _end_active_reservation(reservation, ReservationStatus.RELEASED)
 
-    def commit_reservation(self, *, reservation_id, order):
-        """Convert an ACTIVE hold into a sale on payment confirmation (D-3)."""
+    def commit_reservation(self, *, reservation_id, order=None, order_id=None):
+        """Convert an ACTIVE hold into a sale on payment confirmation (D-3).
+
+        Accepts `order_id` as well as `order` because only scalars may cross a
+        service boundary; the instance form stays for in-process callers.
+        """
+        if order_id is None and order is not None:
+            order_id = order.pk
         with transaction.atomic():
             reservation = Reservation.objects.select_for_update().get(pk=reservation_id)
             if reservation.status != ReservationStatus.ACTIVE:
@@ -121,11 +238,11 @@ class LocalInventoryProvider(InventoryProvider):
                 variant_id=reservation.variant_id,
                 delta=-reservation.qty,
                 reason=MovementReason.SALE,
-                ref_order=order,
+                ref_order_id=order_id,
             )
 
             reservation.status = ReservationStatus.COMMITTED
-            reservation.order = order
+            reservation.order_id = order_id
             reservation.ended_at = timezone.now()
             reservation.save(update_fields=["status", "order", "ended_at"])
             return reservation
@@ -202,10 +319,16 @@ class LocalInventoryProvider(InventoryProvider):
         try:
             return StockRecord.objects.get(variant_id=variant_id)
         except StockRecord.DoesNotExist:
-            return SimpleNamespace(
-                variant_id=variant_id,
-                qty_on_hand=0,
-                qty_reserved=0,
-                low_stock_threshold=0,
-                available=0,
-            )
+            return _absent_stock_record(variant_id)
+
+    def get_stock_records(self, variant_ids):
+        """Counters for many SKUs in one query; unknown SKUs read as zero."""
+        wanted = list(dict.fromkeys(variant_ids))  # de-duplicate, keep order
+        found = {
+            record.variant_id: record
+            for record in StockRecord.objects.filter(variant_id__in=wanted)
+        }
+        return {
+            variant_id: found.get(variant_id) or _absent_stock_record(variant_id)
+            for variant_id in wanted
+        }

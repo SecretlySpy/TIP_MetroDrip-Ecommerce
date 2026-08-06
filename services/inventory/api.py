@@ -4,6 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from contracts.errors import envelope
+from contracts.inventory_v1 import (
+    ROUTE_STOCK_BATCH,
+    ROUTE_STOCK_ONE,
+    StockBatchRequest,
+    StockBatchResponse,
+    StockRecordOut,
+)
 from services._shared.security import ServiceAuth
 
 from .database import get_db
@@ -19,18 +27,44 @@ auth = ServiceAuth("INVENTORY_SERVICE_TOKEN")
 router = APIRouter(dependencies=[Depends(auth)])
 
 
-@router.get("/stock/{variant_id}")
+def _as_out(record: StockRecord) -> StockRecordOut:
+    return StockRecordOut(
+        variant_id=record.variant_id,
+        qty_on_hand=record.qty_on_hand,
+        qty_reserved=record.qty_reserved,
+        low_stock_threshold=record.low_stock_threshold,
+        available=record.available,
+    )
+
+
+@router.post(ROUTE_STOCK_BATCH, response_model=StockBatchResponse)
+async def get_stock_batch(
+    payload: StockBatchRequest,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+):
+    """Counters for many SKUs in one round trip.
+
+    Without this, reading a product page under `INVENTORY_PROVIDER=service`
+    meant one HTTP call per variant — roughly 36 sequential calls per page on
+    the seeded catalog, each with its own timeout budget. A missing id is
+    omitted from `records`; the client fills it in as zero availability, which
+    matches how the in-process provider treats an unstocked variant.
+    """
+    wanted = list(dict.fromkeys(payload.variant_ids))
+    if not wanted:
+        return StockBatchResponse(records=[])
+
+    result = await db.execute(select(StockRecord).where(StockRecord.variant_id.in_(wanted)))
+    found = {record.variant_id: record for record in result.scalars().all()}
+    return StockBatchResponse(records=[_as_out(found[vid]) for vid in wanted if vid in found])
+
+
+@router.get(ROUTE_STOCK_ONE, response_model=StockRecordOut)
 async def get_stock(variant_id: int, db: AsyncSession = Depends(get_db)):  # noqa: B008
     record = await db.get(StockRecord, variant_id)
     if not record:
-        raise HTTPException(status_code=404, detail="StockRecord not found")
-    return {
-        "variant_id": record.variant_id,
-        "qty_on_hand": record.qty_on_hand,
-        "qty_reserved": record.qty_reserved,
-        "low_stock_threshold": record.low_stock_threshold,
-        "available": record.available,
-    }
+        raise HTTPException(status_code=404, detail=envelope("unknown_variant", "No such SKU."))
+    return _as_out(record)
 
 
 @router.post("/reservations")

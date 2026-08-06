@@ -30,7 +30,11 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from apps.accounts.models import Customer, WishlistItem
 from apps.catalog.services import get_all_categories, get_catalog_queryset, get_product_detail
 from apps.core.money import format_centavos
-from apps.inventory.services import InsufficientStock, get_stock_record
+from apps.inventory.services import (
+    InsufficientStock,
+    get_stock_record,
+    get_stock_records,
+)
 from apps.notifications.models import DeviceToken, Notification
 from apps.orders.checkout import CheckoutError, PaymentSessionError, parse_items, place_order
 from apps.orders.models import Order, OrderStatus
@@ -233,8 +237,13 @@ class ProductDetailView(APIView):
                 error_payload("not_found", "Product not found."), status=status.HTTP_404_NOT_FOUND
             )
 
+        # One stock read per page rather than one per variant (see the batch
+        # accessor's docstring in apps/inventory/services.py).
+        product_variants = list(product.variants.all())
+        stock = get_stock_records([variant.pk for variant in product_variants])
+
         variants = []
-        for variant in product.variants.all():
+        for variant in product_variants:
             variants.append(
                 {
                     "id": variant.pk,
@@ -244,7 +253,7 @@ class ProductDetailView(APIView):
                     "fit": variant.fit,
                     "price": variant.price,
                     "price_display": format_centavos(variant.price),
-                    "available": get_stock_record(variant.pk).available,
+                    "available": stock[variant.pk].available,
                 }
             )
 
@@ -305,6 +314,7 @@ class CartValidateView(APIView):
             v.pk: v
             for v in ProductVariant.objects.select_related("product").filter(pk__in=quantities)
         }
+        stock = get_stock_records(list(quantities))
         lines, subtotal, all_available = [], 0, True
         for variant_id, qty in quantities.items():
             variant = variants.get(variant_id)
@@ -312,7 +322,7 @@ class CartValidateView(APIView):
                 lines.append({"variant_id": variant_id, "removed": True})
                 all_available = False
                 continue
-            available = get_stock_record(variant_id).available
+            available = stock[variant_id].available
             line_total = variant.price * qty
             subtotal += line_total
             if available < qty:

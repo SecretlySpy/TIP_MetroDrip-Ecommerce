@@ -10,13 +10,8 @@ import logging
 from django.db import transaction
 from django.utils import timezone
 
-from apps.inventory.services import (
-    InsufficientStock,
-    InvalidReservationState,
-    commit_reservation,
-    reserve_stock,
-)
 from apps.orders.models import OrderStatus
+from apps.payments.holds import consume_order_holds
 
 from ..models import Payment, PaymentMethod, PaymentStatus
 from . import PaymentProvider, register_provider
@@ -65,37 +60,9 @@ class SimulatedPaymentProvider(PaymentProvider):
                 update_fields.append("method")
             payment.save(update_fields=update_fields)
 
-            # Consume stock holds — same logic as production path.
-            committed_by_variant = {}
-            for reservation in order.reservations.filter(status="active"):
-                try:
-                    commit_reservation(reservation_id=reservation.pk, order=order)
-                    committed_by_variant[reservation.variant_id] = (
-                        committed_by_variant.get(reservation.variant_id, 0) + reservation.qty
-                    )
-                except InvalidReservationState:
-                    logger.warning(
-                        "Order %s: reservation %s not committable",
-                        order.order_no,
-                        reservation.pk,
-                    )
-
-            for item in order.items.all():
-                shortfall = item.qty - committed_by_variant.get(item.variant_id, 0)
-                if shortfall <= 0:
-                    continue
-                try:
-                    replacement = reserve_stock(
-                        variant_id=item.variant_id, qty=shortfall, order=order
-                    )
-                    commit_reservation(reservation_id=replacement.pk, order=order)
-                except InsufficientStock:
-                    logger.critical(
-                        "Order %s PAID but variant %s short by %d units — manual refund needed",
-                        order.order_no,
-                        item.variant_id,
-                        shortfall,
-                    )
+            # Consume stock holds by checkout_id, never by following a reverse
+            # FK into the ledger's tables (apps/payments/holds.py).
+            consume_order_holds(order)
 
             order.transition_to(OrderStatus.PAID)
         return True

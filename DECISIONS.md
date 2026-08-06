@@ -478,3 +478,22 @@
   - **The SOA framing does not require it.** Three running services, a versioned sync-REST contract, consumer-driven contract tests, a fail-closed auth boundary, a three-way remote-failure taxonomy, correlation IDs end to end, and a documented architecture status already demonstrate the pattern. "We kept one MySQL instance with foreign-key integrity because a logical split on one host buys nothing at our scale, and here is the ADR" is a **stronger** position than a half-finished split — the same argument ADR-P3-003 already makes about not overclaiming.
 - **If it is later required:** ship the reversible subset only — `db_constraint=False`, application-level guards, denormalised read models for catalog's `review_avg` / `review_count` / `total_sold`, and the state-only field swap. That delivers the whole "services own their data" story on one database and stops short of the one-way door.
 - **Consequences:** ADR-P3-007's unlock list remains the gate for step 5. The checkout saga stays unbuilt; its **outbox**, however, is a prerequisite for flipping step 3's default and is built during Phase B, not after it.
+
+## ADR-P3-014 — Orders holds a receipt (`StockHold`); the ledger is asked by `checkout_id`
+
+- **Status:** Accepted (Phase B, step 3 in progress)
+- **Decision:** Orders records a `StockHold` row per checkout attempt, keyed by a `checkout_id` it mints before any write. The paid path commits stock with `commit_holds(checkout_id=…)` and compensates with `release_holds(checkout_id=…)`. Nothing on the Orders side reads `inventory_reservation`.
+- **The defect this closes:** both payment providers consumed stock by iterating `order.reservations.filter(status="active")` — a reverse foreign key into the ledger's table. That resolves only while Orders and the ledger share one schema. Against a separate ledger it returns **empty**, the commit loop does nothing, and the shortfall pass re-reserves and re-commits every line. The payment succeeds, `qty_on_hand` never moves, and **no `StockMovement` row is written** — Hard Invariant 4 failing silently on the money path, and untested.
+- **Why `checkout_id` and not the order id:** the identity has to exist *before* the order row, so stock can be reserved first and compensation can name something the caller supplied. Passing an order id is what forced the old adapter to write back into Django's `Reservation` table after calling the service (ADR-P3-012).
+- **Consequences:**
+  - `commit_holds` returns `{variant_id: qty}` so the shortfall reconciliation works without reading rows it does not own.
+  - Both providers now share `apps/payments/holds.py`; the duplicated loop is gone.
+  - Pinned behaviourally by `tests/test_stock_holds.py`, and structurally by an AST check that no payments module accesses `.reservations` — behaviour alone cannot catch this while both halves share a database.
+  - `StockHoldState.UNKNOWN` exists for commits that returned `ServiceUncertain`. Nothing resolves those yet; that is the reconciliation job in B6.
+
+## ADR-P3-015 — Batch stock reads
+
+- **Status:** Accepted
+- **Decision:** `get_stock_records(variant_ids)` is the read primitive; `POST /v1/stock/batch` serves it. Every page that reads stock for a set of variants uses it.
+- **Rationale:** the product page read one variant at a time — about 36 sequential HTTP calls per page on the seeded catalog under `INVENTORY_PROVIDER=service`, each with its own timeout budget, and the availability endpoint accepted 50 ids the same way. This alone made the service provider unshippable independent of correctness.
+- **Consequences:** unknown ids read as zero availability rather than raising, matching the in-process provider — a never-stocked SKU and a sold-out SKU are the same answer to a shopper. Pinned by a call-count assertion, not by inspection.

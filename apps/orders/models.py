@@ -259,3 +259,53 @@ class OrderNumberSequence(models.Model):
 
     def __str__(self):
         return f"{self.year}: {self.last_value}"
+
+
+class StockHoldState(models.TextChoices):
+    ACTIVE = "active", "Active"
+    COMMITTED = "committed", "Committed"
+    RELEASED = "released", "Released"
+    # The commit or release call timed out after the request was sent, so
+    # whether the ledger applied it is unknown. Reconciliation resolves these;
+    # they must never be silently treated as either outcome.
+    UNKNOWN = "unknown", "Unknown"
+
+
+class StockHold(models.Model):
+    """Orders' receipt for stock held by the inventory ledger — not the ledger.
+
+    Orders needs to answer "what stock is this order holding?" without reading
+    inventory's tables. Today it answers by following `order.reservations`, a
+    reverse foreign key into `inventory_reservation`. That works only while both
+    live in one schema: against a genuinely separate ledger the reverse FK
+    returns *empty*, and the payment path's `order.reservations.filter(
+    status="active")` loop silently commits nothing. The money is taken,
+    `qty_on_hand` never moves, and no `StockMovement` row is written — Hard
+    Invariant 4 failing silently on the paid path (ADR-P3-012).
+
+    This row is the fix. It records what Orders asked for and what it was told,
+    keyed by `checkout_id`, and never by a reservation id the ledger owns.
+    Compensation is always "tell the owner to undo `checkout_id`", never a write
+    into the owner's tables.
+    """
+
+    order = models.ForeignKey("orders.Order", on_delete=models.CASCADE, related_name="stock_holds")
+    #: The idempotency key for every ledger call about this hold. Unique because
+    #: one checkout attempt produces exactly one hold group.
+    checkout_id = models.CharField(max_length=64, unique=True)
+    state = models.CharField(
+        max_length=9, choices=StockHoldState.choices, default=StockHoldState.ACTIVE
+    )
+    #: Mirrors the ledger's TTL so a stranded hold is visible from Orders alone.
+    expires_at = models.DateTimeField()
+    committed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            # The reconciliation query: holds that need a human or a retry.
+            models.Index(fields=["state", "expires_at"], name="idx_hold_state_expiry"),
+        ]
+
+    def __str__(self):
+        return f"{self.checkout_id} ({self.state})"

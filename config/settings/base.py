@@ -215,6 +215,11 @@ PAYMENT_PROVIDER = "paymongo"
 # into the experimental D-07 FastAPI client, which does not yet implement
 # commits/adjustments/sweeps transactionally.
 INVENTORY_PROVIDER = os.environ.get("INVENTORY_PROVIDER", "local")
+# Read through settings, never module-level os.environ: the provider used to
+# capture these at import, which put them out of reach of `override_settings`
+# and defaulted the URL to Django's own port 8000 while Compose published 8001.
+INVENTORY_SERVICE_URL = os.environ.get("INVENTORY_SERVICE_URL", "http://127.0.0.1:8001")
+INVENTORY_SERVICE_TOKEN = os.environ.get("INVENTORY_SERVICE_TOKEN", "")
 # Shipping provider registry key (simulated | jnt | http).
 # Default stays in-process. `http` is the Phase-3 fulfillment strangler opt-in.
 SHIPPING_PROVIDER = os.environ.get("SHIPPING_PROVIDER", "jnt")
