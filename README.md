@@ -32,7 +32,7 @@ The first two became genuinely cut-over capable only recently: `prod.py` previou
 
 Remaining strangler steps: **3** stock ownership is **complete and evidenced** — the ledger implements the full contract, 30 parity assertions cover both providers, and the M2 no-oversell gate passes with 20 concurrent buyers reserving across a real socket to a real ledger process. **4** schema split is designed and deliberately not executed (ADR-P3-013). **5** checkout saga stays gated (ADR-P3-007).
 
-`INVENTORY_PROVIDER=service` is now *permitted* in deployed environments; the **default is still `local`**. Widening the allowlist does not flip a default — it lets an operator open the seam deliberately. One residual hazard is documented rather than hidden: the stock commit is a synchronous HTTP call made inside the payment transaction. See `DECISIONS.md` ADR-P3-025.
+`INVENTORY_PROVIDER=service` is now *permitted* in deployed environments; the **default is still `local`**. The sidecars ship behind the `services` Compose profile in staging too (`docker compose --profile services up -d --build`), so a default deploy runs none of them. Widening the allowlist does not flip a default — it lets an operator open the seam deliberately. One residual hazard is documented rather than hidden: the stock commit is a synchronous HTTP call made inside the payment transaction. See `DECISIONS.md` ADR-P3-025.
 
 ## Local development
 

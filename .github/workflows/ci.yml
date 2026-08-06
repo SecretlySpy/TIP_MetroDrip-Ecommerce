@@ -103,6 +103,29 @@ jobs:
           --env-file deploy/.env.staging.example
           -f deploy/compose.staging.yml
           config --quiet
+      # The strangler sidecars sit behind the `services` profile, so the smoke
+      # below never instantiates them. Validating the profiled config keeps
+      # their definitions from rotting unnoticed — schema errors and missing
+      # interpolations would otherwise surface only when an operator first
+      # tries to open a seam.
+      - name: Validate Compose schema with the services profile
+        run: >-
+          docker compose --profile services
+          --env-file deploy/.env.staging.example
+          -f deploy/compose.staging.yml
+          config --quiet
+      - name: Assert the default staging stack excludes opt-in sidecars
+        run: |
+          services="$(docker compose \
+            --env-file deploy/.env.staging.example \
+            -f deploy/compose.staging.yml config --services | sort | tr '\n' ' ')"
+          echo "default services: $services"
+          test "$services" = "app caddy db scheduler " || {
+            echo "::error::Default staging stack changed. The smoke below runs" \
+                 "--no-build, so any service added outside the 'services'" \
+                 "profile must have its image built first."
+            exit 1
+          }
       - name: Validate Caddy configuration
         run: >-
           docker run --rm

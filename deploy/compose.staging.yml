@@ -170,16 +170,25 @@ services:
 
   # --- Strangler sidecars (ADR-P3-006) -------------------------------------
   #
-  # These were absent from staging entirely, which meant the `http` provider
-  # keys could be selected with nothing behind them. They stay on the internal
-  # network only: `deploy/Caddyfile` reverse-proxies the Django app and nothing
-  # else, so none of these is reachable from the public hostname.
+  # Behind the `services` profile, so a default `docker compose up` still brings
+  # up exactly db + app + scheduler + caddy. That matches the provider defaults
+  # — every seam is in-process unless an operator opts it out — and it keeps the
+  # single-host cost envelope (NFR-5) rather than running three idle containers
+  # that nothing calls.
+  #
+  #     docker compose --profile services up -d --build
+  #
+  # They were previously absent from staging entirely, which meant the remote
+  # provider keys could be selected with nothing behind them. They stay on the
+  # internal network only: `deploy/Caddyfile` reverse-proxies the Django app and
+  # nothing else, so none is reachable from the public hostname.
   #
   # Each refuses every request and reports NOT ready without its token
   # (ADR-P3-009), so a missing secret fails closed and visibly rather than
   # silently serving unauthenticated traffic.
 
   notifications:
+    profiles: ["services"]
     image: metrodrip-services:staging
     build:
       context: ..
@@ -214,6 +223,7 @@ services:
     stop_grace_period: 15s
 
   fulfillment:
+    profiles: ["services"]
     image: metrodrip-services:staging
     restart: unless-stopped
     init: true
@@ -244,6 +254,7 @@ services:
     stop_grace_period: 15s
 
   inventory:
+    profiles: ["services"]
     image: metrodrip-services:staging
     restart: unless-stopped
     init: true
