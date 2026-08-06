@@ -15,8 +15,12 @@ import os
 import random
 
 from fastapi import Depends, FastAPI, Response
-from pydantic import BaseModel
 
+from contracts.fulfillment_v1 import (
+    ROUTE_BOOK,
+    BookShipmentRequest,
+    BookShipmentResponse,
+)
 from services._shared.security import ServiceAuth
 
 logger = logging.getLogger("metrodrip.fulfillment")
@@ -24,23 +28,6 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
 app = FastAPI(title="MetroDrip Fulfillment Service", version="v1")
 auth = ServiceAuth("SHIPPING_SERVICE_TOKEN")
-
-
-class BookShipmentRequest(BaseModel):
-    order_no: str
-    courier: str = "jnt"
-    recipient_name: str = ""
-    address_line1: str = ""
-    city: str = ""
-    phone: str = ""
-    correlation_id: str | None = None
-
-
-class BookShipmentResponse(BaseModel):
-    waybill_no: str
-    tracking_url: str
-    status: str = "booked"
-    mode: str = "simulated"
 
 
 @app.get("/healthz/live")
@@ -64,7 +51,7 @@ def ready(response: Response) -> dict[str, str]:
 
 
 @app.post(
-    "/v1/shipments/book",
+    ROUTE_BOOK,
     response_model=BookShipmentResponse,
     dependencies=[Depends(auth)],
 )

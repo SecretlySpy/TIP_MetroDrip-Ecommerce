@@ -1,41 +1,32 @@
-import os
-import socket
-import subprocess
-import time
+"""Shared pytest configuration.
 
-import pytest
+This file used to start a session-scoped uvicorn subprocess running
+`services.inventory.main:app` on port 8000, with
+`MYSQL_DATABASE_INVENTORY=test_metrodrip`.
 
-uvicorn_proc = None
+Both halves of that were wrong, and together they were worse than either:
 
+1. `test_metrodrip` is pytest-django's *own* test database for `metrodrip`.
+   The FastAPI service was therefore reading and writing
+   `inventory_stockrecord` / `inventory_reservation` inside Django's schema —
+   the same physical rows the ORM owns. Under Compose the same service points
+   at `metrodrip_inventory`, a genuinely separate ledger, so the two modes had
+   opposite semantics and the suite only ever exercised the forgiving one. It
+   is also the only reason the dual-write in
+   `apps/inventory/providers/service.py` appeared to work: the Django `UPDATE`
+   found the row SQLAlchemy had just inserted because it was literally the same
+   table.
 
-def wait_for_port(port, host="127.0.0.1", timeout=5.0):
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            with socket.create_connection((host, port), timeout=1.0):
-                return True
-        except OSError:
-            time.sleep(0.5)
-    return False
+2. Nothing consumed it. `INVENTORY_PROVIDER` defaults to `local` and no test
+   overrides it, so the subprocess answered zero requests. It cost a process
+   per run and bought the appearance of coverage.
 
+Service-side behaviour is now tested in-process instead — see
+`tests/contract/`, where a real Django provider is driven against a real
+FastAPI app through the single egress point in `apps/core/http.py`. That needs
+no subprocess, no port, and no second database, and it fails when the two sides
+actually disagree.
 
-@pytest.fixture(scope="session", autouse=True)
-def start_fastapi(django_db_setup, django_db_blocker):
-    global uvicorn_proc
-    env = os.environ.copy()
-    env["MYSQL_DATABASE_INVENTORY"] = "test_metrodrip"
-    env["SKIP_CREATE_ALL"] = "1"
-
-    import sys
-
-    uvicorn_proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "services.inventory.main:app", "--port", "8000"], env=env
-    )
-    if not wait_for_port(8000):
-        print("WARNING: Uvicorn did not start on port 8000 in time")
-
-    yield
-
-    if uvicorn_proc:
-        uvicorn_proc.terminate()
-        uvicorn_proc.wait()
+Reintroducing a live sidecar for the Phase-B stock work will need a database
+that is *not* Django's test database, created and torn down explicitly.
+"""

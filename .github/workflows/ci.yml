@@ -63,12 +63,11 @@ jobs:
         run: >-
           python manage.py check --deploy --fail-level WARNING
           --settings=config.settings.staging
-      - name: Start FastAPI Inventory Service
-        env:
-          MYSQL_DATABASE_INVENTORY: test_metrodrip
-        run: |
-          python -m uvicorn services.inventory.main:app --port 8000 &
-          sleep 3
+      # The inventory sidecar is deliberately no longer started here. It was run
+      # against MYSQL_DATABASE_INVENTORY=test_metrodrip — pytest-django's own
+      # test database — so it wrote to Django's tables rather than a separate
+      # ledger, and no test called it anyway. Seam behaviour is covered
+      # in-process by tests/contract/. See tests/conftest.py for the full note.
       - name: Tests (pytest)
         run: pytest
       - name: Reversible migration gate
@@ -182,3 +181,26 @@ jobs:
           --env-file deploy/.env.staging.example
           -f deploy/compose.staging.yml
           down -v --remove-orphans
+
+  # The Expo app has shipped `typecheck` and `lint` scripts since Epic H, and
+  # CI has never run either — the mobile surface had no automated gate at all.
+  # `src/api/types.ts` mirrors the DRF serializers in apps/mobile_api by hand,
+  # so strict-mode tsc is the only thing that notices when the two drift.
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck (tsc --noEmit, strict)
+        run: npm run typecheck
+      - name: Lint (eslint)
+        run: npm run lint

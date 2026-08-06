@@ -9,16 +9,27 @@ from __future__ import annotations
 
 import logging
 
-import requests
 from django.conf import settings
 from django.utils import timezone
 
+from apps.core.http import CallPolicy, ServiceCallError, call
 from config.middleware import get_correlation_id
 
 from ..models import ShipmentStatus
 from . import ShippingProvider, register_provider
 
 logger = logging.getLogger(__name__)
+
+# Booking is not idempotent (each call mints a new waybill), so a retry could
+# book the same shipment twice. attempts=1 until the service accepts an
+# Idempotency-Key. The read timeout is generous because a real courier API sits
+# behind it; packing is admin work, off the checkout critical path.
+_BOOK_POLICY = CallPolicy(
+    connect_timeout=2.0,
+    read_timeout=10.0,
+    attempts=1,
+    breaker_key="fulfillment.book",
+)
 
 
 @register_provider("http")
@@ -45,27 +56,19 @@ class HttpShippingProvider(ShippingProvider):
             "phone": address.get("phone", ""),
             "correlation_id": get_correlation_id() or None,
         }
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        token = getattr(settings, "SHIPPING_SERVICE_TOKEN", "") or ""
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        cid = get_correlation_id()
-        if cid:
-            headers["X-Correlation-ID"] = cid
-
         try:
-            response = requests.post(
+            data = call(
+                "POST",
                 f"{base}/v1/shipments/book",
+                policy=_BOOK_POLICY,
                 json=payload,
-                headers=headers,
-                timeout=10,
+                service_token=getattr(settings, "SHIPPING_SERVICE_TOKEN", "") or "",
+                token_setting_name="SHIPPING_SERVICE_TOKEN",
             )
-            if response.status_code >= 400:
-                logger.warning("fulfillment book → %s", response.status_code)
-                return False
-            data = response.json()
-        except Exception:
-            logger.exception("fulfillment service unreachable order=%s", order.order_no)
+        except ServiceCallError as error:
+            # Enhancement-tier: a booking failure must never block the order
+            # state transition, so this still degrades to the manual waybill.
+            logger.warning("fulfillment book failed order=%s: %s", order.order_no, error)
             return False
 
         waybill = str(data.get("waybill_no") or "").strip()

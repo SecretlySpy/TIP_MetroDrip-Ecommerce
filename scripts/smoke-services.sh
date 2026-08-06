@@ -5,6 +5,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Sidecars refuse every request and report NOT ready without a token
+# (ADR-P3-009), so smoke has to authenticate like a real caller. These match the
+# local-dev defaults in docker-compose.yml; override to smoke a real deployment.
+SHIPPING_SERVICE_TOKEN="${SHIPPING_SERVICE_TOKEN:-local-dev-fulfillment-token}"
+
 echo "==> Building services image (single target avoids parallel tag race)"
 docker compose --profile services build notifications
 
@@ -44,11 +49,21 @@ done
 CID="smoke-cid-$(date +%s)"
 book=$(curl -s -o /tmp/smoke_book -w "%{http_code}" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SHIPPING_SERVICE_TOKEN" \
   -H "X-Correlation-ID: $CID" \
   -d "{\"order_no\":\"MD-SMOKE-1\",\"courier\":\"jnt\",\"correlation_id\":\"$CID\"}" \
   http://127.0.0.1:8003/v1/shipments/book)
 echo "  book shipment → $book $(cat /tmp/smoke_book)"
 [[ "$book" == "200" ]] || fail=1
+
+# The auth boundary itself is part of the smoke: an unauthenticated booking must
+# be refused, or the sidecar is not actually protecting anything.
+unauth=$(curl -s -o /dev/null -w "%{http_code}" \
+  -H "Content-Type: application/json" \
+  -d "{\"order_no\":\"MD-SMOKE-2\",\"courier\":\"jnt\"}" \
+  http://127.0.0.1:8003/v1/shipments/book)
+echo "  unauthenticated book → $unauth (expect 401)"
+[[ "$unauth" == "401" ]] || fail=1
 
 # Prove cid appears in fulfillment logs
 if docker logs metrodrip-fulfillment 2>&1 | grep -q "$CID"; then

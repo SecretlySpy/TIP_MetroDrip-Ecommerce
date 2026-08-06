@@ -18,7 +18,19 @@ Governing docs: [MetroDrip_AI_Handover.md](MetroDrip_AI_Handover.md) · [DECISIO
 | Health | `/healthz/live/`, `/healthz/ready/` | Liveness + readiness |
 | Providers | payments / shipping / notifications | Config-driven adapters; **`PAYMENT_PROVIDER=simulated`** is the local default |
 
-Architecture today is a **service-oriented modular monolith** (Django apps, one deployable, one MySQL instance). Optional FastAPI sidecars under `services/` (inventory experimental; notifications **delivery** only) are strangler opt-ins — defaults stay in-process. See `DECISIONS.md` ADR-P3-003.
+Architecture today is a **service-oriented modular monolith** (Django apps, one deployable, one MySQL instance) with a strangler migration in progress. **Microservices are not shipped**, and stock is not owned by a service.
+
+FastAPI sidecars under `services/` are opt-in; every default stays in-process:
+
+| Sidecar | Owns | Toggle | State |
+|---|---|---|---|
+| `notifications` | email/SMS/push delivery I/O | `NOTIFICATION_PROVIDER=http` | cut-over capable |
+| `fulfillment` | courier booking I/O | `SHIPPING_PROVIDER=http` | cut-over capable |
+| `inventory` | — | `INVENTORY_PROVIDER=service` | **experimental; refused in staging/prod** |
+
+The first two became genuinely cut-over capable only recently: `prod.py` previously discarded the provider environment variable and reassigned a hardcoded value, so `=http` was unreachable in every deployed environment (ADR-P3-008). Both ends of each seam also failed *open* on an unset token (ADR-P3-009).
+
+Remaining strangler steps: **3** stock ownership (in progress), **4** schema split (designed and deliberately not executed — ADR-P3-013), **5** checkout saga (gated on 3, ADR-P3-007). See `DECISIONS.md` ADR-P3-003.
 
 ## Local development
 
@@ -48,16 +60,22 @@ PAYMENT_PROVIDER=simulated python manage.py runserver 0.0.0.0:8080
 Optional sidecars (not required for normal dev — defaults are in-process):
 
 ```bash
+# Every sidecar now refuses all traffic and reports NOT ready without its token
+# (ADR-P3-009), so each command below sets one.
+
 # Inventory (experimental; keep INVENTORY_PROVIDER=local unless you know the gaps)
-uvicorn services.inventory.main:app --reload --port 8001
+INVENTORY_SERVICE_TOKEN=local-dev-inventory-token \
+  uvicorn services.inventory.main:app --reload --port 8001
 
 # Notifications delivery only (email/SMS/push DTOs). Opt-in:
 #   NOTIFICATION_PROVIDER=http NOTIFICATION_SERVICE_URL=http://127.0.0.1:8002
-uvicorn services.notifications.main:app --reload --port 8002
+NOTIFICATION_SERVICE_TOKEN=local-dev-notifications-token \
+  uvicorn services.notifications.main:app --reload --port 8002
 
 # Fulfillment booking only (waybill I/O). Opt-in:
 #   SHIPPING_PROVIDER=http SHIPPING_SERVICE_URL=http://127.0.0.1:8003
-uvicorn services.fulfillment.main:app --reload --port 8003
+SHIPPING_SERVICE_TOKEN=local-dev-fulfillment-token \
+  uvicorn services.fulfillment.main:app --reload --port 8003
 
 # Or run all three sidecars in Docker (Compose profile `services`):
 docker compose --profile services up -d --build

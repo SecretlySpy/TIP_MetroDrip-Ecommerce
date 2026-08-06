@@ -367,7 +367,8 @@
 | Fulfillment & Notifications | `shipping`, `notifications` delivery | `db_fulfillment` | **notifications delivery** FastAPI opt-in (`NOTIFICATION_PROVIDER=http`) |
 | Storefront BFF + Mobile API | `storefront`, `cms`, `mobile_api` | `db_content` | monolith |
 
-- **Strangler order:** (1) Notifications **delivery** only — done as opt-in. (2) Fulfillment. (3) Catalog/Inventory out of Orders with stock ownership never leaving Catalog. (4) Schema split + drop cross-service FKs. (5) Checkout saga. (6) Compose/Caddy per service.
+- **Strangler order:** (1) Notifications **delivery** only. (2) Fulfillment. (3) Catalog/Inventory out of Orders with stock ownership never leaving Catalog. (4) Schema split + drop cross-service FKs. (5) Checkout saga. (6) Compose/Caddy per service.
+- **Status correction (ADR-P3-008):** steps 1 and 2 were recorded here as "done as opt-in". They were not. `prod.py` discarded the provider environment variable and reassigned a hardcoded value, so `=http` was unreachable in every deployed environment — the sidecars shipped, but nothing could cut over to them. Both seams became genuinely opt-in-capable only with ADR-P3-008/009/010/011. Step 4 is designed and **deliberately not executed** (see ADR-P3-013).
 - **Notifications extraction rule:** `Notification` / `DeviceToken` rows and mobile inbox stay in Django until the mobile API is re-pointed. The sidecar accepts email/SMS/push DTOs only. Failures are enhancement-tier (logged, never fail checkout). Default provider remains `console` / `email_sms`.
 - **Rationale:** Course requires an SOA framing; an accurate modular monolith + started strangler defends better than an aspirational "we have microservices" claim that collapses under one question about stock ownership.
 - **Consequences:** README and handover §1 Architecture status describe reality. M2 concurrency gate stays on Catalog/local inventory. Incomplete services must never become the default (lesson from ADR-P3-001/002).
@@ -415,3 +416,65 @@
   3. Django checkout calls reserve over HTTP *after* order row insert strategy is redesigned so compensation works without dual-write races.
   4. Re-point M2 gate at Catalog reserve endpoint; both web and mobile checkout must pass.
   5. Only then introduce saga module with ValidateCart → CreateOrder → ReserveStock → CreatePaymentSession.
+
+## ADR-P3-008 — Deployed provider selection is an allowlist, not a hardcoded pin
+
+- **Status:** Accepted (amends ADR-P3-003 steps 1 and 2)
+- **Decision:** `config/settings/prod.py` validates `SHIPPING_PROVIDER`, `NOTIFICATION_PROVIDER`, and `INVENTORY_PROVIDER` against an allowlist and **returns the operator's value**. `PAYMENT_PROVIDER` stays an unconditional `paymongo` assignment.
+- **Evidence of the defect:** the previous code read each variable only to reject one development-only value, then assigned a hardcoded good one (`SHIPPING_PROVIDER = "jnt"`, `NOTIFICATION_PROVIDER = "email_sms"`). `staging.py` does `from .prod import *`, so **`=http` was structurally unreachable in every deployed environment**. Steps 1 and 2 were described as "done as opt-in" while no deployed environment could take the opt-in.
+- **Rationale:** the strangler's whole control surface is the provider key. A settings module that discards it converts an opt-in into dead code. Rejecting an unrecognised value at import also moves a typo's failure from a late registry lookup to boot.
+- **Consequences:**
+  - `INVENTORY_PROVIDER`'s allowlist is `{"local"}` today. **Widening it to `{"local", "service"}` is the step-3 cutover** — a one-line, reviewable, git-blameable change rather than an ops decision.
+  - `=http` additionally requires a non-empty service token (see ADR-P3-009).
+  - `PAYMENT_PROVIDER`'s asymmetry is deliberate and commented: Hard Invariant 3 leaves exactly one legal deployed value, so there is no operator choice to preserve.
+  - Pinned by 12 cases in `tests/test_staging_settings.py`; the two `allow_http_strangler_opt_in` cases fail against the previous implementation.
+
+## ADR-P3-009 — Sidecars and their adapters both fail closed
+
+- **Status:** Accepted
+- **Decision:** `services/_shared/security.py` gates every sidecar route. An unset service token means **refuse every request (503) and report not ready**, never "allow everything". Django's side refuses to send a request it cannot authenticate. Comparison uses `hmac.compare_digest`.
+- **Evidence of the defect:** two independent fail-open defaults composed into no authentication at all — the Django adapters omitted the `Authorization` header when their token was empty, and each service skipped its check when its own token was empty. `services/inventory/api.py` had no check of any kind on `POST /reservations`, published on `0.0.0.0:8001`.
+- **Readiness:** `/healthz/ready` returns 503 when unconfigured. The inventory probe also returns 503 when its database is unreachable; the previous version returned 200 with `db: degraded` and offered an `INVENTORY_READY_SKIP_DB` flag that skipped the probe entirely — **a readiness probe that cannot report "not ready" is not a probe**, and it made the Compose healthcheck and `scripts/smoke-services.sh` structurally incapable of failing.
+- **Why not raise at import:** a crash-looping container hides its reason behind a restart counter; an unready one answering a documented 503 states it plainly and stays inspectable. The safety property is identical.
+- **Consequences:** host port publishing is loopback-only (`127.0.0.1:PORT:PORT`). Local Compose supplies known development tokens; `prod.py` refuses to boot an `http` provider without a real one.
+
+## ADR-P3-010 — One egress point, and a three-way failure taxonomy
+
+- **Status:** Accepted
+- **Decision:** Every provider adapter calls `apps/core/http.py::call()` instead of `requests` directly. Connect and read timeouts are separate, and failures are raised as one of three distinct types.
+- **The taxonomy, which is the actual point:**
+  - `ServiceRejected` — 4xx. Understood and declined. Nothing changed. Never retry.
+  - `ServiceUnavailable` — connect refused or connect timeout. Provably pre-send. Nothing changed.
+  - `ServiceUncertain` — read timeout, or 5xx after the body was sent. **May or may not have been applied.**
+- **Rationale:** `requests` collapses all three into `RequestException`, which is why the adapters could only ever do `except Exception: return False`. That is survivable for notification delivery, where a dropped message is enhancement-tier. It is *not* survivable for stock reservation, where "maybe it was applied" is precisely the difference between under-selling and over-selling. Splitting connect from read timeout is what makes the distinction knowable at all. This lands in Phase A so the distinction exists **before** stock moves.
+- **Consequences:**
+  - `attempts > 1` without an idempotency key raises `ValueError` — a call that can silently double-apply on a network blip is not expressible.
+  - The circuit breaker is process-local, not cache-backed: `config/settings/test.py` uses `DummyCache` and no deployed environment runs a shared cache, so a cache-backed breaker would silently never trip in exactly the environments it exists for.
+  - Booking and delivery both stay `attempts=1` (neither is idempotent yet) and both still degrade to `False`, preserving the manual-waybill and enhancement-tier fallbacks.
+
+## ADR-P3-011 — Contracts are shared code; seam tests are round trips
+
+- **Status:** Accepted (supersedes the split assertions in the previous seam tests)
+- **Decision:** `contracts/` holds one pydantic model per message. The FastAPI services declare them as body and `response_model` types; the Django adapters validate against the same models. Seam tests in `tests/contract/` drive a **real** Django provider against a **real** FastAPI app in-process, by redirecting the single egress point from ADR-P3-010.
+- **Evidence of the defect:** the previous "contract tests" asserted the client's outgoing shape against a mocked `requests.post` and the server's shape against a `TestClient`, with nothing connecting them. Renaming a response field on the server left the client test green while every real call returned `False`. They proved each side self-consistent and said nothing about whether the two agreed.
+- **Consequences:** a field rename is now impossible to do on one side only — both import the same model. Round trips need no subprocess, no port, and no second database. 10 cases cover success, auth rejection in both directions, unconfigured-token refusal on each side, and quiet degradation.
+
+## ADR-P3-012 — The inventory sidecar is no longer started against Django's test database
+
+- **Status:** Accepted (corrects the evidence base for ADR-P3-002 and ADR-P3-007)
+- **Decision:** `tests/conftest.py` no longer starts a session-scoped uvicorn subprocess, and CI no longer starts one either.
+- **Evidence of the defect:** both set `MYSQL_DATABASE_INVENTORY=test_metrodrip` — pytest-django's *own* test database for `metrodrip`. The FastAPI service was reading and writing `inventory_stockrecord` / `inventory_reservation` **inside Django's schema**, the same physical rows the ORM owns. Under Compose the same service points at `metrodrip_inventory`, a genuinely separate ledger, so the two modes had opposite semantics. It is also the only reason the dual-write in `apps/inventory/providers/service.py` appeared to work: the Django `UPDATE` found the row SQLAlchemy had just inserted because it was literally the same table.
+- **Second defect:** nothing consumed it. `INVENTORY_PROVIDER` defaults to `local` and no test overrides it, so the subprocess answered zero requests while costing one process per run.
+- **Consequences:** **any prior green result for the `service` provider should be treated as unverified.** Phase B must introduce a database that is *not* Django's test database, created and torn down explicitly, before the parity claim in ADR-P3-005 can be made.
+
+## ADR-P3-013 — Step 4 (schema split) is designed, sequenced, and deliberately not executed
+
+- **Status:** Accepted
+- **Decision:** Do **not** split the five logical databases (`db_identity`, `db_catalog`, `db_orders`, `db_fulfillment`, `db_content`) or drop the 11 cross-app foreign keys. Phase A (seam hardening) and Phase B (stock ownership) proceed; step 4 stops here by choice, not by omission.
+- **Rationale:**
+  - **It buys nothing operationally at this scale.** One MySQL instance, one host, one developer. Five logical databases on one instance give no isolation, no independent scaling, no independent failure domain, and no independent deploy. The entire cost is paid for the *appearance* of separation.
+  - **It is the only irreversible step.** Every other change in this plan reverts with an environment variable or `git revert`. After the data move, rollback is restore-from-dump.
+  - **It permanently downgrades audit integrity.** `StockMovement.ref_order` and `Review.order` are `PROTECT` precisely because audit evidence must not be deletable. Across a service boundary those become application-level guards plus a detector — a real loss of evidentiary strength, traded for nothing the business needs.
+  - **The SOA framing does not require it.** Three running services, a versioned sync-REST contract, consumer-driven contract tests, a fail-closed auth boundary, a three-way remote-failure taxonomy, correlation IDs end to end, and a documented architecture status already demonstrate the pattern. "We kept one MySQL instance with foreign-key integrity because a logical split on one host buys nothing at our scale, and here is the ADR" is a **stronger** position than a half-finished split — the same argument ADR-P3-003 already makes about not overclaiming.
+- **If it is later required:** ship the reversible subset only — `db_constraint=False`, application-level guards, denormalised read models for catalog's `review_avg` / `review_count` / `total_sold`, and the state-only field swap. That delivers the whole "services own their data" story on one database and stops short of the one-way door.
+- **Consequences:** ADR-P3-007's unlock list remains the gate for step 5. The checkout saga stays unbuilt; its **outbox**, however, is a prerequisite for flipping step 3's default and is built during Phase B, not after it.

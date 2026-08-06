@@ -18,12 +18,19 @@ import logging
 import os
 import smtplib
 from email.message import EmailMessage
-from typing import Any
 
 import requests
 from fastapi import Depends, FastAPI, HTTPException, Response
-from pydantic import BaseModel, Field
 
+from contracts.errors import envelope
+from contracts.notifications_v1 import (
+    ROUTE_EMAIL,
+    ROUTE_PUSH,
+    ROUTE_SMS,
+    EmailPayload,
+    PushPayload,
+    SmsPayload,
+)
 from services._shared.security import ServiceAuth
 
 logger = logging.getLogger("metrodrip.notifications")
@@ -33,27 +40,6 @@ app = FastAPI(title="MetroDrip Notifications Service", version="v1")
 
 auth = ServiceAuth("NOTIFICATION_SERVICE_TOKEN")
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
-
-
-class EmailPayload(BaseModel):
-    to: list[str] = Field(min_length=1)
-    subject: str
-    body: str
-    correlation_id: str | None = None
-
-
-class SmsPayload(BaseModel):
-    phone: str
-    message: str
-    correlation_id: str | None = None
-
-
-class PushPayload(BaseModel):
-    tokens: list[str] = Field(default_factory=list)
-    title: str
-    body: str
-    data: dict[str, Any] = Field(default_factory=dict)
-    correlation_id: str | None = None
 
 
 @app.get("/healthz/live")
@@ -71,7 +57,7 @@ def ready(response: Response) -> dict[str, str]:
     return {"status": "ok", "auth": "configured"}
 
 
-@app.post("/v1/email", dependencies=[Depends(auth)])
+@app.post(ROUTE_EMAIL, dependencies=[Depends(auth)])
 def send_email(payload: EmailPayload):
     cid = payload.correlation_id or "-"
     host = os.environ.get("SMTP_HOST", "")
@@ -96,10 +82,12 @@ def send_email(payload: EmailPayload):
         return {"delivered": True, "mode": "smtp"}
     except Exception:
         logger.exception("cid=%s email delivery failed", cid)
-        raise HTTPException(status_code=502, detail="email_failed") from None
+        raise HTTPException(
+            status_code=502, detail=envelope("email_failed", "SMTP delivery failed.")
+        ) from None
 
 
-@app.post("/v1/sms", dependencies=[Depends(auth)])
+@app.post(ROUTE_SMS, dependencies=[Depends(auth)])
 def send_sms(payload: SmsPayload):
     cid = payload.correlation_id or "-"
     api_key = os.environ.get("SEMAPHORE_API_KEY", "")
@@ -122,10 +110,12 @@ def send_sms(payload: SmsPayload):
         return {"delivered": True, "mode": "semaphore"}
     except Exception:
         logger.exception("cid=%s sms delivery failed", cid)
-        raise HTTPException(status_code=502, detail="sms_failed") from None
+        raise HTTPException(
+            status_code=502, detail=envelope("sms_failed", "SMS gateway delivery failed.")
+        ) from None
 
 
-@app.post("/v1/push", dependencies=[Depends(auth)])
+@app.post(ROUTE_PUSH, dependencies=[Depends(auth)])
 def send_push(payload: PushPayload):
     cid = payload.correlation_id or "-"
     tokens = [t for t in payload.tokens if t]
@@ -152,4 +142,6 @@ def send_push(payload: PushPayload):
         return {"delivered": len(tokens), "mode": "expo"}
     except Exception:
         logger.exception("cid=%s push delivery failed", cid)
-        raise HTTPException(status_code=502, detail="push_failed") from None
+        raise HTTPException(
+            status_code=502, detail=envelope("push_failed", "Push delivery failed.")
+        ) from None

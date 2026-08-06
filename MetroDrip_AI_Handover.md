@@ -68,7 +68,12 @@ Version 1.1 amended v1.0 to satisfy the IT 009 Project Checklist (customer accou
 Public Caddy → app:8000 only. Internal Caddy :9080 → /internal/* sidecars.
 ```
 
-**Accuracy:** this is a **service-oriented modular monolith with bounded contexts, migrating to microservices via the strangler pattern**. Sidecars are containerized and health-checked; they are not the default write path for stock or checkout.
+**Accuracy:** this is a **service-oriented modular monolith with bounded contexts, migrating to microservices via the strangler pattern**. Sidecars are containerized, authenticated, and health-checked; they are not the default write path for stock or checkout.
+
+Two corrections worth carrying into any status claim (ADR-P3-008/012):
+
+- Strangler steps 1 and 2 were previously described as "done as opt-in". They were not reachable: `prod.py` discarded the provider environment variable and reassigned a hardcoded value, so no deployed environment could select `=http`. Both seams are cut-over capable only as of Phase A.
+- The inventory sidecar was tested against **pytest-django's own test database**, so it wrote to Django's tables rather than a separate ledger, and no test actually called it. **Any prior green result for `INVENTORY_PROVIDER=service` is unverified**, and the parity claim in ADR-P3-005 cannot be made until Phase B provides a real second database.
 
 ### 3.3.3 Mobile Application Modules
 

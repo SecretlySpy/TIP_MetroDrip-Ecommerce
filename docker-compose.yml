@@ -176,10 +176,10 @@ services:
       MYSQL_PORT: "3306"
       MYSQL_DATABASE_INVENTORY: metrodrip_inventory
       REDIS_URL: redis://redis:6379/0
+      INVENTORY_SERVICE_TOKEN: "${INVENTORY_SERVICE_TOKEN:-local-dev-inventory-token}"
       # Experimental: tolerate missing schema / redis during smoke.
       SKIP_CREATE_ALL: "${INVENTORY_SKIP_CREATE_ALL:-0}"
       INVENTORY_DISABLE_REDIS: "${INVENTORY_DISABLE_REDIS:-0}"
-      INVENTORY_READY_SKIP_DB: "${INVENTORY_READY_SKIP_DB:-0}"
     depends_on:
       db:
         condition: service_healthy
@@ -188,7 +188,9 @@ services:
     expose:
       - "8001"
     ports:
-      - "8001:8001"
+      # Loopback-only. This publishes a stock-mutating write endpoint, which
+      # until now carried no authentication of any kind.
+      - "127.0.0.1:8001:8001"
     networks:
       - backend
       - internal

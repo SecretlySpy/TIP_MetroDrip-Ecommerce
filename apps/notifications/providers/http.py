@@ -10,14 +10,24 @@ from __future__ import annotations
 
 import logging
 
-import requests
 from django.conf import settings
 
+from apps.core.http import CallPolicy, ServiceCallError, call
 from config.middleware import get_correlation_id
 
 from . import NotificationProvider, register_provider
 
 logger = logging.getLogger(__name__)
+
+# Delivery is enhancement-tier and not idempotent (a retry sends a second
+# email), so a failure is dropped rather than retried. The short read timeout
+# keeps a slow SMTP or Expo call from stretching the request that triggered it.
+_DELIVER_POLICY = CallPolicy(
+    connect_timeout=1.0,
+    read_timeout=8.0,
+    attempts=1,
+    breaker_key="notifications.deliver",
+)
 
 
 @register_provider("http")
@@ -28,30 +38,22 @@ class HttpNotificationProvider(NotificationProvider):
         base = getattr(settings, "NOTIFICATION_SERVICE_URL", "").rstrip("/")
         return f"{base}{path}"
 
-    def _headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        token = getattr(settings, "NOTIFICATION_SERVICE_TOKEN", "") or ""
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        cid = get_correlation_id()
-        if cid:
-            headers["X-Correlation-ID"] = cid
-        return headers
-
     def _post(self, path: str, payload: dict) -> bool:
-        url = self._url(path)
-        if not url.startswith("http"):
-            logger.error("NOTIFICATION_SERVICE_URL is not configured")
-            return False
         payload = {**payload, "correlation_id": get_correlation_id() or None}
         try:
-            response = requests.post(url, json=payload, headers=self._headers(), timeout=8)
-            if response.status_code >= 400:
-                logger.warning("notification service %s → %s", path, response.status_code)
-                return False
+            call(
+                "POST",
+                self._url(path),
+                policy=_DELIVER_POLICY,
+                json=payload,
+                service_token=getattr(settings, "NOTIFICATION_SERVICE_TOKEN", "") or "",
+                token_setting_name="NOTIFICATION_SERVICE_TOKEN",
+            )
             return True
-        except Exception:
-            logger.exception("notification service unreachable path=%s", path)
+        except ServiceCallError as error:
+            # Section 7 enhancement-tier rule: delivery failures are logged and
+            # swallowed. They must never fail or roll back a business action.
+            logger.warning("notification delivery failed path=%s: %s", path, error)
             return False
 
     def send_order_confirmation(self, order, status_url):
