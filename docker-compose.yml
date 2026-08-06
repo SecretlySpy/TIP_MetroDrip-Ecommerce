@@ -175,15 +175,12 @@ services:
       MYSQL_HOST: db
       MYSQL_PORT: "3306"
       MYSQL_DATABASE_INVENTORY: metrodrip_inventory
-      REDIS_URL: redis://redis:6379/0
       INVENTORY_SERVICE_TOKEN: "${INVENTORY_SERVICE_TOKEN:-local-dev-inventory-token}"
-      # Experimental: tolerate missing schema / redis during smoke.
+      # Django owns the inventory DDL (ADR-P3-013), so deployments skip
+      # create_all and let migrations be the single schema authority.
       SKIP_CREATE_ALL: "${INVENTORY_SKIP_CREATE_ALL:-0}"
-      INVENTORY_DISABLE_REDIS: "${INVENTORY_DISABLE_REDIS:-0}"
     depends_on:
       db:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     expose:
       - "8001"

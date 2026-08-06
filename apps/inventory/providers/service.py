@@ -23,7 +23,6 @@ criteria in ADR-P3-021 are met.
 import hashlib
 import json
 import logging
-import os
 import uuid
 from types import SimpleNamespace
 
@@ -60,7 +59,6 @@ from . import InventoryProvider
 
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 
 # Reads are safe to retry and sit on the request's critical path, so the budget
 # is small and the breaker trips quickly — a slow inventory service must not

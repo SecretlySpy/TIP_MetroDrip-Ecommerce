@@ -319,9 +319,6 @@ def test_staging_settings_reject_http_provider_without_service_token(provider_na
     [
         ("SHIPPING_PROVIDER", "simulated"),
         ("NOTIFICATION_PROVIDER", "console"),
-        # Withheld until the ADR-P3-005 parity gate passes: the sidecar still
-        # stubs commits, adjustments, the sweep, and the low-stock scan.
-        ("INVENTORY_PROVIDER", "service"),
     ],
 )
 def test_staging_settings_reject_development_only_providers(provider_name, forbidden_value):
@@ -358,3 +355,35 @@ def test_staging_settings_still_pin_payment_provider_unconditionally():
 
     assert refused.returncode != 0
     assert "Simulated payments cannot be enabled" in refused.stderr
+
+
+def test_staging_settings_allow_the_inventory_service_provider_with_a_token():
+    """`service` became selectable once its parity evidence existed (ADR-P3-025).
+
+    The default is still `local` — widening the allowlist only lets an operator
+    open the seam deliberately.
+    """
+    result = _import_staging_settings(
+        {"INVENTORY_PROVIDER": "service", "INVENTORY_SERVICE_TOKEN": "test-only-inventory-token"}
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["inventory_provider"] == "service"
+
+
+def test_staging_settings_reject_the_inventory_service_provider_without_a_token():
+    """Fail closed: an unauthenticated ledger call must not be expressible."""
+    result = _import_staging_settings(
+        {"INVENTORY_PROVIDER": "service", "INVENTORY_SERVICE_TOKEN": "   "}
+    )
+
+    assert result.returncode != 0
+    assert "INVENTORY_PROVIDER=service requires INVENTORY_SERVICE_TOKEN to be set." in result.stderr
+
+
+def test_staging_settings_still_default_the_inventory_provider_to_local():
+    """Permitted is not the same as default (ADR-P3-005)."""
+    result = _import_staging_settings()
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["inventory_provider"] == "local"

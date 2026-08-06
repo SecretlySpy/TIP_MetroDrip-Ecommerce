@@ -175,16 +175,23 @@ def _deployed_provider(name, *, allowed, default, forbidden=frozenset()):
     return value
 
 
+#: Provider keys that mean "call a sidecar over HTTP". They differ per seam
+#: for historical reasons — the inventory registry predates the others.
+_REMOTE_PROVIDERS = {"http", "service"}
+
+
 def _require_strangler_token(provider_name, provider_value, token_name):
-    """Refuse to boot an HTTP strangler provider that cannot authenticate.
+    """Refuse to boot a remote strangler provider that cannot authenticate.
 
     Both ends fail *open* on an empty token: the Django adapters omit the
     Authorization header, and the sidecars skip the check entirely. Those two
     defaults compose into an unauthenticated internal API, so an unset token has
     to mean "do not boot" rather than "no auth".
     """
-    if provider_value == "http" and not os.environ.get(token_name, "").strip():
-        raise ImproperlyConfigured(f"{provider_name}=http requires {token_name} to be set.")
+    if provider_value in _REMOTE_PROVIDERS and not os.environ.get(token_name, "").strip():
+        raise ImproperlyConfigured(
+            f"{provider_name}={provider_value} requires {token_name} to be set."
+        )
 
 
 # Mock payment completion must never exist outside development (Invariant 3:
@@ -213,16 +220,21 @@ _require_strangler_token(
     "NOTIFICATION_PROVIDER", NOTIFICATION_PROVIDER, "NOTIFICATION_SERVICE_TOKEN"
 )
 
-# `service` is withheld until the parity gate in ADR-P3-005 passes: it still
-# stubs commits, adjustments, the TTL sweep, and the low-stock scan (ADR-P3-002),
-# and it is the one sidecar a deployed environment could otherwise reach.
-# Widening this set to {"local", "service"} is the cutover.
+# `service` became selectable once its parity evidence existed (ADR-P3-025):
+# the full contract is implemented, 30 parity assertions cover both providers,
+# and the M2 no-oversell gate passes with reserves crossing a real socket to a
+# real ledger process.
+#
+# The *default* deliberately stays `local`. Widening the allowlist only makes
+# the seam openable by an operator who sets the variable on purpose — which is
+# the whole point of the strangler's control surface — and ADR-P3-005's rule is
+# about the default, not about what is permitted.
 INVENTORY_PROVIDER = _deployed_provider(
     "INVENTORY_PROVIDER",
-    allowed={"local"},
+    allowed={"local", "service"},
     default="local",
-    forbidden={"service"},
 )
+_require_strangler_token("INVENTORY_PROVIDER", INVENTORY_PROVIDER, "INVENTORY_SERVICE_TOKEN")
 
 # Fail fast rather than silently using development credentials or hosts.
 SECRET_KEY = _required_secret_environment("DJANGO_SECRET_KEY")

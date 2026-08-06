@@ -15,6 +15,9 @@ FastAPI app — no sockets, no fixtures, no running container.
 from __future__ import annotations
 
 import asyncio
+import os
+import socket
+import sys
 import threading
 from urllib.parse import urlsplit
 
@@ -127,3 +130,117 @@ def service_provider(settings, monkeypatch, live_ledger, bridge):
     settings.INVENTORY_SERVICE_URL = "http://inventory.test"
     settings.INVENTORY_SERVICE_TOKEN = token
     return bridge(app)
+
+
+def _free_port():
+    """Ask the OS for an unused port instead of guessing one."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+@pytest.fixture
+def ledger_process(db, settings):
+    """Run the stock ledger as a real uvicorn process on Django's test schema.
+
+    ADR-P3-023 removed the in-process concurrency gate because it could not
+    work: Starlette's `TestClient` drives each request on its own AnyIO portal
+    and event loop, while the ledger's `AsyncEngine` cannot be shared across
+    loops. Concurrent buyers deadlocked in the harness before reaching any
+    behaviour under test.
+
+    A real process removes the whole class of problem. One uvicorn, one event
+    loop, one engine, and genuine sockets — which is also how it runs in
+    production, so what the gate proves is what actually ships.
+
+    `SKIP_CREATE_ALL` is set because Django owns this DDL (ADR-P3-013,
+    shared schema / exclusive writer). The service maps the tables; it must
+    never create them.
+    """
+    import subprocess
+    import time
+
+    import requests as real_requests
+    from django.db import connection
+
+    schema = connection.settings_dict["NAME"]
+    database = settings.DATABASES["default"]
+    port = _free_port()
+    token = "ledger-process-token"
+
+    environment = {
+        **os.environ,
+        "MYSQL_DATABASE_INVENTORY": schema,
+        "MYSQL_USER": database["USER"],
+        "MYSQL_PASSWORD": database["PASSWORD"],
+        "MYSQL_HOST": database["HOST"] or "127.0.0.1",
+        "MYSQL_PORT": str(database["PORT"] or "3306"),
+        "INVENTORY_SERVICE_TOKEN": token,
+        "SKIP_CREATE_ALL": "1",
+        "INVENTORY_DISABLE_REDIS": "1",
+    }
+
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "services.inventory.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--log-level",
+            "warning",
+        ],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+    base_url = f"http://127.0.0.1:{port}"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        # Readiness, not liveness: it also proves the token is configured and
+        # the ledger can actually reach the schema. A gate that starts against
+        # a half-configured service measures nothing.
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                output = process.stdout.read().decode("utf-8", "replace")
+                raise RuntimeError(f"ledger exited during startup:\n{output[-2000:]}")
+            try:
+                probe = real_requests.get(f"{base_url}/healthz/ready", headers=headers, timeout=1)
+                if probe.status_code == 200:
+                    break
+            except real_requests.RequestException:
+                time.sleep(0.2)
+        else:
+            process.kill()
+            raise RuntimeError(f"ledger never became ready on {base_url}")
+
+        settings.INVENTORY_PROVIDER = "service"
+        settings.INVENTORY_SERVICE_URL = base_url
+        settings.INVENTORY_SERVICE_TOKEN = token
+
+        # Prove the wiring rather than assume it. If the provider silently
+        # resolved back to `local`, every test using this fixture would pass
+        # while measuring the in-process path — the exact false green that
+        # ADR-P3-012 was written about, and it would be invisible because the
+        # assertions are about stock counters, which `local` also satisfies.
+        from apps.inventory.providers import get_inventory_provider
+        from apps.inventory.providers.service import ServiceInventoryProvider
+
+        resolved = get_inventory_provider()
+        assert isinstance(resolved, ServiceInventoryProvider), (
+            f"expected the HTTP provider, resolved {type(resolved).__name__} — "
+            "this gate would otherwise silently test the in-process path"
+        )
+
+        yield base_url
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()

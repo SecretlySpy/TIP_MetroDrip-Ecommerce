@@ -583,3 +583,24 @@
 - **The reserve moves outside the deadlock retry.** The retry now replays pure-Django work only: cheaper, and it removes the interaction between the stock lock and `OrderNumberSequence` entirely, since the two are no longer taken in the same transaction.
 - **Payment-session failure now cancels the order.** It previously stayed `pending` forever, holding a place in the merchant console and keeping the late-webhook window open. Compensation failure is logged and never replaces the original error; the TTL sweep is the backstop, so the worst case stays bounded at `RESERVATION_TTL_MINUTES` of under-selling and can never become an oversell.
 - **Consequence for the data model:** an ACTIVE reservation is no longer linked to an order, because it belongs to a *checkout attempt* that may never produce one. `Reservation.order` is populated at commit, when the hold stops being a hold and becomes a sale. The `StockHold` receipt carries the link in the meantime, and `mark_as_cancelled` in the merchant console releases by `checkout_id` rather than reading the ledger's rows.
+
+## ADR-P3-024 — The Redis commit path is deleted, not deprecated
+
+- **Status:** Accepted (closes ADR-P3-007 unlock item 2)
+- **Decision:** `services/inventory/events.py` and the pub/sub listener in the lifespan are removed, along with the `REDIS_URL` / `INVENTORY_DISABLE_REDIS` wiring and the ledger's Redis dependency in Compose.
+- **What it actually was.** The listener consumed `OrderConfirmed` from `inventory_events` and, on receipt, committed reservations and decremented `qty_on_hand` directly — **with no authentication and no idempotency guard**. Anything able to reach Redis could move stock. Once the Django provider moved to sync REST nothing published to that channel any more, so what remained was a dormant second writer, which is precisely what the exclusive-writer decision in ADR-P3-013 forbids.
+- **Why deleting beats deprecating:** a disabled-by-default second write path is still a write path. The failure it invites is silent (stock moves with no audit trail tying it to a request), and the flag protecting it was a plain environment variable.
+- **Consequence:** all stock mutation now enters through one authenticated, idempotent, versioned surface. ADR-P3-007 item 2 is satisfied.
+
+## ADR-P3-025 — `INVENTORY_PROVIDER=service` is permitted; the default stays `local`
+
+- **Status:** Accepted
+- **Decision:** `prod.py` widens the inventory allowlist to `{local, service}` and requires `INVENTORY_SERVICE_TOKEN` whenever the remote provider is selected. **`default="local"` is unchanged.**
+- **The distinction matters.** ADR-P3-005's rule is *never flip the default until parity*. Widening an allowlist does not flip a default — it makes the seam openable by an operator who sets the variable deliberately, which is the entire point of the strangler's control surface. Nothing about a deployed environment changes until someone chooses to change it.
+- **Evidence that unlocked it:**
+  - The full contract is implemented, including the three operations that were silently stubbed (ADR-P3-021).
+  - 30 parity assertions run every scenario against **both** providers.
+  - **No-oversell holds across a real network.** 20 concurrent buyers, 10 units, a real uvicorn ledger on real sockets: exactly 10 sales, `available == 0`. The M2 gate passes end to end through the web checkout with the ledger remote, and one checkout_id retried concurrently over HTTP still holds once. A negative control pointing at a dead port proves the suite can fail.
+  - The sidecars are now actually deployed in staging (they were absent entirely), internal-network only, fail-closed without their tokens.
+- **Residual risk, stated rather than buried.** `consume_order_holds` runs inside the payment transaction, so under `service` a stock commit is an HTTP call made while holding a lock on the `Payment` row — up to the policy's timeout budget. That is a latency and throughput hazard, not a correctness one (the outbox makes the intent durable and the ledger de-duplicates), but it is the next thing to address before anyone selects `service` in production. Staging is where that should be measured; nothing has ever run this provider in a deployed environment.
+- **Rollback remains an environment variable**, because the schema is shared and Django still owns the DDL (ADR-P3-013). That property is what made permitting this defensible at all.

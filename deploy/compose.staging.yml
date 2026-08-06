@@ -66,6 +66,20 @@ services:
       STAGING_SEED_DEMO: "${STAGING_SEED_DEMO:-0}"
       STAGING_SEED_PREVIEW_ENABLED: "${STAGING_SEED_PREVIEW_ENABLED:-0}"
       STAGING_ALLOW_INSECURE_HTTP: "${STAGING_ALLOW_INSECURE_HTTP:-0}"
+      # Strangler seams. Defaults keep every provider in-process; an operator
+      # opts a seam over to its sidecar by setting the matching provider key.
+      # prod.py refuses to boot an `http` provider whose token is unset
+      # (ADR-P3-008), so a half-configured cutover fails at startup rather than
+      # silently sending unauthenticated traffic.
+      NOTIFICATION_PROVIDER: "${NOTIFICATION_PROVIDER:-email_sms}"
+      NOTIFICATION_SERVICE_URL: http://notifications:8002
+      NOTIFICATION_SERVICE_TOKEN: "${NOTIFICATION_SERVICE_TOKEN:?Set NOTIFICATION_SERVICE_TOKEN in deploy/.env.staging}"
+      SHIPPING_PROVIDER: "${SHIPPING_PROVIDER:-jnt}"
+      SHIPPING_SERVICE_URL: http://fulfillment:8003
+      SHIPPING_SERVICE_TOKEN: "${SHIPPING_SERVICE_TOKEN:?Set SHIPPING_SERVICE_TOKEN in deploy/.env.staging}"
+      INVENTORY_PROVIDER: "${INVENTORY_PROVIDER:-local}"
+      INVENTORY_SERVICE_URL: http://inventory:8001
+      INVENTORY_SERVICE_TOKEN: "${INVENTORY_SERVICE_TOKEN:?Set INVENTORY_SERVICE_TOKEN in deploy/.env.staging}"
     depends_on:
       db:
         condition: service_healthy
@@ -116,6 +130,12 @@ services:
       MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in deploy/.env.staging}"
       MYSQL_HOST: db
       MYSQL_PORT: "3306"
+      NOTIFICATION_PROVIDER: "${NOTIFICATION_PROVIDER:-email_sms}"
+      NOTIFICATION_SERVICE_URL: http://notifications:8002
+      NOTIFICATION_SERVICE_TOKEN: "${NOTIFICATION_SERVICE_TOKEN:?Set NOTIFICATION_SERVICE_TOKEN in deploy/.env.staging}"
+      INVENTORY_PROVIDER: "${INVENTORY_PROVIDER:-local}"
+      INVENTORY_SERVICE_URL: http://inventory:8001
+      INVENTORY_SERVICE_TOKEN: "${INVENTORY_SERVICE_TOKEN:?Set INVENTORY_SERVICE_TOKEN in deploy/.env.staging}"
       STAGING_HOST: "${STAGING_HOST:?Set STAGING_HOST in deploy/.env.staging}"
     depends_on:
       # Waiting on the healthy app guarantees migrations have already applied.
@@ -147,6 +167,126 @@ services:
         condition: service_healthy
     networks:
       - edge
+
+  # --- Strangler sidecars (ADR-P3-006) -------------------------------------
+  #
+  # These were absent from staging entirely, which meant the `http` provider
+  # keys could be selected with nothing behind them. They stay on the internal
+  # network only: `deploy/Caddyfile` reverse-proxies the Django app and nothing
+  # else, so none of these is reachable from the public hostname.
+  #
+  # Each refuses every request and reports NOT ready without its token
+  # (ADR-P3-009), so a missing secret fails closed and visibly rather than
+  # silently serving unauthenticated traffic.
+
+  notifications:
+    image: metrodrip-services:staging
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.services
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    command:
+      ["uvicorn", "services.notifications.main:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      LOG_LEVEL: INFO
+      NOTIFICATION_SERVICE_TOKEN: "${NOTIFICATION_SERVICE_TOKEN:?Set NOTIFICATION_SERVICE_TOKEN in deploy/.env.staging}"
+      PUSH_PROVIDER: "${PUSH_PROVIDER:-simulated}"
+    expose:
+      - "8002"
+    networks:
+      - database
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8002/healthz/ready', timeout=5)"
+      interval: 15s
+      timeout: 8s
+      retries: 6
+      start_period: 20s
+    stop_grace_period: 15s
+
+  fulfillment:
+    image: metrodrip-services:staging
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    command:
+      ["uvicorn", "services.fulfillment.main:app", "--host", "0.0.0.0", "--port", "8003"]
+    environment:
+      LOG_LEVEL: INFO
+      SHIPPING_SERVICE_TOKEN: "${SHIPPING_SERVICE_TOKEN:?Set SHIPPING_SERVICE_TOKEN in deploy/.env.staging}"
+    expose:
+      - "8003"
+    networks:
+      - database
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8003/healthz/ready', timeout=5)"
+      interval: 15s
+      timeout: 8s
+      retries: 6
+      start_period: 20s
+    stop_grace_period: 15s
+
+  inventory:
+    image: metrodrip-services:staging
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    command:
+      ["uvicorn", "services.inventory.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      LOG_LEVEL: INFO
+      MYSQL_USER: "${MYSQL_USER:?Set MYSQL_USER in deploy/.env.staging}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in deploy/.env.staging}"
+      MYSQL_HOST: db
+      MYSQL_PORT: "3306"
+      # Shared schema, exclusive writer (ADR-P3-013): the ledger maps Django's
+      # tables and is their only writer. Django owns the DDL, so create_all is
+      # skipped and migrations remain the single schema authority.
+      MYSQL_DATABASE_INVENTORY: "${MYSQL_DATABASE:?Set MYSQL_DATABASE in deploy/.env.staging}"
+      SKIP_CREATE_ALL: "1"
+      INVENTORY_SERVICE_TOKEN: "${INVENTORY_SERVICE_TOKEN:?Set INVENTORY_SERVICE_TOKEN in deploy/.env.staging}"
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8001"
+    networks:
+      - database
+    healthcheck:
+      # Readiness here also proves the token is set and the schema is reachable
+      # — it returns 503 otherwise, so a misconfigured ledger never goes live.
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8001/healthz/ready', timeout=5)"
+      interval: 15s
+      timeout: 8s
+      retries: 8
+      start_period: 30s
+    stop_grace_period: 15s
+
 
 volumes:
   # Named volumes survive container replacement and ordinary Compose restarts.

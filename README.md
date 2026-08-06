@@ -26,13 +26,13 @@ FastAPI sidecars under `services/` are opt-in; every default stays in-process:
 |---|---|---|---|
 | `notifications` | email/SMS/push delivery I/O | `NOTIFICATION_PROVIDER=http` | cut-over capable |
 | `fulfillment` | courier booking I/O | `SHIPPING_PROVIDER=http` | cut-over capable |
-| `inventory` | stock ledger: reserve/commit/release, adjustments, TTL sweep, low-stock | `INVENTORY_PROVIDER=service` | full contract + parity proven; **still refused in staging/prod** |
+| `inventory` | stock ledger: reserve/commit/release, adjustments, TTL sweep, low-stock | `INVENTORY_PROVIDER=service` | full contract; parity + no-oversell-over-network proven; **selectable, default stays `local`** |
 
 The first two became genuinely cut-over capable only recently: `prod.py` previously discarded the provider environment variable and reassigned a hardcoded value, so `=http` was unreachable in every deployed environment (ADR-P3-008). Both ends of each seam also failed *open* on an unset token (ADR-P3-009).
 
-Remaining strangler steps: **3** stock ownership — the ledger implements the full contract, parity is proven across both providers (30 assertions), and the M2 no-oversell gate passes with stock reserved *over HTTP*; the reserve-before-order restructure is the last piece before cutover. **4** schema split is designed and deliberately not executed (ADR-P3-013). **5** checkout saga stays gated on 3 (ADR-P3-007).
+Remaining strangler steps: **3** stock ownership is **complete and evidenced** — the ledger implements the full contract, 30 parity assertions cover both providers, and the M2 no-oversell gate passes with 20 concurrent buyers reserving across a real socket to a real ledger process. **4** schema split is designed and deliberately not executed (ADR-P3-013). **5** checkout saga stays gated (ADR-P3-007).
 
-`INVENTORY_PROVIDER` remains pinned to `local` in deployed environments. See `DECISIONS.md` ADR-P3-017 for exactly what is and is not proven.
+`INVENTORY_PROVIDER=service` is now *permitted* in deployed environments; the **default is still `local`**. Widening the allowlist does not flip a default — it lets an operator open the seam deliberately. One residual hazard is documented rather than hidden: the stock commit is a synchronous HTTP call made inside the payment transaction. See `DECISIONS.md` ADR-P3-025.
 
 ## Local development
 

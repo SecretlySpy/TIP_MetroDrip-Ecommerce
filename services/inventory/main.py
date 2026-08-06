@@ -1,7 +1,15 @@
-"""FastAPI entry point for the Inventory Microservice.
+"""FastAPI entry point for the stock ledger.
 
-Handles stock reservations and stock queries.
-Sync with orders is handled via Redis Pub/Sub in events.py.
+Every mutation arrives over authenticated, idempotent, versioned REST (see
+`api.py`). There is deliberately no asynchronous ingress.
+
+A Redis pub/sub listener used to run here and commit reservations straight from
+`inventory_events` messages. It was removed (ADR-P3-024): nothing published to
+that channel any more once the Django provider moved to sync REST, and what
+remained was a second write path into the ledger with **no authentication and
+no idempotency guard** — anything able to reach Redis could decrement stock.
+That is exactly what ADR-P3-007 item 2 meant by "drop Redis as the commit
+path", and it contradicted the exclusive-writer decision in ADR-P3-013.
 """
 
 import logging
@@ -12,7 +20,6 @@ from fastapi import FastAPI, Response
 
 from . import api, database
 from .database import Base
-from .events import start_redis_listener, stop_redis_listener
 
 logger = logging.getLogger("metrodrip.inventory")
 
@@ -23,23 +30,13 @@ async def lifespan(app: FastAPI):
         # No longer swallowed. A service that cannot reach or create its own
         # schema has nothing to serve, and hiding that behind a green container
         # is how two schema authorities over the same table names went unnoticed.
+        #
+        # Django owns this DDL under ADR-P3-013, so deployments set
+        # SKIP_CREATE_ALL and let migrations be the single authority.
         async with database.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    if os.environ.get("INVENTORY_DISABLE_REDIS", "").strip() not in {"1", "true", "yes"}:
-        try:
-            await start_redis_listener()
-        except Exception:
-            # Redis is the (deprecated) async commit path, not a serving
-            # dependency: readiness deliberately does not gate on it.
-            logger.exception("Redis listener failed to start; continuing without it.")
-
     yield
-
-    try:
-        await stop_redis_listener()
-    except Exception:
-        logger.exception("Redis listener failed to stop cleanly.")
 
 
 app = FastAPI(title="MetroDrip Inventory Service", lifespan=lifespan)
