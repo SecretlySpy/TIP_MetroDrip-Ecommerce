@@ -192,6 +192,10 @@ RESERVATION_SWEEP_INTERVAL_SECONDS = 60
 # stock commit means a paid order whose stock has not moved yet — the window in
 # which the two disagree should be seconds, not minutes.
 OUTBOX_DRAIN_INTERVAL_SECONDS = 5
+# Holds whose commit outcome was never learned. Less urgent than the drain —
+# these are already paid orders being confirmed, not lost instructions — but
+# well inside RESERVATION_TTL_MINUTES so nothing expires while still unresolved.
+HOLD_RECONCILE_INTERVAL_SECONDS = 30
 LOW_STOCK_SCAN_INTERVAL_MINUTES = 60
 # Empty recipient list disables the email leg of low-stock alerts without
 # breaking the scan itself (the dashboard flag in FR-8/F epics reads the scan).

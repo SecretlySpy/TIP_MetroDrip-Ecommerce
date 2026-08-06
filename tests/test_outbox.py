@@ -129,3 +129,84 @@ def test_paid_order_enqueues_and_retires_its_stock_commit(client):
     assert message.state == OutboxState.SENT
     assert message.payload["order_no"] == order.order_no
     assert OutboxMessage.objects.filter(state=OutboxState.PENDING).count() == 0
+
+
+# --- Reconciling holds whose outcome was never learned ----------------------
+
+
+@pytest.mark.django_db
+def test_unknown_hold_is_reconciled_by_asking_the_ledger_again():
+    """The only correct response to "we don't know" is to ask again.
+
+    Assuming success loses stock; assuming failure risks selling it twice.
+    Re-asking is safe because commit is idempotent on `checkout_id`.
+    """
+    from django.test import override_settings
+
+    from apps.orders.checkout import place_order
+    from apps.orders.models import StockHold, StockHoldState
+    from apps.payments.holds import reconcile_unknown_holds
+    from tests.test_stock_holds import _variant, _zone
+
+    with override_settings(PAYMENT_PROVIDER="simulated"):
+        variant = _variant(sku="RECON-1", qty_on_hand=10)
+        order, _ = place_order(
+            items=[{"variant_id": variant.pk, "qty": 2}],
+            zone_id=_zone().pk,
+            contact={"name": "Ada", "email": "ada@example.test"},
+            success_url="https://example.test/ok",
+            cancel_url="https://example.test/no",
+        )
+
+    # Simulate a commit whose reply was lost: the hold is stuck at unknown
+    # while its reservations are still active in the ledger.
+    StockHold.objects.filter(order=order).update(state=StockHoldState.UNKNOWN)
+
+    assert reconcile_unknown_holds() == 1
+
+    hold = StockHold.objects.get(order=order)
+    assert hold.state == StockHoldState.COMMITTED
+    assert hold.committed_at is not None
+    from apps.inventory.models import StockRecord
+
+    assert StockRecord.objects.get(variant=variant).qty_on_hand == 8
+
+
+@pytest.mark.django_db
+def test_reconciling_an_already_committed_hold_does_not_double_decrement():
+    """The lost-reply case: the ledger already applied it."""
+    from django.test import override_settings
+
+    from apps.inventory.models import StockMovement, StockRecord
+    from apps.orders.checkout import place_order
+    from apps.orders.models import StockHold, StockHoldState
+    from apps.payments.holds import reconcile_unknown_holds
+    from apps.payments.services import confirm_order_paid
+    from tests.test_stock_holds import _variant, _zone
+
+    with override_settings(PAYMENT_PROVIDER="simulated"):
+        variant = _variant(sku="RECON-2", qty_on_hand=10)
+        order, _ = place_order(
+            items=[{"variant_id": variant.pk, "qty": 3}],
+            zone_id=_zone().pk,
+            contact={"name": "Ada", "email": "ada@example.test"},
+            success_url="https://example.test/ok",
+            cancel_url="https://example.test/no",
+        )
+        confirm_order_paid(order=order)
+
+    # The commit landed but imagine the reply never arrived, so Orders still
+    # believes the outcome is unknown.
+    StockHold.objects.filter(order=order).update(state=StockHoldState.UNKNOWN)
+
+    assert reconcile_unknown_holds() == 1
+
+    assert StockRecord.objects.get(variant=variant).qty_on_hand == 7
+    assert StockMovement.objects.filter(variant=variant).count() == 1
+
+
+@pytest.mark.django_db
+def test_reconciliation_is_a_no_op_when_nothing_is_unknown():
+    from apps.payments.holds import reconcile_unknown_holds
+
+    assert reconcile_unknown_holds() == 0

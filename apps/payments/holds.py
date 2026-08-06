@@ -164,3 +164,47 @@ def deliver_stock_commit(payload):
     StockHold.objects.filter(checkout_id=checkout_id).update(
         state=StockHoldState.COMMITTED, committed_at=timezone.now()
     )
+
+
+def reconcile_unknown_holds(*, limit=100):
+    """Resolve holds whose commit outcome the request never learned.
+
+    A hold lands in `unknown` when the ledger returned `ServiceUncertain` — a
+    read timeout, or a 5xx after the body was sent. The request could not tell
+    "applied" from "not applied", and guessing either way is wrong: assuming
+    success loses stock, assuming failure risks selling it twice.
+
+    Asking again is the only correct move, and it is safe precisely because
+    `commit_holds` is idempotent on `checkout_id` (ADR-P3-016). If the original
+    call did land, the ledger reports nothing left active and the hold is
+    simply marked committed; if it did not, this commits it now.
+
+    A hold that stays unknown across sweeps is left alone rather than forced —
+    it will keep being retried, and the TTL means the worst case is under-selling
+    for the remainder of the reservation window, never an oversell.
+
+    Returns how many were resolved.
+    """
+    from apps.orders.models import StockHold
+
+    resolved = 0
+    stale = StockHold.objects.filter(state=StockHoldState.UNKNOWN).select_related("order")[:limit]
+    for hold in stale:
+        try:
+            commit_holds(
+                checkout_id=hold.checkout_id,
+                order_no=hold.order.order_no,
+                order_id=hold.order_id,
+            )
+        except ReservationUnavailable:
+            logger.warning(
+                "Hold %s still unresolved; leaving for the next sweep.", hold.checkout_id
+            )
+            continue
+
+        hold.state = StockHoldState.COMMITTED
+        hold.committed_at = timezone.now()
+        hold.save(update_fields=["state", "committed_at"])
+        resolved += 1
+        logger.info("Hold %s reconciled to committed.", hold.checkout_id)
+    return resolved

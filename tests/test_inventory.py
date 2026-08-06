@@ -104,7 +104,7 @@ def _run_parallel_buyers(variant_id, buyer_count):
     return results
 
 
-@pytest.mark.django_db(transaction=True)(transaction=True)
+@pytest.mark.django_db(transaction=True)
 def test_two_buyers_competing_for_one_unit_produce_exactly_one_success():
     """Two real MySQL connections may reserve one unit only once, with no oversell."""
     variant = _create_stocked_variant(qty_on_hand=1)
@@ -118,7 +118,7 @@ def test_two_buyers_competing_for_one_unit_produce_exactly_one_success():
     assert stock.available == 0
 
 
-@pytest.mark.django_db(transaction=True)(transaction=True)
+@pytest.mark.django_db(transaction=True)
 def test_m2_gate_twenty_buyers_for_ten_units_produce_exactly_ten_successes():
     """M2 release gate (§10): 20 parallel buys of 10 units → exactly 10 wins, 0 oversells."""
     variant = _create_stocked_variant(qty_on_hand=10)
@@ -339,4 +339,9 @@ def test_scheduler_registers_every_background_job():
     keep stock and paid orders from drifting apart."""
     scheduler = build_scheduler()
     job_ids = {job.id for job in scheduler.get_jobs()}
-    assert job_ids == {"reservation-sweep", "low-stock-scan", "outbox-drain"}
+    assert job_ids == {
+        "reservation-sweep",
+        "low-stock-scan",
+        "outbox-drain",
+        "hold-reconcile",
+    }

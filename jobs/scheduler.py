@@ -65,6 +65,24 @@ def drain_outbox_messages():
         close_old_connections()
 
 
+def reconcile_unknown_stock_holds():
+    """Resolve paid orders whose stock commit had an unknown outcome.
+
+    Distinct from the outbox drain: that retries instructions we know were
+    never delivered, this resolves ones we could not tell either way about.
+    Both exist because a remote ledger turns one transaction into two systems.
+    """
+    close_old_connections()
+    try:
+        from apps.payments.holds import reconcile_unknown_holds
+
+        resolved = reconcile_unknown_holds()
+        if resolved:
+            logger.info("Reconciled %d stock hold(s) with unknown outcomes.", resolved)
+    finally:
+        close_old_connections()
+
+
 def build_scheduler(scheduler_class=BackgroundScheduler):
     """Assemble the configured scheduler without starting it (testable seam)."""
     scheduler = scheduler_class(timezone=zoneinfo.ZoneInfo(settings.TIME_ZONE))
@@ -93,6 +111,14 @@ def build_scheduler(scheduler_class=BackgroundScheduler):
         "interval",
         seconds=settings.OUTBOX_DRAIN_INTERVAL_SECONDS,
         id="outbox-drain",
+        coalesce=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        reconcile_unknown_stock_holds,
+        "interval",
+        seconds=settings.HOLD_RECONCILE_INTERVAL_SECONDS,
+        id="hold-reconcile",
         coalesce=True,
         max_instances=1,
     )
