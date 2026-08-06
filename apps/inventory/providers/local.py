@@ -8,11 +8,13 @@ makes lock-cycle deadlocks impossible.
 """
 
 import datetime
+import hashlib
+import json
 import logging
 from types import SimpleNamespace
 
 from django.conf import settings
-from django.db import models, transaction
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
 from apps.inventory.exceptions import (
@@ -21,6 +23,7 @@ from apps.inventory.exceptions import (
     InvalidStockAdjustment,
 )
 from apps.inventory.models import (
+    IdempotencyRecord,
     MovementReason,
     Reservation,
     ReservationStatus,
@@ -38,6 +41,22 @@ def _require_positive_int(value, name):
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError(f"{name} must be an integer of at least 1.")
     return value
+
+
+def _idempotency_key(route, checkout_id):
+    """Namespace by route so one checkout_id can guard several operations."""
+    return hashlib.sha256(f"{route}:{checkout_id}".encode()).hexdigest()
+
+
+def _fingerprint(lines):
+    """Canonical hash of the requested lines, stable across ordering."""
+    payload = sorted(
+        ({"variant_id": int(line["variant_id"]), "qty": int(line["qty"])} for line in lines),
+        key=lambda item: item["variant_id"],
+    )
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 def _absent_stock_record(variant_id):
@@ -123,12 +142,28 @@ class LocalInventoryProvider(InventoryProvider):
         ordered = sorted(lines, key=lambda line: int(line["variant_id"]))
 
         with transaction.atomic():
-            # Replay guard. In-process callers do not retry across a network,
-            # so this only catches a caller reusing an id; the service provider
-            # gets the real protocol via IdempotencyRecord.
-            already = list(Reservation.objects.filter(checkout_id=checkout_id))
-            if already:
-                return already
+            # Replay guard, and it must be a *write* to be one. This was a plain
+            # SELECT — which concurrency gate G5 proved is not a guard at all:
+            # five simultaneous retries of one checkout_id each saw "nothing
+            # reserved yet" and all five proceeded, holding 9 units instead of 3.
+            #
+            # Claiming a uniquely-keyed row makes the check atomic, because the
+            # primary key does the arbitration. The loser blocks until the
+            # winner commits, then takes the replay path. Same mechanism the
+            # service uses (ADR-P3-016); the local path needs it for the same
+            # reason, since a client can have several retries in flight at once.
+            try:
+                with transaction.atomic():
+                    IdempotencyRecord.objects.create(
+                        key_hash=_idempotency_key("reserve_lines", checkout_id),
+                        request_fingerprint=_fingerprint(ordered),
+                        status_code=201,
+                    )
+            except IntegrityError:
+                # Someone else claimed this checkout_id. Their rows are
+                # committed by the time the lock released, so a locking read
+                # returns them rather than a stale snapshot.
+                return list(Reservation.objects.select_for_update().filter(checkout_id=checkout_id))
 
             created = []
             for line in ordered:
