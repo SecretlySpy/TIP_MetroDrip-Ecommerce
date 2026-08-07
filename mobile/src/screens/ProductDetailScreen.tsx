@@ -231,10 +231,23 @@ export default function ProductDetailScreen() {
           </Mono>
 
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontFamily: fonts.bodyBold, fontSize: 20, color: colors.ink, width: 250 }}>
+            <Text
+              style={{
+                fontFamily: fonts.bodyBold,
+                fontSize: 20,
+                color: colors.ink,
+                flex: 1,
+                marginRight: 12,
+              }}
+            >
               {product.name}
             </Text>
-            <Mono size={18} weight="semibold">{priceDisplay}</Mono>
+            {/* Price must never be the thing that shrinks: it is the one
+                figure on this screen a shopper is looking for, and it is
+                server-computed (D-13), so truncating it would misreport it. */}
+            <Mono size={18} weight="semibold" style={{ flexShrink: 0 }}>
+              {priceDisplay}
+            </Mono>
           </View>
 
           {product.review_count > 0 ? (

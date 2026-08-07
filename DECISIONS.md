@@ -613,3 +613,34 @@
 - **Why the profile is the right fix rather than "also build the image":** the deployment posture should match the provider posture. Every seam defaults to in-process, so the default deployment should have no sidecars in it. Running three idle containers on a single host also spends the NFR-5 cost envelope for nothing.
 - **Guard added:** CI now asserts the default staging stack is exactly `app caddy db scheduler`, with an error message naming the `--no-build` constraint. It fails on the exact regression that caused this, verified by running it against both configurations. The profiled config is separately schema-validated so the sidecar definitions cannot rot while unused.
 - **To open a seam in staging:** `docker compose --profile services up -d --build`, then set the matching provider key.
+
+## ADR-P5-002 — Presentation-layer audit: what the brief got right, and what it did not
+
+- **Status:** Accepted
+- **Context:** A responsive/accessibility brief specified six fixes with file:line evidence. Each claim was verified against the code before any of it was implemented. Three were accurate, three were not, and the two most useful findings were not in the brief at all. Recorded because a later reader will otherwise re-derive the same corrections.
+
+### Claims that held
+
+- **Mobile fixed widths (P1):** all five line references were exact — `SplashScreen.tsx:80` (`width: 320`), `:110` (`300`), `HomeScreen.tsx:190` (`300`), `NotificationsScreen.tsx:135` (`250`), `ProductDetailScreen.tsx:234` (`250`). At 320pt these equal or exceed the viewport once screen padding is applied. Replaced with `alignSelf: 'stretch'`, `maxWidth`, and `flex: 1`; the product price additionally got `flexShrink: 0`, because it is the one server-computed figure on that screen and truncating it would misreport it.
+- **No 320px or 1440px tier (P1):** correct. Both added.
+- **`prefers-reduced-motion` under-covered (P2):** correct, and worse than stated — it covered **two selectors** in `storefront.css` and did not exist in `console.css` at all, while both files animate. Replaced with a blanket rule in each.
+
+### Claims that did not hold
+
+- **P0 root cause was misdiagnosed.** The brief attributed clipped console tables to `overflow: hidden` on `#changelist-form` and prescribed changing it to `overflow-x: auto`. **Measured at 320px, the changelist was already fine:** Django's own `.results` div wraps `#result_list` with `overflow-x: auto` (254px viewport around an 840px table) and the last column was reachable. Applying the prescribed change would have nested a second scroller inside Django's — two scrollbars for one table.
+  **The real defect was `.dense-table` on the dashboards.** A 623px table sat in a 256px `.console-panel` with `overflow: visible`, so the overflow escaped to `#main`, whose `overflow-y: auto` computes `overflow-x` to `auto` — reading column 7 dragged the sidebar and topbar off screen. Fixed with a `.table-scroll` wrapper plus **`min-width: 0` on `.console-panel`**; without that one declaration the grid item refuses to shrink and nothing scrolls. Measured `#main` scrollWidth **679px → 320px**.
+- **The five named grids do not overflow.** `.pdp-layout` does not exist in the codebase; the real selector is `.product-detail` and it is `1fr 1fr`, not `1fr 380px` (that is `.cart-layout`). All five collapse at ≤768px or are mobile-first. None needed changing.
+- **P3 was already done.** `deploy/Caddyfile.internal` has routed `notifications`, `fulfillment` and `inventory` on `:9080` since ADR-P3-006, and the public `deploy/Caddyfile` proxies only `app:8000`. No work required; claiming otherwise would have meant re-adding existing routes.
+
+### Not in the brief, found by verification
+
+- **`--color-primary` was undefined** (`storefront.css`, loading spinner). The declaration was invalid, `border-top-color` fell back to `currentColor`, and the spinner had no visible rotating segment — an invisible loading indicator. Now `--color-volt`.
+- **The select chevron was invisible in dark mode.** It is a data URI hardcoding `%2375756E` — the pre-a11y muted this file's own token comment says was removed — and it never inverted, leaving a near-black arrow on `#1A1A1A`. A regex hex audit misses it because the `#` is URL-encoded. Now a `--select-chevron` token overridden in all three theme blocks.
+
+### Deviation from the brief's design-system table
+
+The brief's 11-token camelCase palette (`onVolt`, `accentText`, `mutedOnDark`) matches **`mobile/src/theme/theme.ts` exactly** but matches neither stylesheet: `console.css` defines 13 `--c-*` tokens and is dark-only with no theme mechanism, `storefront.css` defines 24 `--color-*` tokens. Unifying the prefixes was **not** attempted — it is a rename across two large stylesheets with no behavioural benefit, and the brief scoped this task to presentation defects. Every change here resolves through the tokens that already exist in the file being edited. Zero new colour values were introduced.
+
+### Verification
+
+`scripts/check-responsive.mjs` drives headless Chrome over the DevTools Protocol using Node 22's built-in `fetch` and `WebSocket` — no new dependency, consistent with the hand-rolled-frontend constraint. It measures two things per route per width: page-level horizontal scroll, and **tables that overflow with no scrollable ancestor**. The second check exists because the first passes *trivially* when content is clipped: `overflow: hidden` means the page cannot scroll precisely because the data has been cut off. Measuring only `scrollWidth` would have scored the P0 bug as a pass.

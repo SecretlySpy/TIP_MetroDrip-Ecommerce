@@ -187,7 +187,8 @@ export default function HomeScreen() {
               fontSize: 38,
               lineHeight: 38,
               color: onInk.onInkSurface,
-              width: 300,
+              maxWidth: 300,
+              flexShrink: 1,
             }}
           >
             Urban Style{'\n'}Redefined

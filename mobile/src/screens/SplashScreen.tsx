@@ -77,7 +77,7 @@ export default function SplashScreen() {
             size={11}
             weight="semibold"
             color={colors.volt}
-            style={{ letterSpacing: 2, textAlign: 'center', width: 320 }}
+            style={{ letterSpacing: 2, textAlign: 'center', alignSelf: 'stretch' }}
           >
             METRO MANILA STREETWEAR
           </Mono>
@@ -107,7 +107,7 @@ export default function SplashScreen() {
               lineHeight: 24,
               color: colors.mutedOnDark,
               textAlign: 'center',
-              width: 300,
+              maxWidth: 300,
             }}
           >
             Shop the drop from your phone.{'\n'}Track every order to your door.

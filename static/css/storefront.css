@@ -25,6 +25,9 @@
 
   /* WCAG AA text-on-paper (Phase 5): muted 5.6:1, danger 5.3:1 — not the
      pre-a11y #75756E / #E5484D pair that failed contrast on white. */
+  /* Encoded #63635C — mirrors --color-muted; data URIs cannot
+     reference custom properties, so the value is duplicated. */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2363635C' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
   --color-muted:           #63635C;
   --color-danger:          #C2282D;
   --color-danger-hover:    #A81F24;
@@ -762,7 +765,11 @@ h5 { font-size: 1rem; }
   color: var(--color-ink);
   cursor: pointer;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2375756E' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  /* A data URI cannot read a custom property or currentColor, so this was
+   * hardcoded `%2375756E` — the pre-a11y muted this file's own token
+   * comment says was removed — and it did not invert, leaving a nearly
+   * black arrow on the dark surface. Swapped per theme instead. */
+  background-image: var(--select-chevron);
   background-repeat: no-repeat;
   background-position: right 12px center;
 }
@@ -1120,7 +1127,11 @@ h5 { font-size: 1rem; }
   height: 40px;
   border: 3px solid rgba(0,0,0,0.1);
   border-radius: 50%;
-  border-top-color: var(--color-primary);
+  /* Was `var(--color-primary)`, defined nowhere in either stylesheet: the
+   * declaration was invalid, border-top-color fell back to currentColor,
+   * and the spinner showed no rotating segment. Volt is the brand's
+   * progress colour and reads as a fill on both themes. */
+  border-top-color: var(--color-volt);
   animation: spin 1s ease-in-out infinite;
   margin-bottom: var(--space-md);
 }
@@ -1775,10 +1786,58 @@ h5 { font-size: 1rem; }
   outline-offset: 2px;
 }
 
+/* -----------------------------------------------------------------------------
+   1440px tier (NFR-08)
+
+   `--container-max: 1200px` already centres most pages, so nothing overflows at
+   1440 — verified 15/15 routes PASS. What was missing is the *readability* half
+   of the requirement: full-bleed sections and long prose run to the viewport
+   edge on a wide monitor, giving line lengths well past the ~75ch comfortable
+   maximum.
+   -------------------------------------------------------------------------- */
+@media (min-width: 1440px) {
+  /* Prose blocks cap at a readable measure. Grids and product listings are
+     deliberately excluded — they are meant to use the extra width. */
+  .prose,
+  .contact-form,
+  .developers-content,
+  .empty-state__body {
+    max-width: 72ch;
+  }
+
+  .empty-state__body {
+    margin-inline: auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .navbar__chevron,
-  .category-menu__link {
-    transition: none;
+  /* Previously covered two selectors. It missed `scroll-behavior: smooth`, both
+     infinite animations (the loading spinner and `.pulse`), and every hover
+     transform — i.e. most of what the preference is actually asking to stop.
+     A blanket rule is used rather than an ever-growing selector list, because
+     the failure mode of forgetting one is vestibular discomfort. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+
+  /* Hover lifts are motion too; without this the card still jumps on hover. */
+  .card:hover,
+  .btn--primary:hover,
+  .btn--secondary:hover {
+    transform: none;
+  }
+
+  .card:hover .card__image img {
+    transform: none;
   }
 }
 
@@ -1796,6 +1855,9 @@ h5 { font-size: 1rem; }
     --color-ink:            #F2F2EF;
     --color-volt:           #D4FF3F;
     --color-volt-hover:     #C2F02B;
+    /* Encoded #A3A39A — mirrors --color-muted; data URIs cannot
+       reference custom properties, so the value is duplicated. */
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23A3A39A' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
     --color-muted:          #A3A39A;
     --color-muted-on-dark:  #A3A39A;
     --color-border:         #2E2E2C;
@@ -1821,6 +1883,9 @@ h5 { font-size: 1rem; }
   --color-ink:            #F2F2EF;
   --color-volt:           #D4FF3F;
   --color-volt-hover:     #C2F02B;
+  /* Encoded #A3A39A — mirrors --color-muted; data URIs cannot
+     reference custom properties, so the value is duplicated. */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23A3A39A' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
   --color-muted:          #A3A39A;
   --color-muted-on-dark:  #A3A39A;
   --color-border:         #2E2E2C;

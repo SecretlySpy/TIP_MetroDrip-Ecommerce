@@ -132,7 +132,7 @@ export default function NotificationsScreen() {
           </Text>
           <Mono size={10} color={colors.muted}>{timeAgo(item.created_at)}</Mono>
         </View>
-        <Text style={{ fontFamily: fonts.body, fontSize: 12, color: colors.muted, width: 250 }}>
+        <Text style={{ fontFamily: fonts.body, fontSize: 12, color: colors.muted }}>
           {item.body}
         </Text>
       </View>

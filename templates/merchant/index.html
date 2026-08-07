@@ -34,7 +34,8 @@
   </div>
   <div class="barcode-strip"></div>
 
-  <table class="dense-table" role="table" aria-label="Stock control">
+  <div class="table-scroll">
+    <table class="dense-table" role="table" aria-label="Stock control">
     <thead>
       <tr>
         <th scope="col">PRODUCT & VARIANT</th>
@@ -89,6 +90,7 @@
       {% endif %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <div class="barcode-strip"></div>
@@ -99,7 +101,8 @@
   <div class="console-panel__header">
     <h2 class="console-panel__title">MANAGED RESOURCES</h2>
   </div>
-  <table class="dense-table" role="table" aria-label="Managed resources">
+  <div class="table-scroll">
+    <table class="dense-table" role="table" aria-label="Managed resources">
     <thead>
       <tr>
         <th scope="col">RESOURCE</th>
@@ -126,6 +129,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 {% endblock %}

@@ -462,11 +462,46 @@ html, body {
    7. DENSE TABLES
    ============================================================================= */
 
+/* Horizontal scroll container for any dense table.
+ *
+ * Measured defect (320px, /merchant/): `.dense-table` renders 623px wide inside
+ * a 256px panel. `.console-panel` is `overflow: visible`, so the overflow
+ * escaped all the way up to `#main` — which has `overflow-y: auto`, and per the
+ * CSS overflow spec that computes `overflow-x` to `auto` too. The result was
+ * that reading column 7 scrolled the ENTIRE console sideways: sidebar, topbar
+ * and all. The table was reachable, but only by dragging the whole chrome off
+ * screen.
+ *
+ * Scrolling the table inside its own box keeps the console frame fixed. The
+ * `max-width` is what actually contains it — without it the wrapper simply
+ * grows to the table's intrinsic width and nothing scrolls. */
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  /* Right-edge fade so the scrollable region is discoverable. Painted with a
+   * `--c-surface` gradient rather than a new colour, and pinned to the right so
+   * it disappears once the reader reaches the end. */
+  background:
+    linear-gradient(to right, var(--c-surface) 30%, rgba(26, 26, 26, 0)) left center / 24px 100%
+      no-repeat,
+    linear-gradient(to left, var(--c-surface) 30%, rgba(26, 26, 26, 0)) right center / 24px 100%
+      no-repeat,
+    linear-gradient(to right, rgba(0, 0, 0, 0.28), rgba(26, 26, 26, 0)) left center / 12px 100%
+      no-repeat,
+    linear-gradient(to left, rgba(0, 0, 0, 0.28), rgba(26, 26, 26, 0)) right center / 12px 100%
+      no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
+
 .dense-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
   color: var(--c-ink);
+  /* Keep columns at their intended widths inside the scroller instead of
+   * crushing SKU / price / qty columns into unreadable slivers. */
+  min-width: 560px;
 }
 
 .dense-table thead th {
@@ -577,6 +612,13 @@ html, body {
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   padding: var(--sp-2xl);
+  /* Grid items default to `min-width: auto`, which resolves to the intrinsic
+   * width of the content. Without this the panel refuses to shrink below its
+   * widest table, `.table-scroll` never becomes narrower than what it holds,
+   * and nothing scrolls — the overflow escapes to `#main` and drags the whole
+   * console sideways instead. Measured: this single declaration is what turns
+   * the fix on. */
+  min-width: 0;
 }
 
 .console-panel__header {
@@ -768,13 +810,35 @@ input[type="submit"].default, .button.default,
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
-  overflow: hidden;
+  /* Deliberately NOT `overflow-x: auto`.
+   *
+   * Django's own stylesheet already puts `overflow-x: auto` on `.results`, the
+   * div directly wrapping `#result_list`. Measured at 320px: `.results` is
+   * 254px wide around an 840px table and scrolls, and the last column (STATUS)
+   * is reachable. Adding a second scroller here would nest one inside the
+   * other — two scrollbars for one table, and a drag that moves the wrong one.
+   *
+   * `overflow-x` stays clipped so the rounded corner is respected, but
+   * `overflow-y` is released: with `hidden` on both axes a sticky header or a
+   * focus ring on the last row gets cut off. */
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+/* `.results` is Django's own scroller; style it as one so the affordance
+ * matches `.table-scroll` and merchants get the same cue in both places. */
+#changelist-form .results {
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Changelist table */
 #result_list {
   width: 100%;
   border-collapse: collapse;
+  /* Without a floor the browser crushes 7 columns into ~36px each at 320px.
+   * Slightly wider than `.dense-table` because changelists carry a checkbox
+   * column and sortable header links. */
+  min-width: 640px;
 }
 
 #result_list thead th {
@@ -1161,13 +1225,19 @@ fieldset .description {
    18. DJANGO ADMIN OVERRIDES — App index / model index
    ============================================================================= */
 
-/* The default Django admin index table */
+/* The default Django admin index table.
+ *
+ * This carried the same `overflow: hidden` as `#changelist-form`, but with no
+ * `.results` scroller beneath it — so app-index tables really were clipped
+ * with no way to reach the far columns. Unlike the changelist this one owns
+ * the scroll itself. */
 #content-main .module {
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   margin-bottom: var(--sp-lg);
-  overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 #content-main .module table {
@@ -1400,6 +1470,54 @@ body.login input[type="submit"] {
   }
 }
 
+/* -----------------------------------------------------------------------------
+   320px tier (NFR-08)
+
+   Everything below was measured on a 320px viewport rather than guessed. The
+   console frame was scrolling sideways by 38px on /merchant/ and 67px on
+   /admin/, which drags the sidebar and topbar off screen — the two things a
+   merchant needs to stay put while reading a table.
+   -------------------------------------------------------------------------- */
+@media (max-width: 380px) {
+  /* Measured offender #1: `.console-topbar__right` reached x=358 in a 320px
+   * viewport. The topbar is `justify-content: space-between` with no wrapping,
+   * so title + profile chip could never both fit. Stacking is the only honest
+   * fix; hiding the chip would remove the sign-out affordance. */
+  .console-topbar {
+    flex-wrap: wrap;
+    gap: var(--sp-sm);
+    padding: var(--sp-lg) var(--sp-lg);
+  }
+
+  .console-topbar__right {
+    width: 100%;
+    justify-content: flex-start;
+    gap: var(--sp-md);
+  }
+
+  /* Measured offender #2: the status chip in a panel header reached x=323.
+   * Wrapping keeps the label and its chip readable instead of clipping one. */
+  .console-panel__header {
+    flex-wrap: wrap;
+    gap: var(--sp-sm);
+  }
+
+  /* Reclaim horizontal room; --sp-2xl padding on both sides costs 64px of a
+   * 320px viewport, which is 20% of the screen spent on gutters. */
+  .console-panel {
+    padding: var(--sp-lg);
+  }
+
+  .content {
+    padding: var(--sp-lg);
+  }
+
+  /* A long SKU or order number must not be what forces a page-level scroll. */
+  .console-topbar__title {
+    overflow-wrap: anywhere;
+  }
+}
+
 
 /* =============================================================================
    22. OBJECT TOOLS (add/change links at top of changelist)
@@ -1476,4 +1594,23 @@ body.login input[type="submit"] {
 .calendar td.selected a {
   background: var(--c-volt);
   color: var(--c-on-volt);
+}
+
+
+/* =============================================================================
+   REDUCED MOTION
+
+   console.css had no `prefers-reduced-motion` block at all, while defining
+   transitions on sidebar links, buttons, rows, chips and the mobile drawer.
+   The storefront honoured the preference and the consoles did not.
+   ============================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
