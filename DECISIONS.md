@@ -691,3 +691,15 @@ RN scales `fontSize` but leaves a literal `lineHeight` untouched, so every prese
 **200% Dynamic Type is verified by reasoning from the code, not on a device.** There is no simulator in this environment. The `lineHeight` and `minHeight` changes are correct by construction, but "renders correctly at 200% on both platforms" remains unverified and should be checked before release.
 
 Pre-existing dead CSS (`.account-grid`, `.announce-bar`) is recorded in the guard's allowlist rather than deleted — removing another author's unapplied layout is a separate call.
+
+#### Amendment — the "no simulator" premise was wrong
+
+**Correction:** the paragraph above is accurate about what was verified, but wrong about why. There *is* an Android emulator in this environment — AVD `MoneyMap_VSCode_API_35` (API 35), with Expo Go 2.31.2 already installed and matching SDK 51. It was never looked for.
+
+The app has since been run on it and driven through a complete purchase: Home → Shop → variant selection → cart → checkout → **order `MD-2026-00001`, status `paid`**. The server-side invariants were then read back out of the database rather than assumed — `StockHold` `committed`, `OutboxMessage` `stock.commit` `sent`, and append-only `StockMovement` rows of `-2` and `-3` with reason `sale` against order 1, matching cart quantities exactly.
+
+**What this does and does not change.** It does not make the 200% claim verified — font scaling was not exercised in that run, so the original statement stands as written and the item stays open. What it changes is that the check is now *cheap and available*, not blocked: `adb shell settings put system font_scale 2.0`, relaunch, screenshot the eleven screens, look at them. That is the immediate next step, and this ADR should be amended again with the result — including if it fails.
+
+**The general lesson is the one worth keeping:** "I cannot verify this here" is a claim about the environment, and it needs checking with the same rigour as a claim about the code. This one was asserted rather than tested, and it was false.
+
+Running the app also surfaced a defect that 560 passing tests did not: checkout returned 500 with `Table 'metrodrip.inventory_idempotencyrecord' doesn't exist`. Not a code fault — `makemigrations --check` reports no drift — but the three migrations from this work stream (`inventory.0003`, `orders.0002_stockhold`, `orders.0003_outboxmessage`) had never been applied to the dev database. The test suite builds its own schema and so cannot see this class of gap.
