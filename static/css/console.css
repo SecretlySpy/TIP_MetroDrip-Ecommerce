@@ -955,6 +955,20 @@ table thead th .text span.sorting {
   display: flex;
   align-items: center;
   gap: var(--sp-sm);
+  /* Django renders the search field with size="40" alongside a submit and a
+   * result count, all in one non-wrapping flex row. At 320px the field was
+   * crushed to 26px — wide enough for about three characters of a SKU search.
+   * Wrapping costs a line of vertical space and gives the input a usable
+   * width, which is the better trade on the viewport where search matters
+   * most. */
+  flex-wrap: wrap;
+}
+
+/* `size="40"` sets an intrinsic width the flex algorithm is free to shrink
+ * below; this sets a floor and lets it take the row once wrapped. */
+#searchbar {
+  flex: 1 1 12rem;
+  min-width: 12rem;
 }
 
 #searchbar, #changelist-search input[type="text"],
@@ -972,11 +986,19 @@ input[type="number"], input[type="url"], textarea, select {
   transition: border-color var(--ease-fast);
 }
 
-input[type="text"]:focus, input[type="email"]:focus,
-input[type="password"]:focus, input[type="number"]:focus,
-textarea:focus, select:focus {
+/* The outline here was `rgba(212, 255, 63, 0.3)` — volt at 30% alpha, which
+ * composites to roughly #3a4426 on the dark surface and lands nowhere near the
+ * 3:1 non-text contrast SC 1.4.11 / 2.4.11 require. Worse, this rule is more
+ * specific than the global `:focus-visible` at the bottom of the file, so it
+ * *suppressed* the compliant indicator and left a border-colour change as the
+ * only cue — the exact antipattern. Full-opacity volt, and `:focus-visible` so
+ * the ring is for keyboard users rather than every mouse click. */
+input[type="text"]:focus-visible, input[type="email"]:focus-visible,
+input[type="password"]:focus-visible, input[type="number"]:focus-visible,
+input[type="url"]:focus-visible,
+textarea:focus-visible, select:focus-visible {
   border-color: var(--c-volt) !important;
-  outline: 2px solid rgba(212, 255, 63, 0.3);
+  outline: 2px solid var(--c-volt);
   outline-offset: 1px;
 }
 
@@ -1391,8 +1413,66 @@ body.login input[type="submit"] {
 .console-sidebar__link,
 .console-topbar__profile-chip,
 .btn, .button, input[type="submit"],
-#changelist-filter li a {
+#changelist-filter li a,
+/* Added: each of these was declared at 32-36px earlier in the file and was
+ * simply missing from this list, so the block that exists to guarantee 44px
+ * silently excluded them. `.addlink` and `.changelink` are the add/edit
+ * controls on every changelist; `.related-widget-wrapper a` are the +/pencil/x
+ * icons beside every foreign-key field, at 32px the smallest in the console. */
+.addlink, .changelink,
+.object-tools a,
+.actions select, .changelist-actions select,
+.related-widget-wrapper a,
+input[type="text"], input[type="email"], input[type="password"],
+input[type="number"], input[type="url"], textarea, select {
   min-height: 44px;
+}
+
+/* Chips are rendered as anchors on both dashboards (`+ ADD`, `VIEW`), where
+ * ~21px of padding-derived height made them the smallest targets in the
+ * console. Only the interactive ones grow — static status chips stay compact
+ * so table rows do not balloon. */
+a.chip,
+.chip[href] {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Django renders the changelist search box and the filter sidebar with its own
+ * markup and no classes we author, so these need element/id selectors. The
+ * filter links measured 29px — they are the primary way a merchant narrows a
+ * 100-row stock table on a phone. */
+#searchbar,
+#changelist-search input[type="text"],
+#changelist-filter li a,
+.paginator a,
+.paginator input {
+  min-height: 44px;
+}
+
+#changelist-filter li a,
+.paginator a {
+  display: flex;
+  align-items: center;
+}
+
+/* Django 5 renders each changelist filter group as <details><summary>. The
+ * summary is the disclosure control — the thing you tap to open a filter — and
+ * it measured 21px. It also needs the focus treatment added to storefront.css
+ * for the same reason: a summary is focusable but is not an <a> or <button>. */
+#changelist-filter summary,
+details > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+/* A submit rendered as a bare glyph (Django's search "Go") collapses to its
+ * text width — 26px here. Height was already covered. */
+input[type="submit"],
+button {
+  min-width: 44px;
 }
 
 
@@ -1508,7 +1588,10 @@ body.login input[type="submit"] {
     padding: var(--sp-lg);
   }
 
-  .content {
+  /* `#content` is an id in Django's admin base template, not a class. The
+     class half of the sibling rules above is vestigial; this one had only the
+     class and therefore never applied. */
+  #content {
     padding: var(--sp-lg);
   }
 
@@ -1613,4 +1696,30 @@ body.login input[type="submit"] {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+
+/* =============================================================================
+   PRESS FEEDBACK & ARIA-DISABLED PARITY
+
+   The console had no `:active` rules either. Merchants work these tables on
+   phones, where there is no hover state at all — a tap that produces no visible
+   change is indistinguishable from a tap that missed.
+   ============================================================================= */
+
+.btn:active:not(:disabled):not([aria-disabled="true"]),
+.button:active,
+.chip:active,
+.console-sidebar__link:active,
+.object-tools a:active,
+input[type="submit"]:active {
+  transform: translateY(1px);
+}
+
+.btn[aria-disabled="true"],
+.button[aria-disabled="true"],
+.chip[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
 }

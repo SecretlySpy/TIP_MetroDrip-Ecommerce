@@ -100,12 +100,149 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* --- Touch targets (WCAG 2.5.8 / 2.5.5) -----------------------------------
+ *
+ * Measured heights before this block: `.cart-item__remove` ~18px (a destructive
+ * action at under half the minimum), `.filter-chip` 33, `.sort-select` ~35,
+ * `.qty-adjuster__btn` 36, `.pagination__link` 36, `.btn--sm` 39,
+ * `.variant-btn` 41, `.navbar__toggle` ~42.
+ *
+ * `min-height` rather than `height` throughout, so a control still grows when
+ * its label wraps or the user enlarges text — a fixed height would trade one
+ * accessibility failure for another.
+ *
+ * The declarations sit here, after the component rules they amend, so they win
+ * on order without needing `!important`. */
+.btn,
+.btn--sm,
+.filter-chip,
+.variant-btn,
+.sort-select,
+.search-bar__btn,
+.navbar__brand,
+.section__link,
+.form-input,
+.form-select {
+  min-height: 44px;
+}
+
+/* Bare form controls. `contact.html` styles its inputs inline rather than with
+ * `.form-input`, so a class-based rule could never reach them. Typing into a
+ * 42px-tall field is not a hardship, but the rule is the rule and an element
+ * selector is the only thing that covers markup we do not control. */
+input[type="text"],
+input[type="email"],
+input[type="tel"],
+input[type="search"],
+input[type="password"],
+input[type="number"],
+textarea,
+select {
+  min-height: 44px;
+}
+
+/* Narrow by design — a size label is one or two characters — so height alone
+ * left them 43px wide. */
+.variant-btn,
+.qty-adjuster__value {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* `.btn` measured 43px — one pixel short, entirely from `padding: 0.75rem`
+ * against a 0.875rem font. Worth naming: an estimate from the stylesheet said
+ * 50px, and only measuring the rendered box found the truth. */
+.navbar__brand,
+.section__link {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The hamburger measured 40px wide: `padding: var(--space-sm)` around a 24px
+ * span. Height was already fixed by the block above; width was not. */
+.navbar__toggle {
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+}
+
+/* Square controls need both axes. */
+.qty-adjuster__btn,
+.pagination__link {
+  min-width: 44px;
+  min-height: 44px;
+  width: auto;
+  height: auto;
+}
+
+/* A text button with `padding: 0` cannot be enlarged by min-height alone —
+ * the box grows but the text stays pinned to the top. Centring it makes the
+ * whole 44px area the target rather than just the glyphs. */
+.cart-item__remove {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-xs);
+}
+
+/* Chips and variant buttons are laid out inline; give them a matching
+ * cross-axis so a row of them does not become a ragged set of tap areas. */
+.filter-chip,
+.variant-btn,
+.btn--sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Press feedback (:active) ---------------------------------------------
+ *
+ * There were zero `:active` rules in either stylesheet. On a touch device there
+ * is no hover, so tapping any control gave no acknowledgement at all until the
+ * navigation completed — on a slow connection that reads as "nothing happened"
+ * and invites a second tap. A 1px displacement is enough to register as a
+ * press without moving layout (transform does not reflow).
+ *
+ * Excluded under prefers-reduced-motion by the blanket rule near the end of
+ * this file, which zeroes transition-duration; the transform still applies
+ * instantly, which is the desired outcome — feedback without animation. */
+.btn:active:not(:disabled):not([aria-disabled="true"]),
+.filter-chip:active,
+.variant-btn:active:not(:disabled),
+.qty-adjuster__btn:active:not(:disabled),
+.pagination__link:active:not(.pagination__link--disabled),
+.search-bar__btn:active,
+.theme-toggle:active {
+  transform: translateY(1px);
+}
+
+/* --- Disabled parity for aria-disabled -------------------------------------
+ *
+ * `aria-disabled="true"` is the correct pattern for a control that must stay
+ * focusable (so a screen-reader user can find it and be told it is disabled),
+ * but nothing styled it — so it rendered identically to an enabled control.
+ * Anything that styles `:disabled` now styles both. */
+.btn[aria-disabled="true"],
+.variant-btn[aria-disabled="true"],
+.qty-adjuster__btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* --- Accessibility: Global Focus Styles --- */
+/* `summary` matters here: the category menu is built on native
+ * <details>/<summary>, which the element list previously missed entirely, so
+ * its disclosure control had no keyboard indicator. `[tabindex]` and
+ * `[role="button"]` cover anything made focusable in markup. */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+[role="button"]:focus-visible {
   outline: 2px solid var(--color-volt);
   outline-offset: 2px;
 }
@@ -790,10 +927,13 @@ h5 { font-size: 1rem; }
   border-radius: var(--radius-sm) 0 0 var(--radius-sm);
   background: var(--color-surface-raised);
   color: var(--color-ink);
-  outline: none;
   transition: border-color var(--transition-fast);
 }
 
+/* `outline: none` was here with only a border-colour change to replace it.
+ * The global `input:focus-visible` is more specific and won anyway, so the
+ * declaration was inert — but it read as a suppressed indicator, which is the
+ * kind of line that gets copied. The border tint stays as a supporting cue. */
 .search-bar__input:focus {
   border-color: var(--color-volt);
 }
@@ -1796,16 +1936,18 @@ h5 { font-size: 1rem; }
    maximum.
    -------------------------------------------------------------------------- */
 @media (min-width: 1440px) {
-  /* Prose blocks cap at a readable measure. Grids and product listings are
-     deliberately excluded — they are meant to use the extra width. */
+  /* Prose caps at a readable measure. Grids and product listings are
+     deliberately excluded — they are meant to use the extra width.
+     `.contact-form`, `.developers-content` and `.empty-state__body` were listed
+     here and exist nowhere in the repo; the real empty-state element is
+     `.empty-state__text`. Dead selectors are worse than no rule: they read as
+     covered. `scripts/check-css-selectors.mjs` now fails the build on this. */
   .prose,
-  .contact-form,
-  .developers-content,
-  .empty-state__body {
+  .empty-state__text {
     max-width: 72ch;
   }
 
-  .empty-state__body {
+  .empty-state__text {
     margin-inline: auto;
   }
 }
@@ -1823,6 +1965,17 @@ h5 { font-size: 1rem; }
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* Progress indicators are exempt. The blanket rule above collapsed the
+     spinner to a single 0.01ms frame, leaving a static ring that signals
+     nothing — a worse outcome than the motion it removed. Reduced motion means
+     *less* motion, not *no feedback*, so these keep turning at a calmer speed
+     that stays well under the flashing threshold. */
+  .loading-state__spinner,
+  .skeleton {
+    animation-duration: 1.5s !important;
+    animation-iteration-count: infinite !important;
   }
 
   html {

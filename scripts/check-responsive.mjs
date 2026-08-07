@@ -138,12 +138,54 @@ async function measure(socket, width) {
         }
       }
 
+      // Touch targets (WCAG 2.5.8). Measured from the rendered box rather than
+      // read off the stylesheet, so padding, borders and inherited line-height
+      // are all accounted for. Only visible, enabled controls count: a hidden
+      // element has no target, and a disabled one cannot be actuated.
+      const SMALL = [];
+      const interactive = 'a[href], button, input:not([type=hidden]), select, textarea, summary, [role="button"], [tabindex]:not([tabindex="-1"])';
+      for (const el of document.querySelectorAll(interactive)) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;          // not rendered
+        if (el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+        const cs = getComputedStyle(el);
+        if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+        // Exemptions, each grounded in the success criterion rather than in
+        // convenience. Note the bar itself: 44x44 is SC 2.5.5 (AAA); WCAG 2.2
+        // AA is SC 2.5.8 at 24x24. The brief asked for 44, so 44 is enforced
+        // for real controls — but the SC's own exceptions still apply.
+        //
+        // 1. Inline: SC 2.5.8 exempts a target "in a sentence or block of
+        //    text". Breadcrumbs and prose links qualify; padding them to 44px
+        //    would wreck the line box it sits in.
+        // A th matters as much as a td here: Django renders a changelist's
+        // first column as a header cell, so the row's primary link is in a th.
+        // (No backticks in this comment: it lives inside a template literal.)
+        if (el.tagName === 'A' && el.closest('p, li, td, th, nav, .breadcrumbs, .text-mono')) continue;
+        // 2. User-agent size: SC 2.5.8 exempts targets whose size is not
+        //    modified by the author. Native checkboxes and radios are UA-sized;
+        //    Django's changelist row-select is exactly this.
+        if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) continue;
+        // 3. Skip links are off-screen until focused. They have a box, but no
+        //    pointer target to hit — they exist for keyboard users only.
+        if (el.className && /skip-(link|to-content)/.test(el.className)) continue;
+        if (r.height < 44 || r.width < 44) {
+          SMALL.push({
+            tag: el.tagName.toLowerCase(),
+            cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40),
+            w: Math.round(r.width),
+            h: Math.round(r.height),
+          });
+        }
+      }
+
       return {
         scrollWidth: doc.scrollWidth,
         innerWidth: window.innerWidth,
         status: document.title,
         worst,
         clipped,
+        small: SMALL,
       };
     })()`,
   });
@@ -229,7 +271,8 @@ async function main() {
       const m = await measure(socket, width);
       const noPageScroll = m.scrollWidth <= m.innerWidth;
       const noClipping = m.clipped.length === 0;
-      const pass = noPageScroll && noClipping;
+      const smallTargets = width === 320 ? m.small : [];
+      const pass = noPageScroll && noClipping && smallTargets.length === 0;
       if (!pass) failures++;
       rows.push({ name, width, pass, noPageScroll, noClipping, ...m });
 
@@ -243,6 +286,12 @@ async function main() {
         detail += `  CLIPPED: ${m.clipped
           .map((c) => `${c.id} needs ${c.need}px has ${c.have}px`)
           .join("; ")}`;
+      }
+      if (smallTargets.length) {
+        const shown = smallTargets.slice(0, 4)
+          .map((t) => `<${t.tag} class="${t.cls}"> ${t.w}x${t.h}`)
+          .join("; ");
+        detail += `  SMALL TARGETS (${smallTargets.length}): ${shown}`;
       }
       console.log(`${pass ? "PASS" : "FAIL"}  ${name.padEnd(20)} ${String(width).padStart(5)}px${detail}`);
     }
