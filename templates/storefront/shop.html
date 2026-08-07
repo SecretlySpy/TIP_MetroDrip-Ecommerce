@@ -11,7 +11,16 @@
     <h1>Shop</h1>
 
     {# --- Search Bar --- #}
-    <form class="search-bar" method="get" action="{% url 'storefront:shop' %}">
+    {% comment %}
+      htmx: swap only the results. Every control keeps its method/action, so
+      with JS disabled each one still performs a normal full-page GET.
+    {% endcomment %}
+    <form class="search-bar" method="get" action="{% url 'storefront:shop' %}"
+          hx-get="{% url 'storefront:shop' %}"
+          hx-target="#product-results"
+          hx-swap="outerHTML"
+          hx-push-url="true"
+          hx-indicator="#grid-indicator">
       <input type="text"
              name="q"
              class="search-bar__input"
@@ -29,7 +38,11 @@
 
     <div class="shop-layout">
       {# --- Filter Sidebar --- #}
-      <aside>
+      <aside hx-boost="true"
+             hx-target="#product-results"
+             hx-swap="outerHTML"
+             hx-push-url="true"
+             hx-indicator="#grid-indicator">
         {# Mobile filter toggle #}
         <button class="btn btn--secondary btn--sm btn--block filter-toggle"
                 x-data="{ open: false }"
@@ -143,14 +156,32 @@
           <span class="shop-header__count">
             {{ page.paginator.count }} product{{ page.paginator.count|pluralize }}
           </span>
-          <form method="get" action="{% url 'storefront:shop' %}" style="display:inline">
+          <form method="get" action="{% url 'storefront:shop' %}" style="display:inline"
+                hx-get="{% url 'storefront:shop' %}"
+                hx-target="#product-results"
+                hx-swap="outerHTML"
+                hx-push-url="true"
+                hx-indicator="#grid-indicator">
             {# Preserve filters when changing sort #}
             {% if filters.category %}<input type="hidden" name="category" value="{{ filters.category }}">{% endif %}
             {% if filters.size %}<input type="hidden" name="size" value="{{ filters.size }}">{% endif %}
             {% if filters.color %}<input type="hidden" name="color" value="{{ filters.color }}">{% endif %}
             {% if filters.fit %}<input type="hidden" name="fit" value="{{ filters.fit }}">{% endif %}
             {% if search %}<input type="hidden" name="q" value="{{ search }}">{% endif %}
-            <select name="sort" class="sort-select" onchange="this.form.submit()">
+            {% comment %}
+              hx-trigger replaces onchange="this.form.submit()": htmx issues the
+              GET itself, so the swap happens instead of a full navigation.
+              Without JS the select is still inside a normal GET form, but
+              loses auto-submit — the Search button remains the fallback.
+            {% endcomment %}
+            <select name="sort" class="sort-select"
+                    hx-trigger="change"
+                    hx-get="{% url 'storefront:shop' %}"
+                    hx-include="closest form"
+                    hx-target="#product-results"
+                    hx-swap="outerHTML"
+                    hx-push-url="true"
+                    hx-indicator="#grid-indicator">
               <option value="newest" {% if sort == "newest" %}selected{% endif %}>Newest</option>
               <option value="price_asc" {% if sort == "price_asc" %}selected{% endif %}>Price: Low → High</option>
               <option value="price_desc" {% if sort == "price_desc" %}selected{% endif %}>Price: High → Low</option>
@@ -159,6 +190,16 @@
               <option value="popularity" {% if sort == "popularity" %}selected{% endif %}>Popularity</option>
             </select>
           </form>
+        </div>
+
+        {% comment %}
+          Outside #product-results on purpose: an indicator inside the swapped
+          region is destroyed by its own swap.
+        {% endcomment %}
+        <div id="grid-indicator" class="grid-indicator" aria-hidden="true">
+          <div class="skeleton skeleton--grid">
+            {% for _ in "123456" %}<div class="skeleton__card"></div>{% endfor %}
+          </div>
         </div>
 
         {% include "storefront/_product_grid.html" %}

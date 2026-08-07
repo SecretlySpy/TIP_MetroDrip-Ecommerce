@@ -282,6 +282,62 @@ class TestShopListing:
         # But should contain product data.
         assert product.name.encode() in response.content
 
+    def test_htmx_fragment_carries_its_own_swap_target(self, client, product, variant):
+        """The fragment must re-emit `#product-results`.
+
+        The client swaps with `hx-swap="outerHTML"`, so the response has to
+        contain the element it is replacing. If the fragment ever stopped
+        emitting the wrapper, the first swap would silently delete the results
+        region and every later swap would target nothing.
+        """
+        response = client.get("/shop/", HTTP_HX_REQUEST="true")
+
+        assert response.content.count(b'id="product-results"') == 1
+
+    def test_htmx_pagination_keeps_its_swap_attributes(
+        self, client, product, variant, product2, variant2
+    ):
+        """Pagination lives inside the swapped region.
+
+        Its hx- attributes are therefore re-rendered on every swap. Were they
+        only in the full page template, paging would work once and then fall
+        back to full navigations with no indicator.
+        """
+        for index in range(13):
+            Product.objects.create(
+                name=f"Filler {index}",
+                slug=f"filler-{index}",
+                category=product.category,
+                base_price=100_00,
+            )
+
+        response = client.get("/shop/", HTTP_HX_REQUEST="true")
+
+        assert b'class="pagination"' in response.content
+        assert b'hx-target="#product-results"' in response.content
+
+    def test_non_htmx_request_still_returns_the_whole_page(self, client, product, variant):
+        """Progressive enhancement: every control keeps its plain GET fallback."""
+        response = client.get("/shop/")
+
+        assert response.status_code == 200
+        assert b"navbar" in response.content
+        assert b'id="product-results"' in response.content
+
+    def test_htmx_swap_preserves_active_filters(self, client, product, variant):
+        """A swap is a normal GET, so filters ride in the query string.
+
+        Guards the querystring tag the filter links depend on: if a swap
+        dropped the active filters, paging or sorting inside a filtered set
+        would silently widen it.
+        """
+        response = client.get(
+            "/shop/", {"sort": "price_asc", "q": product.name}, HTTP_HX_REQUEST="true"
+        )
+
+        assert response.status_code == 200
+        assert product.name.encode() in response.content
+
 
 # ---------------------------------------------------------------------------
 # Product Detail Tests

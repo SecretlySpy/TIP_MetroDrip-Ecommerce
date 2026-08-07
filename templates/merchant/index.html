@@ -83,8 +83,13 @@
         {% endfor %}
       {% else %}
         <tr>
-          <td colspan="7" class="td-muted" style="text-align:center; padding:var(--sp-2xl);">
-            No stock records found. Run <code>seed_demo</code> to populate inventory.
+          <td colspan="7">
+            <div class="console-empty">
+              <div class="console-empty__icon" aria-hidden="true">◌</div>
+              <p class="console-empty__text">
+                No stock records found. Run <code>seed_demo</code> to populate inventory.
+              </p>
+            </div>
           </td>
         </tr>
       {% endif %}

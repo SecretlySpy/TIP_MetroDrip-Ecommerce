@@ -1700,6 +1700,34 @@ button {
 
 
 /* =============================================================================
+   EMPTY STATES
+
+   The console had no empty-state vocabulary at all: the dashboard panels used a
+   bare `<td colspan>` with inline styles. This gives them the same shape as the
+   storefront's `.empty-state` so both consoles read consistently.
+   ============================================================================= */
+
+.console-empty {
+  text-align: center;
+  padding: var(--sp-3xl) var(--sp-lg);
+  color: var(--c-muted);
+}
+
+.console-empty__icon {
+  font-size: 28px;
+  opacity: 0.35;
+  margin-bottom: var(--sp-sm);
+}
+
+.console-empty__text {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--c-muted);
+  margin: 0;
+}
+
+
+/* =============================================================================
    PRESS FEEDBACK & ARIA-DISABLED PARITY
 
    The console had no `:active` rules either. Merchants work these tables on

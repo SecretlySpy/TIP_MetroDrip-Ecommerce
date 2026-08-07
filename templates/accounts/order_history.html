@@ -40,7 +40,11 @@
       {% endfor %}
     </div>
   {% else %}
-    <p style="color: var(--color-muted); font-style: italic;">You haven't placed any orders yet.</p>
+    <div class="empty-state">
+      <div class="empty-state__icon" aria-hidden="true">📦</div>
+      <p class="empty-state__text">No orders yet. Your next drop starts in the shop.</p>
+      <a href="{% url 'storefront:shop' %}" class="btn btn--primary">Start shopping</a>
+    </div>
   {% endif %}
 
   <!-- Claim Guest Order -->

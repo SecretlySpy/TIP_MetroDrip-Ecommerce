@@ -1,6 +1,7 @@
 {# HTMX-swappable product grid fragment — returned on paginated requests. #}
 {% load money %}
-<div id="product-results">
+{# aria-live so a swap is announced; htmx toggles aria-busy during flight. #}
+<div id="product-results" aria-live="polite" aria-busy="false">
   <div class="product-grid">
     {% for product in page %}
       {% include "storefront/_product_card.html" with product=product %}
@@ -22,7 +23,12 @@
     dropped the filters.
   {% endcomment %}
   {% if page.paginator.num_pages > 1 %}
-  <nav class="pagination" aria-label="Product pages">
+  <nav class="pagination" aria-label="Product pages"
+       hx-boost="true"
+       hx-target="#product-results"
+       hx-swap="outerHTML"
+       hx-push-url="true"
+       hx-indicator="#grid-indicator">
     {% if page.has_previous %}
       <a href="{% querystring page=page.previous_page_number %}" class="pagination__link"
          rel="prev" aria-label="Previous page">&laquo;</a>

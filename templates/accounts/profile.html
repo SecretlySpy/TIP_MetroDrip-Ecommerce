@@ -58,7 +58,11 @@
             </table>
           </div>
         {% else %}
-          <p style="color: var(--color-muted); font-style: italic;">You haven't placed any orders yet.</p>
+          <div class="empty-state">
+            <div class="empty-state__icon" aria-hidden="true">📦</div>
+            <p class="empty-state__text">No orders yet. Your next drop starts in the shop.</p>
+            <a href="{% url 'storefront:shop' %}" class="btn btn--primary">Start shopping</a>
+          </div>
         {% endif %}
       </section>
 
@@ -91,7 +95,11 @@
             {% endfor %}
           </div>
         {% else %}
-          <p style="color: var(--color-muted); font-style: italic;">Your wishlist is empty. Start shopping and save items you love!</p>
+          <div class="empty-state">
+            <div class="empty-state__icon" aria-hidden="true">♡</div>
+            <p class="empty-state__text">Nothing saved yet — tap the heart on any product to keep it here.</p>
+            <a href="{% url 'storefront:shop' %}" class="btn btn--primary">Browse the shop</a>
+          </div>
         {% endif %}
       </section>
 

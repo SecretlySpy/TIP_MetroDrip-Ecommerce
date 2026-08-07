@@ -100,6 +100,72 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* --- htmx loading skeleton ------------------------------------------------
+ *
+ * Replaces the previous behaviour, which was nothing at all: filters, sort and
+ * pagination were full-page navigations with only browser chrome as feedback.
+ *
+ * `#grid-indicator` sits OUTSIDE `#product-results` deliberately — an indicator
+ * placed inside the swapped region is destroyed by the swap it is reporting on.
+ *
+ * htmx toggles `.htmx-request` on the element named by `hx-indicator` for the
+ * duration of the request, so visibility is driven entirely by that class. */
+.grid-indicator {
+  display: none;
+}
+
+.grid-indicator.htmx-request {
+  display: block;
+}
+
+/* While loading, dim the stale results rather than removing them: keeping the
+ * old grid in place avoids a layout collapse and the scroll jump that follows. */
+#product-results.htmx-request {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.skeleton--grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-lg);
+}
+
+.skeleton__card {
+  height: 320px;
+  border-radius: var(--radius-sm);
+  /* Two cues, not one. The gradient sweep reads as activity for most users;
+   * the flat `--color-surface` base underneath means that when the sweep is
+   * suppressed under prefers-reduced-motion the card is still a visible
+   * placeholder block rather than nothing at all. */
+  background: var(--color-surface)
+    linear-gradient(
+      100deg,
+      rgba(255, 255, 255, 0) 20%,
+      rgba(255, 255, 255, 0.12) 50%,
+      rgba(255, 255, 255, 0) 80%
+    );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-sweep {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 576px) {
+  .skeleton--grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-md);
+  }
+
+  .skeleton__card {
+    height: 200px;
+  }
+}
+
 /* --- Touch targets (WCAG 2.5.8 / 2.5.5) -----------------------------------
  *
  * Measured heights before this block: `.cart-item__remove` ~18px (a destructive
@@ -1973,7 +2039,8 @@ h5 { font-size: 1rem; }
      *less* motion, not *no feedback*, so these keep turning at a calmer speed
      that stays well under the flashing threshold. */
   .loading-state__spinner,
-  .skeleton {
+  .skeleton,
+  .skeleton__card {
     animation-duration: 1.5s !important;
     animation-iteration-count: infinite !important;
   }
