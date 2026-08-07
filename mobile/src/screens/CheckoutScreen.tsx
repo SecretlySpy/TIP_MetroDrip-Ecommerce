@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ApiError, request } from '@/api/client';
+import { ApiError, OfflineError, request } from '@/api/client';
 import { commerce } from '@/api/endpoints';
 import type { Zone } from '@/api/types';
 import { Mono, NavBar, PillButton, StickyBar } from '@/components/primitives';
@@ -119,10 +119,23 @@ export default function CheckoutScreen() {
   ];
 
   useEffect(() => {
-    commerce.zones().then((page) => {
-      setZones(page.results);
-      if (page.results.length > 0) setZoneState(page.results[0]);
-    });
+    // This had no `.catch`. On failure the promise rejected unhandled, `zones`
+    // stayed empty, `zone` stayed null, and `disabled={!zone}` left the Pay
+    // button permanently greyed out with nothing on screen explaining why — a
+    // dead-end checkout whose only recovery was force-quitting the app.
+    commerce
+      .zones()
+      .then((page) => {
+        setZones(page.results);
+        if (page.results.length > 0) setZoneState(page.results[0]);
+      })
+      .catch((err: unknown) => {
+        setError(
+          err instanceof OfflineError
+            ? "You're offline — reconnect to choose a delivery zone."
+            : 'Could not load delivery zones. Pull to retry.',
+        );
+      });
   }, []);
 
   useEffect(() => {
@@ -316,7 +329,16 @@ export default function CheckoutScreen() {
             })}
 
             {error ? (
-              <Mono size={11} weight="medium" color={colors.danger}>
+              <Mono
+                size={11}
+                weight="medium"
+                color={colors.danger}
+                // Assertive: this explains why Pay is unavailable, so it has to
+                // interrupt rather than wait for the user to reach it. There
+                // were no live regions anywhere in the app before this.
+                accessibilityLiveRegion="assertive"
+                accessibilityRole="alert"
+              >
                 {error}
               </Mono>
             ) : null}
@@ -331,13 +353,19 @@ export default function CheckoutScreen() {
               variant="volt"
               loading={submitting}
               disabled={cart.lines.length === 0 || !zone}
-              style={{ height: 54 }}
+              style={{ minHeight: 54 }}
               textStyle={{ fontFamily: fonts.bodyBold, fontSize: 16 }}
               onPress={pay}
             />
-            <Mono size={10} color={colors.muted} style={{ textAlign: 'center' }}>
-              Secured by PayMongo · card details never stored
-            </Mono>
+            {error && !zone ? (
+              <Mono size={10} color={colors.danger} style={{ textAlign: 'center' }}>
+                {error}
+              </Mono>
+            ) : (
+              <Mono size={10} color={colors.muted} style={{ textAlign: 'center' }}>
+                Secured by PayMongo · card details never stored
+              </Mono>
+            )}
           </View>
         </StickyBar>
       </KeyboardAvoidingView>

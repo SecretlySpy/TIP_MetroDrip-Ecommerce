@@ -22,7 +22,7 @@ import type { RootStackParamList } from '@/navigation';
 import { useAuth } from '@/store/AuthContext';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, space } from '@/theme/theme';
-import { fonts } from '@/theme/typography';
+import { fonts, lineHeightFor } from '@/theme/typography';
 
 const CACHE_KEY = 'metrodrip.cache.home';
 
@@ -116,7 +116,7 @@ export default function HomeScreen() {
       {/* Header — brand lockup; "Drip" uses accentText on light (§2.1 rule 1). */}
       <View
         style={{
-          height: 52,
+          minHeight: 52,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -185,7 +185,9 @@ export default function HomeScreen() {
             style={{
               fontFamily: fonts.display,
               fontSize: 38,
-              lineHeight: 38,
+              // Was a literal 38 — a 1.0 ratio that RN never scales, so at 200%
+              // the lines overlapped. lineHeightFor tracks the OS text size.
+              lineHeight: lineHeightFor(38, 1.1),
               color: onInk.onInkSurface,
               maxWidth: 300,
               flexShrink: 1,

@@ -98,7 +98,7 @@ function TabLabel({ name, focused }: { name: keyof TabParamList; focused: boolea
           height: 5,
           borderRadius: radius.pill,
           marginTop: 3,
-          backgroundColor: focused ? colors.volt : 'transparent',
+          backgroundColor: focused ? colors.volt : colors.transparent,
         }}
       />
     </View>

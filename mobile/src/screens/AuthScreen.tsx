@@ -146,7 +146,7 @@ export default function AuthScreen() {
           {/* Segmented control. */}
           <View
             style={{
-              height: 46,
+              minHeight: 46,
               flexDirection: 'row',
               backgroundColor: colors.surface,
               borderRadius: radius.card,
@@ -163,7 +163,7 @@ export default function AuthScreen() {
                 style={{
                   flex: 1,
                   borderRadius: 9,
-                  backgroundColor: mode === candidate ? colors.paper : 'transparent',
+                  backgroundColor: mode === candidate ? colors.paper : colors.transparent,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
@@ -208,7 +208,7 @@ export default function AuthScreen() {
             label={mode === 'signin' ? 'Sign in' : 'Create account'}
             variant="volt"
             loading={busy}
-            style={{ height: 54 }}
+            style={{ minHeight: 54 }}
             textStyle={{ fontFamily: fonts.bodyBold, fontSize: 16 }}
             onPress={submit}
           />
@@ -223,7 +223,7 @@ export default function AuthScreen() {
               accessibilityRole="button"
               accessibilityLabel={`Sign in with ${auth.biometricLabel}`}
               style={{
-                height: 52,
+                minHeight: 52,
                 borderRadius: radius.pill,
                 borderWidth: 1,
                 borderColor: colors.ink,
@@ -249,7 +249,7 @@ export default function AuthScreen() {
           <PillButton
             label="Continue as guest"
             variant="surface"
-            style={{ height: 52 }}
+            style={{ minHeight: 52 }}
             textStyle={{ fontFamily: fonts.bodySemiBold, fontSize: 15 }}
             onPress={finish}
           />

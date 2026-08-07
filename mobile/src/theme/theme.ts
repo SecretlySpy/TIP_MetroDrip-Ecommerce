@@ -32,6 +32,9 @@ export interface ThemeColors {
   border: string;
   /** Errors, low stock, destructive */
   danger: string;
+  /** Absence of fill. A literal 'transparent' is still a colour value not
+   *  resolved through this file, so it lives here like any other token. */
+  transparent: string;
 }
 
 export const lightColors: ThemeColors = {
@@ -46,6 +49,7 @@ export const lightColors: ThemeColors = {
   mutedOnDark: '#A8A8A0',
   border: '#E4E4DF',
   danger: '#C2282D',
+  transparent: 'transparent',
 };
 
 export const darkColors: ThemeColors = {
@@ -60,6 +64,7 @@ export const darkColors: ThemeColors = {
   mutedOnDark: '#A3A39A',
   border: '#2E2E2C',
   danger: '#FF7B7E',
+  transparent: 'transparent',
 };
 
 /**

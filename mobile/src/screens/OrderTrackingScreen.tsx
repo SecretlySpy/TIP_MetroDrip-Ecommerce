@@ -245,7 +245,7 @@ export default function OrderTrackingScreen() {
           <PillButton
             label="Get help"
             variant="outline"
-            style={{ flex: 1, height: 52 }}
+            style={{ flex: 1, minHeight: 52 }}
             textStyle={{ fontFamily: fonts.bodyBold, fontSize: 15 }}
             onPress={getHelp}
           />
@@ -253,7 +253,7 @@ export default function OrderTrackingScreen() {
             label="Track live"
             variant="volt"
             disabled={!order.shipment?.tracking_url}
-            style={{ flex: 1, height: 52 }}
+            style={{ flex: 1, minHeight: 52 }}
             textStyle={{ fontFamily: fonts.bodyBold, fontSize: 15 }}
             onPress={trackLive}
           />

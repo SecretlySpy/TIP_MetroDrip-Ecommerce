@@ -225,7 +225,7 @@ export default function CartScreen() {
             <PillButton
               label={`Checkout — ${serverTotals.total ?? validation?.subtotal_display ?? ''}`}
               variant="ink"
-              style={{ height: 54 }}
+              style={{ minHeight: 54 }}
               textStyle={{ fontFamily: fonts.bodyBold, fontSize: 16 }}
               onPress={() => navigation.navigate('Checkout')}
             />

@@ -13,6 +13,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { OfflineError } from '@/api/client';
 import { notifications, orders } from '@/api/endpoints';
 import type { AppNotification } from '@/api/types';
 import { EmptyState, Mono, NavBar, PillButton } from '@/components/primitives';
@@ -48,11 +49,20 @@ export default function NotificationsScreen() {
   const [items, setItems] = useState<AppNotification[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [loadError, setLoadError] = useState<'offline' | 'failed' | null>(null);
+
   const load = () =>
     notifications
       .list()
-      .then((page) => setItems(page.results))
-      .catch(() => undefined);
+      .then((page) => {
+        setItems(page.results);
+        setLoadError(null);
+      })
+      // Was swallowed, so a failed load rendered "Nothing yet" — an error
+      // presented as an empty inbox.
+      .catch((err: unknown) => {
+        setLoadError(err instanceof OfflineError ? 'offline' : 'failed');
+      });
 
   useEffect(() => {
     if (focused && customer) load();
@@ -176,7 +186,19 @@ export default function NotificationsScreen() {
         }
       >
         {items.length === 0 ? (
-          <EmptyState title="Nothing yet" body="Order updates and drops will land here." />
+          loadError ? (
+            <EmptyState
+              title={loadError === 'offline' ? "You're offline" : "Couldn't load updates"}
+              body={
+                loadError === 'offline'
+                  ? 'Reconnect and pull to refresh.'
+                  : 'Something went wrong — pull to try again.'
+              }
+              action={<PillButton label="Retry" variant="volt" onPress={load} />}
+            />
+          ) : (
+            <EmptyState title="Nothing yet" body="Order updates and drops will land here." />
+          )
         ) : (
           <>
             {today.length > 0 ? (

@@ -13,10 +13,11 @@ import React, { useEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { OfflineError } from '@/api/client';
 import { account } from '@/api/endpoints';
 import type { WishlistEntry } from '@/api/types';
 import { CardActionPill, ProductCard } from '@/components/ProductCard';
-import { EmptyState, Mono, NavBar, PillButton } from '@/components/primitives';
+import { EmptyState, LoadingState, Mono, NavBar, PillButton } from '@/components/primitives';
 import type { RootStackParamList } from '@/navigation';
 import { useAuth } from '@/store/AuthContext';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -32,11 +33,26 @@ export default function WishlistScreen() {
   const [entries, setEntries] = useState<WishlistEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = () =>
-    account
+  const [loadError, setLoadError] = useState<'offline' | 'failed' | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = () => {
+    setLoading(true);
+    // Was `.catch(() => undefined)`, which left `entries` empty and rendered
+    // the "Nothing saved yet" state — telling the shopper their wishlist was
+    // empty when the request had actually failed. An error and an empty list
+    // are different facts and must look different.
+    return account
       .wishlist()
-      .then((page) => setEntries(page.results))
-      .catch(() => undefined);
+      .then((page) => {
+        setEntries(page.results);
+        setLoadError(null);
+      })
+      .catch((err: unknown) => {
+        setLoadError(err instanceof OfflineError ? 'offline' : 'failed');
+      })
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     if (focused && customer) load();
@@ -62,8 +78,17 @@ export default function WishlistScreen() {
   }
 
   const remove = async (productId: number) => {
-    await account.toggleWishlist(productId).catch(() => null);
+    // The row used to be filtered out unconditionally, even when the server
+    // call failed — so a failed removal looked successful until the next load
+    // silently brought the item back. Only drop it once the server agrees.
+    const previous = entries;
     setEntries((current) => current.filter((entry) => entry.product.id !== productId));
+    try {
+      await account.toggleWishlist(productId);
+    } catch {
+      setEntries(previous);
+      setLoadError('failed');
+    }
   };
 
   // Wishlist saves are product-level; the exact SKU is chosen on the detail
@@ -171,17 +196,31 @@ export default function WishlistScreen() {
           />
         )}
         ListEmptyComponent={
-          <EmptyState
-            title="Nothing saved yet"
-            body="Tap the heart on any product to keep it here."
-            action={
-              <PillButton
-                label="Browse the shop"
-                variant="volt"
-                onPress={() => navigation.navigate('Tabs', { screen: 'Shop' })}
-              />
-            }
-          />
+          loading ? (
+            <LoadingState label="Loading saved items…" />
+          ) : loadError ? (
+            <EmptyState
+              title={loadError === 'offline' ? "You're offline" : "Couldn't load your saves"}
+              body={
+                loadError === 'offline'
+                  ? 'Reconnect and pull to refresh.'
+                  : 'Something went wrong on our side — your saved items are safe.'
+              }
+              action={<PillButton label="Retry" variant="volt" onPress={load} />}
+            />
+          ) : (
+            <EmptyState
+              title="Nothing saved yet"
+              body="Tap the heart on any product to keep it here."
+              action={
+                <PillButton
+                  label="Browse the shop"
+                  variant="volt"
+                  onPress={() => navigation.navigate('Tabs', { screen: 'Shop' })}
+                />
+              }
+            />
+          )
         }
       />
     </SafeAreaView>

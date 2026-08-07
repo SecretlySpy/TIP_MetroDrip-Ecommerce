@@ -176,7 +176,7 @@ export default function ProductDetailScreen() {
     backgroundColor: state === 'selected' ? colors.ink : state === 'soldout' ? colors.surface : colors.paper,
     borderWidth: state === 'selected' ? 0 : 1,
     borderColor: colors.border,
-    minHeight: 41,
+    minHeight: 44,
   });
   const chipText = (state: 'idle' | 'selected' | 'soldout') => ({
     fontFamily: fonts.bodySemiBold,
@@ -210,8 +210,18 @@ export default function ProductDetailScreen() {
             </Text>
           )}
           <View style={{ position: 'absolute', bottom: space.s12, flexDirection: 'row', gap: space.s6 }}>
-            {(product.images.length > 0 ? product.images : [0, 1, 2, 3]).map((_, index) => (
-              <Pressable key={index} onPress={() => setGalleryIndex(index)} hitSlop={8}>
+            {(product.images.length > 0 ? product.images : [0, 1, 2, 3]).map((_, index, all) => (
+              <Pressable
+                key={index}
+                onPress={() => setGalleryIndex(index)}
+                // A 6dp dot with hitSlop 8 gave a 22x22 target — half the
+                // minimum, with four of them side by side. 19 each side clears
+                // 44pt without changing a pixel of the visual.
+                hitSlop={19}
+                accessibilityRole="button"
+                accessibilityLabel={`Image ${index + 1} of ${all.length}`}
+                accessibilityState={{ selected: index === galleryIndex }}
+              >
                 <View
                   style={{
                     width: index === galleryIndex ? 18 : 6,
@@ -270,6 +280,8 @@ export default function ProductDetailScreen() {
               {colorsAxis.map((name) => (
                 <Pressable
                   key={name}
+                  // 34dp swatch + 5 each side reaches 44pt; the circle stays 34.
+                  hitSlop={5}
                   accessibilityRole="button"
                   accessibilityLabel={`Colour ${name}`}
                   accessibilityState={{ selected: color === name, disabled: !axisAvailable({ color: name }) }}
@@ -378,7 +390,7 @@ export default function ProductDetailScreen() {
           label={added ? '✓ Added to cart' : selected ? `Add to Cart — ${priceDisplay}` : 'Select size · colour · fit'}
           variant="volt"
           disabled={!selected || selected.available < 1}
-          style={{ height: 54 }}
+          style={{ minHeight: 54 }}
           textStyle={{ fontFamily: fonts.bodyBold, fontSize: 16 }}
           onPress={addToCart}
         />

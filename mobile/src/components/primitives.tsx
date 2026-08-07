@@ -13,6 +13,7 @@ import {
   Pressable,
   StyleProp,
   Text,
+  TextProps,
   TextStyle,
   View,
   ViewStyle,
@@ -37,7 +38,7 @@ export function NavBar({
   return (
     <View
       style={{
-        height: metrics.navBarHeight,
+        minHeight: metrics.navBarHeight,
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: space.screenX,
@@ -114,9 +115,9 @@ export function PillButton({
   const backgrounds: Record<ButtonVariant, string> = {
     volt: colors.volt,
     ink: colors.ink,
-    outline: 'transparent',
+    outline: colors.transparent,
     surface: colors.surface,
-    plain: 'transparent',
+    plain: colors.transparent,
   };
   const textColors: Record<ButtonVariant, string> = {
     volt: colors.onVolt,
@@ -163,19 +164,51 @@ export function PillButton({
   );
 }
 
+/**
+ * Props every text primitive forwards to the underlying `<Text>`.
+ *
+ * These used to accept only `color` and `style`, which meant a caller could not
+ * attach an accessibility role, a live region, or `maxFontSizeMultiplier` — so
+ * there was no way to announce an error, and no central place to clamp text
+ * growth if a specific layout ever needed it. Picking from RN's own `TextProps`
+ * keeps the surface honest: anything valid on a `<Text>` is valid here.
+ *
+ * Note there is deliberately no default `maxFontSizeMultiplier`. NFR-20 asks
+ * that text stay legible at 200%, so the OS setting is honoured in full; the
+ * prop exists for the rare box that genuinely cannot grow, and each use should
+ * say why.
+ */
+type ForwardedTextProps = Pick<
+  TextProps,
+  | 'accessibilityRole'
+  | 'accessibilityLabel'
+  | 'accessibilityHint'
+  | 'accessibilityState'
+  | 'accessibilityLiveRegion'
+  | 'accessibilityElementsHidden'
+  | 'importantForAccessibility'
+  | 'allowFontScaling'
+  | 'maxFontSizeMultiplier'
+  | 'numberOfLines'
+  | 'testID'
+>;
+
 /** IBM Plex Mono uppercase micro-label (§3 signature element). */
 export function MicroLabel({
   children,
   color,
   style,
+  ...text
 }: {
   children: React.ReactNode;
   color?: string;
   style?: StyleProp<TextStyle>;
-}) {
+} & ForwardedTextProps) {
   const { colors } = useTheme();
   return (
-    <Text style={[{ ...type.microLabel, color: color ?? colors.muted }, style]}>{children}</Text>
+    <Text style={[{ ...type.microLabel, color: color ?? colors.muted }, style]} {...text}>
+      {children}
+    </Text>
   );
 }
 
@@ -186,18 +219,22 @@ export function Mono({
   weight = 'regular',
   color,
   style,
+  ...text
 }: {
   children: React.ReactNode;
   size?: number;
   weight?: 'regular' | 'medium' | 'semibold';
   color?: string;
   style?: StyleProp<TextStyle>;
-}) {
+} & ForwardedTextProps) {
   const { colors } = useTheme();
   const family =
     weight === 'semibold' ? fonts.monoSemiBold : weight === 'medium' ? fonts.monoMedium : fonts.mono;
   return (
-    <Text style={[{ fontFamily: family, fontSize: size, color: color ?? colors.ink }, style]}>
+    <Text
+      style={[{ fontFamily: family, fontSize: size, color: color ?? colors.ink }, style]}
+      {...text}
+    >
       {children}
     </Text>
   );

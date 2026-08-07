@@ -206,7 +206,7 @@ export default function ShopScreen() {
             {/* Pill search field. */}
             <View
               style={{
-                height: 44,
+                minHeight: 44,
                 borderRadius: radius.pill,
                 backgroundColor: colors.surface,
                 flexDirection: 'row',
@@ -269,7 +269,12 @@ export default function ShopScreen() {
               <Mono size={11} color={colors.muted}>
                 {count} result{count === 1 ? '' : 's'}
               </Mono>
-              <Pressable onPress={cycleSort} accessibilityRole="button" accessibilityLabel={`Sort, ${sort.label}`}>
+              <Pressable
+      onPress={cycleSort}
+      hitSlop={15}
+      accessibilityRole="button"
+      accessibilityLabel={`Sort, ${sort.label}`}
+    >
                 <Text style={{ fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.ink }}>
                   {sort.label} ⌄
                 </Text>

@@ -17,7 +17,7 @@ import type { RootStackParamList } from '@/navigation';
 import { useAuth } from '@/store/AuthContext';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radius, space } from '@/theme/theme';
-import { fonts } from '@/theme/typography';
+import { fonts, lineHeightFor } from '@/theme/typography';
 
 /** Exact bar rhythm from the design (node 63:15): [width, isBright] pairs. */
 const BARS: Array<[number, boolean]> = [
@@ -104,7 +104,7 @@ export default function SplashScreen() {
             style={{
               fontFamily: fonts.body,
               fontSize: 15,
-              lineHeight: 24,
+              lineHeight: lineHeightFor(15, 1.6),
               color: colors.mutedOnDark,
               textAlign: 'center',
               maxWidth: 300,

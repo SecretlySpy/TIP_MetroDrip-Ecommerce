@@ -644,3 +644,50 @@ The brief's 11-token camelCase palette (`onVolt`, `accentText`, `mutedOnDark`) m
 ### Verification
 
 `scripts/check-responsive.mjs` drives headless Chrome over the DevTools Protocol using Node 22's built-in `fetch` and `WebSocket` — no new dependency, consistent with the hand-rolled-frontend constraint. It measures two things per route per width: page-level horizontal scroll, and **tables that overflow with no scrollable ancestor**. The second check exists because the first passes *trivially* when content is clipped: `overflow: hidden` means the page cannot scroll precisely because the data has been cut off. Measuring only `scrollWidth` would have scored the P0 bug as a pass.
+
+## ADR-P5-003 — P2 completion: states, targets, Dynamic Type, htmx
+
+- **Status:** Accepted
+- **Context:** The previous pass shipped P0/P1 and left P2 explicitly unfinished. Two audits found the remaining work — and two regressions introduced by that same pass.
+
+### Regressions fixed, and the guard added
+
+1. **Dead selectors in the 1440px tier.** It targeted `.contact-form`, `.developers-content` and `.empty-state__body`; none exist in the repo (the real element is `.empty-state__text`). The CSS parsed and the page rendered, so nothing failed — the rules were simply inert. `.prose` did exist but was neutralised by an inline `max-width: 65ch`.
+2. **The blanket reduced-motion rule silenced the loading spinner.** `animation-duration: 0.01ms !important` on `*` stopped `@keyframes spin`, leaving a static ring signalling nothing. **Reduced motion means less motion, not no feedback** — progress indicators are now exempt at a calmer 1.5s.
+3. **The console 320px tier targeted `.content`** while Django renders `id="content"`, so the padding never applied.
+
+`scripts/check-css-selectors.mjs` now fails on any class targeted **inside an `@media` block** that no markup can produce. Scope is deliberately narrow: it must understand template-composed names (`kpi-card--{{ variant }}`) and Alpine `:class` bindings, and must not demand deletion of design-system variants authored ahead of first use. It caught regression 3 on its first run.
+
+### The one genuine WCAG failure
+
+`console.css` set the input focus ring to `rgba(212, 255, 63, 0.3)` — volt at 30% alpha, compositing to roughly `#3a4426` on the dark surface, nowhere near the 3:1 SC 1.4.11/2.4.11 require. Being more specific than the global `:focus-visible`, it **suppressed** the compliant indicator, leaving a border-colour change as the only cue. Now full-opacity volt on `:focus-visible`.
+
+### Measurement beat estimation, repeatedly
+
+Touch targets are now measured from rendered boxes in `check-responsive.mjs` and gate the run. The stylesheet-derived estimates were wrong in both directions: `.btn` was estimated at 50px and **measured 43**; `.navbar__toggle` passed on height and failed on width; Django's changelist search crushed its input to **26px** at 320px — three characters of a SKU search.
+
+**On the bar itself:** 44×44 is SC 2.5.5 (**AAA**). WCAG 2.2 **AA** is SC 2.5.8 at 24×24. The brief asked for 44, so 44 is enforced — but the SC's own exceptions are honoured: inline links in text, UA-sized checkboxes, and skip links that are off-screen until focused.
+
+### htmx: wired, not removed
+
+The library shipped on every page and was used by nothing, while the server half (`views.py` answering `HX-Request`) was built and tested. Two details had to be right: **`hx-swap="outerHTML"`**, because the fragment emits its own `#product-results` wrapper and `innerHTML` would nest a duplicate per swap; and the **indicator lives outside the swapped region**, because one placed inside is destroyed by the swap it reports on. `hx-boost` is scoped to the filter `<aside>` and pagination `<nav>` so it can never catch a product-card link, which must navigate.
+
+Verified in a real browser rather than by unit test alone: a filter click swaps without navigating, pushes `?category=hoodies`, leaves exactly one wrapper, and takes the grid from 6 cards to 2.
+
+An existing test then caught a real bug in the change: **Django's `{# #}` is single-line only**, so multi-line comments render verbatim to the browser. Converted to `{% comment %}`.
+
+### Dynamic Type — containers grow, no cap
+
+RN scales `fontSize` but leaves a literal `lineHeight` untouched, so every preset pairing the two collapsed its line box as text grew — worst was the hero at `fontSize: 38 / lineHeight: 38`, putting 76dp glyphs in a 38dp box at 200%. Line heights are now ratios multiplied by `PixelRatio.getFontScale()`, and 12 interactive rows moved from `height` to `minHeight`. **No global `maxFontSizeMultiplier`** — the OS setting is honoured in full; the prop is now forwardable per call site for the rare box that genuinely cannot grow.
+
+### Behavioural bugs fixed behind the presentation gaps
+
+- **`CheckoutScreen` zone fetch had no `.catch`** — on failure `zone` stayed null, `disabled={!zone}` greyed out Pay permanently, and nothing explained why. A dead-end checkout recoverable only by force-quitting.
+- **Shop / Wishlist / Notifications rendered their *empty* state on error**, telling a shopper their wishlist was empty when the request had failed.
+- **Wishlist `remove()` dropped the row even when the server call failed**; now rolls back.
+
+### Not done, stated plainly
+
+**200% Dynamic Type is verified by reasoning from the code, not on a device.** There is no simulator in this environment. The `lineHeight` and `minHeight` changes are correct by construction, but "renders correctly at 200% on both platforms" remains unverified and should be checked before release.
+
+Pre-existing dead CSS (`.account-grid`, `.announce-bar`) is recorded in the guard's allowlist rather than deleted — removing another author's unapplied layout is a separate call.
