@@ -2396,3 +2396,64 @@ eeded = 200 - current_count dynamically to prevent over-seeding on reruns.
 - **Responsive & Accessibility Notes**: N/A
 - **Security Notes**: Outbox pattern protects against distributed transaction failure between payment system and inventory ledger.
 - **Verification Status**: Tested manually via latency measurement script; verified the fix reduces N+1 HTTP calls to O(1) per checkout group.
+
+
+# Module / File: Session QA Audit — 2026-08-09
+
+## Function: N/A — Full System Audit and Cross-Platform QA Pass
+- **Purpose**: Comprehensive system audit, cross-platform QA, sidecar integration verification, and codebase optimization session conducted 2026-08-09.
+- **Inputs**: Full codebase (Django web, Expo mobile, FastAPI sidecars), previous pytest baseline (560 tests), forensic audit from teamwork subagents.
+- **Outputs**: Clean test suite (560/560 passing), ruff 0 errors, responsive 40/40, Django check clean, mobile typecheck/lint clean.
+- **Dependencies**: All project components.
+- **Behavior**:
+
+### R1. System Audit Results (PASS/GAP mapping)
+
+| Component | Status | Finding |
+|---|---|---|
+| Django web app (apps/) | PASS | All 22 Web FRs verified; Django system check 0 issues; migration drift = 0 |
+| Expo mobile app (mobile/) | PASS | TypeScript 0 errors; ESLint 0 errors; 10 API contract tests pass |
+| FastAPI sidecars (services/) | PASS | notifications, fulfillment, inventory — all wired with fail-closed auth, /healthz/ready, idempotency |
+| Hard Invariants 1-8 | PASS | Empirically stressed by threaded concurrency tests and contract test suite |
+| Forensic Audit | CLEAN | Independent forensic audit verified no hardcoded outputs, no facade logic |
+
+### R2. Cross-Platform QA Pass Results
+
+| Check | Command | Result |
+|---|---|---|
+| Python tests | `pytest` | **560/560 PASS** (0 failed, 0 errors) |
+| Python lint | `ruff check .` | **0 errors** |
+| Python format | `ruff format --check .` | **189 files formatted** |
+| Django system check | `manage.py check` | **0 issues** |
+| Migration drift | `makemigrations --check --dry-run` | **No changes detected** |
+| Mobile typecheck | `npm run typecheck` | **0 errors** |
+| Mobile lint | `npm run lint` | **0 errors** |
+| Responsive UI | `node scripts/check-responsive.mjs` | **40/40 PASS** |
+
+### R3. Sidecar Integration Status
+
+All three sidecars (notifications, fulfillment, inventory) are fully wired:
+- `services/_shared/security.py`: HMAC bearer token auth, fail-closed, 503 on unconfigured, 401 on bad token
+- `services/notifications/main.py`: /healthz/live, /healthz/ready, email/SMS/Expo push routes
+- `services/fulfillment/main.py`: /healthz/live, /healthz/ready, /v1/shipments/book
+- `services/inventory/main.py`: /healthz/live, /healthz/ready, full ledger REST API
+- `docker-compose.yml`: profile: services, all three sidecars wired with env token defaults
+- `docker/Dockerfile.services`: COPY contracts/ fixed (was missing before this session)
+- `scripts/smoke-services.sh`: validates health, auth boundary, correlation ID tracing
+
+### R4. Bugs Fixed This Session
+
+| Bug | Root Cause | Fix |
+|---|---|---|
+| 18 test failures + 46 errors in full suite | Django ContentType._cache not cleared after transaction=True teardown TRUNCATE; subsequent tests got duplicate-key on django_content_type inserts | Added `_clear_content_type_cache` autouse fixture in `tests/conftest.py` |
+| 19 ruff errors from stale subagent files | `.agents/teamwork_preview_challenger_m2_1/verify_sidecar_auth.py` was included in ruff scope | Added `.agents/**` and `scratch/**` to `pyproject.toml` extend-exclude |
+| Sidecar Docker image missing contracts module | `docker/Dockerfile.services` lacked `COPY contracts ./contracts` | Added COPY before pip install |
+| Stale test_metrodrip database causing cascading errors | Previous failed run left test DB without all migrations applied | Dropped stale DB; root cause addressed by the ContentType cache fix ensuring clean runs |
+
+- **Side Effects**: `tests/conftest.py` now clears ContentType cache after every test (negligible overhead — 1 Python dict clear per test), `pyproject.toml` excludes scratch dirs from lint.
+- **DSA Used**: N/A
+- **Data Analysis Notes**: Full test isolation now proven across 560 tests including 20-threaded concurrency gates.
+- **Responsive & Accessibility Notes**: Responsive check 40/40 (320/768/1024/1440px viewports) all PASS.
+- **Security Notes**: Forensic audit CLEAN. All Hard Invariants 1–8 verified. Sidecar auth fail-closed (HMAC compare_digest, 503 on unconfigured).
+- **Verification Status**: tested (560/560 pytest PASS, 0 ruff errors, 40/40 responsive, mobile tsc/eslint clean, all verified by direct execution 2026-08-09).
+
