@@ -5,7 +5,14 @@ line-length = 100
 # before 3.14 and violates the project rule (NFR-01 / test_source_compiles).
 # Parenthesized form is valid on 3.12–3.14; keep it.
 target-version = "py313"
-extend-exclude = ["**/migrations/**"]
+extend-exclude = [
+    "**/migrations/**",
+    # Subagent scratch workspaces and one-off dev utility scripts are not
+    # production code; excluding them keeps `ruff check .` a clean measure of
+    # the actual codebase.
+    ".agents/**",
+    "scratch/**",
+]
 
 [tool.ruff.lint]
 # E/W pycodestyle, F pyflakes, I import order, B bugbear, UP pyupgrade, DJ flake8-django

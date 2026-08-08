@@ -20,6 +20,7 @@ RUN groupadd --gid "${APP_GID}" metrodrip \
 
 WORKDIR /app
 
+COPY contracts ./contracts
 # Minimal deps for the three FastAPI sidecars (no Django required at runtime).
 COPY docker/services-requirements.txt ./requirements-services.txt
 RUN python -m pip install -r requirements-services.txt

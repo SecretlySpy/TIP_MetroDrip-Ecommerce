@@ -357,14 +357,16 @@ Write for a reader with zero prior context. Every pronoun resolved, every abbrev
 **Comment significant lines and blocks**, explaining *why*, never restating syntax:
 
 ```python
-retries = 0                                  # tracks attempts across the backoff loop
-while retries < MAX_RETRIES:                 # bounded — unbounded retry can hang a worker forever
+retries = 0  # tracks attempts across the backoff loop
+while retries < MAX_RETRIES:  # bounded — unbounded retry can hang a worker forever
     try:
-        return client.fetch(url, timeout=5)  # explicit timeout; default is None and blocks indefinitely
-    except TransientError:                   # only retry errors that can plausibly succeed later
-        sleep(2 ** retries)                  # exponential backoff avoids hammering a struggling service
+        return client.fetch(
+            url, timeout=5
+        )  # explicit timeout; default is None and blocks indefinitely
+    except TransientError:  # only retry errors that can plausibly succeed later
+        sleep(2**retries)  # exponential backoff avoids hammering a struggling service
         retries += 1
-raise MaxRetriesExceeded(url)                # fail loudly rather than returning None into caller logic
+raise MaxRetriesExceeded(url)  # fail loudly rather than returning None into caller logic
 ```
 
 `i += 1  # increment i` is noise. For long or production-bound files, comment the non-obvious lines fully and note that a stripped version is available.

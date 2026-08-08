@@ -30,3 +30,33 @@ actually disagree.
 Reintroducing a live sidecar for the Phase-B stock work will need a database
 that is *not* Django's test database, created and torn down explicitly.
 """
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clear_content_type_cache():
+    """Clear Django's ContentType object cache after every transaction=True test.
+
+    When pytest-django's TransactionTestCase teardown runs, it flushes all
+    tables (including django_content_type and auth_permission) and then
+    re-seeds initial data via the post_migrate signal. However, Django caches
+    ContentType objects in memory (ContentType._cache). If the next test's
+    setup re-inserts content types, the stale cache contains PK references to
+    rows that no longer exist (auto-increment was reset by TRUNCATE), causing
+    duplicate-key IntegrityErrors on the fresh inserts.
+
+    Clearing the cache here — after every test — ensures the first DB hit after
+    a flush reads fresh rows and never conflicts with the re-seeded initial
+    data. The cost is one SELECT per test that actually reads ContentTypes; the
+    benefit is a deterministic suite that doesn't depend on run order.
+    """
+    yield
+    # Only import if Django's app registry is ready (avoids import-time errors
+    # when conftest is loaded before Django finishes initialising).
+    try:
+        from django.contrib.contenttypes.models import ContentType
+
+        ContentType.objects.clear_cache()
+    except Exception:  # noqa: BLE001
+        pass
