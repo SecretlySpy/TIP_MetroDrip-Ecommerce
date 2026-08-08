@@ -50,8 +50,7 @@ const ALLOWED_UNUSED = new Map([
   // with responsive rules but never applied to any template. Flagged in
   // ADR-P5-003; removing another author's unapplied layout is a separate call.
   ["content", "Django admin renders id=\"content\"; the `.content, #content` hedge is vestigial"],
-  ["account-grid", "authored but applied to no template — see ADR-P5-003"],
-  ["announce-bar", "authored but applied to no template — see ADR-P5-003"],
+
 ]);
 
 /** Django admin renders these itself; we only restyle them. */

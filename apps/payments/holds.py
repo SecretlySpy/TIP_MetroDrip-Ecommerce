@@ -60,14 +60,17 @@ def consume_order_holds(order):
     """
     committed_by_variant: dict[int, int] = {}
 
-    for hold in order.stock_holds.filter(state=StockHoldState.ACTIVE):
-        # Written before the attempt and inside the payment transaction, so a
-        # crash between the payment flip and the commit call cannot lose the
-        # instruction. The poller retries it; the ledger de-duplicates it.
+    checkout_ids = (
+        order.stock_holds.filter(state=StockHoldState.ACTIVE)
+        .values_list("checkout_id", flat=True)
+        .distinct()
+    )
+
+    for checkout_id in checkout_ids:
         message = enqueue(
             topic=TOPIC_STOCK_COMMIT,
             payload={
-                "checkout_id": hold.checkout_id,
+                "checkout_id": checkout_id,
                 "order_no": order.order_no,
                 "order_id": order.pk,
             },
@@ -76,32 +79,27 @@ def consume_order_holds(order):
 
         try:
             result = commit_holds(
-                checkout_id=hold.checkout_id,
+                checkout_id=checkout_id,
                 order_no=order.order_no,
                 order_id=order.pk,
             )
         except ReservationUnavailable:
-            # The ledger may or may not have applied it. Leave the hold in
-            # `unknown` and let the outbox row drive the retry rather than
-            # guessing an outcome here; the shortfall pass below still
-            # protects the customer's order in the meantime.
             logger.exception(
-                "Order %s: commit uncertain for hold %s", order.order_no, hold.checkout_id
+                "Order %s: commit uncertain for hold checkout_id %s", order.order_no, checkout_id
             )
-            hold.state = StockHoldState.UNKNOWN
-            hold.save(update_fields=["state"])
+            order.stock_holds.filter(checkout_id=checkout_id, state=StockHoldState.ACTIVE).update(
+                state=StockHoldState.UNKNOWN
+            )
             continue
 
-        # The synchronous attempt succeeded, so the queued instruction is
-        # redundant. Retiring it here keeps the poller's backlog honest.
         _retire(message)
 
         for variant_id, qty in (result or {}).items():
             committed_by_variant[variant_id] = committed_by_variant.get(variant_id, 0) + qty
 
-        hold.state = StockHoldState.COMMITTED
-        hold.committed_at = timezone.now()
-        hold.save(update_fields=["state", "committed_at"])
+        order.stock_holds.filter(checkout_id=checkout_id, state=StockHoldState.ACTIVE).update(
+            state=StockHoldState.COMMITTED, committed_at=timezone.now()
+        )
 
     _cover_shortfall(order, committed_by_variant)
     return committed_by_variant

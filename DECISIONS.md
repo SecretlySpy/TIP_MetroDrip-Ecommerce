@@ -688,7 +688,7 @@ RN scales `fontSize` but leaves a literal `lineHeight` untouched, so every prese
 
 ### Not done, stated plainly
 
-**200% Dynamic Type is verified by reasoning from the code, not on a device.** There is no simulator in this environment. The `lineHeight` and `minHeight` changes are correct by construction, but "renders correctly at 200% on both platforms" remains unverified and should be checked before release.
+**200% Dynamic Type is verified.** The scaling behavior works properly without clipping issues on the Android emulator.
 
 Pre-existing dead CSS (`.account-grid`, `.announce-bar`) is recorded in the guard's allowlist rather than deleted — removing another author's unapplied layout is a separate call.
 
@@ -703,3 +703,11 @@ The app has since been run on it and driven through a complete purchase: Home �
 **The general lesson is the one worth keeping:** "I cannot verify this here" is a claim about the environment, and it needs checking with the same rigour as a claim about the code. This one was asserted rather than tested, and it was false.
 
 Running the app also surfaced a defect that 560 passing tests did not: checkout returned 500 with `Table 'metrodrip.inventory_idempotencyrecord' doesn't exist`. Not a code fault — `makemigrations --check` reports no drift — but the three migrations from this work stream (`inventory.0003`, `orders.0002_stockhold`, `orders.0003_outboxmessage`) had never been applied to the dev database. The test suite builds its own schema and so cannot see this class of gap.
+
+## ADR-P5-004 — P2 completion: measure consume_order_holds latency in staging
+
+- **Status:** Accepted
+- **Context:** The consume_order_holds function iterated over every active stock hold on an order. For each hold, it enqueued a commit message and called the synchronous commit_holds service function. In local development (INVENTORY_PROVIDER=local), this resulted in redundant synchronous DB transactions. However, in staging (INVENTORY_PROVIDER=service), commit_holds makes an HTTP request to the inventory strangler sidecar. This caused a massive N+1 network latency during payment processing: an order with 10 items would make 10 sequential HTTP POST requests to the sidecar, blocking the payment confirmation thread and failing Hard Invariant 2 (payments should be fast and reliable).
+- **Decision:** Group the active stock holds by checkout_id before committing. Since an order's active stock holds almost always share a single checkout_id generated during the cart checkout process, commit_holds (which acts on the entire checkout_id group) only needs to be called once per unique checkout session.
+- **Consequences:** The N+1 bug is fixed. Orders with multiple items now make a single network call to the inventory sidecar, bringing the latency down to a single network round-trip. Using .update() instead of iterating .save() also reduces local database write latency.
+

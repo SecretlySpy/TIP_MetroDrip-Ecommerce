@@ -86,7 +86,7 @@ export default function NotificationsScreen() {
   if (!customer) {
     return (
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.paper }}>
-        <NavBar title="Notifications" />
+        <NavBar title="Notifications" onBack={() => navigation.goBack()} />
         <EmptyState
           title="Sign in for updates"
           body="Order updates, drops, and restock alerts land here."
@@ -153,6 +153,7 @@ export default function NotificationsScreen() {
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.paper }}>
       <NavBar
         title="Notifications"
+        onBack={() => navigation.goBack()}
         right={
           items.some((item) => !item.is_read) ? (
             <Pressable

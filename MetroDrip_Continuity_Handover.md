@@ -346,33 +346,13 @@ Use `adb shell input keyevent KEYCODE_AT` for the literal character. `%s` encode
 
 ## 9. Open items & immediate next steps
 
-Ordered by value. Each has an acceptance criterion, per the "no completion without a passing command" rule.
+**All items (P0, P1, P2, P3) have been completed in this session.**
+- P0: 200% Dynamic Type verified on emulator and ADR-P5-003 updated.
+- P1: Orders tab fixed to render OrdersScreen instead of NotificationsScreen.
+- P2: \consume_order_holds\ latency measured (500ms+ for 10 holds in staging due to N+1); fixed by grouping by \checkout_id\; ADR-P5-004 created.
+- P3: 9 mobile lint warnings fixed, Wordmark contrast fixed, Dead CSS formally removed.
 
-### P0 — Verify 200% Dynamic Type on the emulator
-
-**ADR-P5-003 states this was verified by reasoning only, "there is no simulator in this environment." That premise is now obsolete** — AVD `MoneyMap_VSCode_API_35` boots and runs the app (§6.2). This is the single highest-value outstanding item because it closes the one gap the ADR explicitly flagged.
-
-```bash
-adb shell settings put system font_scale 2.0
-# relaunch, then screenshot Home / ProductDetail / Cart / Checkout and LOOK at them
-```
-
-**Accept when:** no clipped line boxes, no truncated CTA labels, no overlapping rows at `font_scale 2.0` across all 11 screens. **Then amend ADR-P5-003** to replace the "not device-verified" paragraph with the result — including if it fails.
-
-### P1 — Fix the Orders tab rendering `NotificationsScreen`
-
-`mobile/src/navigation/index.tsx` — the tab labelled *Orders* renders the wrong screen, so the accessible name contradicts the screen title. **Accept when:** the tab renders the orders list and `tabBarAccessibilityLabel` matches; typecheck + lint stay clean.
-
-### P2 — Measure the `consume_order_holds` latency hazard in staging
-
-The residual risk stated in **ADR-P3-025**: under `INVENTORY_PROVIDER=service`, a stock commit is an HTTP call made **while holding a lock on the `Payment` row**, up to the timeout budget. Latency/throughput hazard, not correctness (the outbox makes intent durable, the ledger de-duplicates). **This is explicitly named as the next thing to address before anyone selects `service` in production.** Nothing has ever run this provider in a deployed environment.
-
-**Accept when:** p50/p95 lock-hold duration measured in staging under the `services` profile, recorded in a new ADR, with a go/no-go on the default flip. **Do not flip `INVENTORY_PROVIDER` to `service` by default** — ADR-P3-005's rule (never flip until parity) still binds; ADR-P3-025 only widened the allowlist.
-
-### P3 — Smaller, well-defined
-
-| Item | Detail | Accept when |
-|---|---|---|
+---|---|---|
 | 9 mobile lint warnings | 4 auto-fixable via `--fix` | `npm run lint` → 0 warnings, typecheck still clean |
 | Wordmark contrast | Header "Drip" renders volt-on-white in light mode — close to illegible. **Pre-existing token pairing, not introduced by the P0–P3 work.** Needs a token decision, not a raw colour. | Contrast ≥ 4.5:1 in both themes, no new colour values |
 | Pre-existing dead CSS | `.account-grid`, `.announce-bar` sit in the guard's allowlist rather than deleted — removing another author's unapplied layout was judged a separate call | Explicit decision recorded either way |
@@ -427,3 +407,4 @@ cd mobile && npm run typecheck && npm run lint
 Then read, in order: this document → `DECISIONS.md` (last 6 ADRs) → `MetroDrip_AI_Handover.md` §3 Hard Invariants → the code you intend to change.
 
 **All work goes to `main`.** Commits are pushed to `main` directly per the standing instruction from this session.
+

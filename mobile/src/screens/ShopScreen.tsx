@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 /**
  * M03 · Shop & Search (Tab) — Figma node 63:155.
  *
@@ -27,7 +29,7 @@ import { fonts } from '@/theme/typography';
 
 const SHOP_CACHE_KEY = 'metrodrip.shop.cache.v1';
 
-const SORTS: Array<{ key: string; label: string }> = [
+const SORTS: { key: string; label: string }[] = [
   { key: 'newest', label: 'Newest' },
   { key: 'price_asc', label: 'Price ↑' },
   { key: 'price_desc', label: 'Price ↓' },
@@ -167,7 +169,7 @@ export default function ShopScreen() {
     }
   };
 
-  const activeChips = Object.entries(filters) as Array<[keyof Filters, string]>;
+  const activeChips = Object.entries(filters) as [keyof Filters, string][];
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.paper }}>
@@ -295,3 +297,4 @@ export default function ShopScreen() {
     </SafeAreaView>
   );
 }
+

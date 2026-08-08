@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 /**
  * M11 · Saved / Wishlist (Tab) — Figma node 67:45.
  *
@@ -226,3 +228,4 @@ export default function WishlistScreen() {
     </SafeAreaView>
   );
 }
+

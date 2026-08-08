@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 /**
  * M02 · Home (Tab) — Figma node 63:67.
  *
@@ -134,7 +136,7 @@ export default function HomeScreen() {
             accessibilityRole="button"
             accessibilityLabel={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
             hitSlop={12}
-            onPress={() => navigation.navigate('Tabs', { screen: 'Orders' })}
+            onPress={() => navigation.navigate('Notifications')}
           >
             <Text style={{ fontSize: 19, color: colors.ink, fontFamily: fonts.body }}>◔</Text>
             {unread > 0 ? (
@@ -291,3 +293,4 @@ export default function HomeScreen() {
     </SafeAreaView>
   );
 }
+

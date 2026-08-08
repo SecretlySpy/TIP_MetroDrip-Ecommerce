@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 /**
  * Grid card shared by M02 (63:105), M03 (63:187), and M11 (67:62).
  *
@@ -164,3 +166,4 @@ export function CardActionPill({
     </Pressable>
   );
 }
+

@@ -2309,3 +2309,19 @@ eeded = 200 - current_count dynamically to prevent over-seeding on reruns.
 - **Responsive & Accessibility Notes**: N/A
 - **Security Notes**: Development/seeding utility only; should not run in production.
 
+
+# Module / File: apps/payments/holds.py
+
+## Function: consume_order_holds
+- **Purpose**: Commit every active hold on an order and cover any shortfall.
+- **Inputs**:
+  - order (Order): The order containing the active stock holds.
+- **Outputs**: dict[int, int] mapping variant_id to the actually committed quantity.
+- **Dependencies**: pps.inventory.services.commit_holds, pps.orders.outbox.enqueue, pps.orders.models.StockHoldState.
+- **Behavior**: Groups active stock holds by checkout_id. For each unique checkout_id, enqueues an outbox message and calls commit_holds. On success, retires the outbox message and updates all holds for that checkout_id to COMMITTED. If commit_holds throws ReservationUnavailable, the state is set to UNKNOWN and left for the outbox retry worker. Finally, calls _cover_shortfall to ensure the required items are reserved if they expired.
+- **Side Effects**: Modifies StockHold states in DB, pushes messages to OutboxMessage, delegates to inventory service which writes StockMovement rows.
+- **DSA Used**: O(H) time where H is number of active holds to group them by checkout_id, avoiding N+1 HTTP calls.
+- **Data Analysis Notes**: N/A
+- **Responsive & Accessibility Notes**: N/A
+- **Security Notes**: Outbox pattern protects against distributed transaction failure between payment system and inventory ledger.
+- **Verification Status**: Tested manually via latency measurement script; verified the fix reduces N+1 HTTP calls to O(1) per checkout group.

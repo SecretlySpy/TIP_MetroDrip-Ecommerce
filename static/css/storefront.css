@@ -1495,7 +1495,7 @@ h5 { font-size: 1rem; }
 }
 
 .footer__brand span {
-  color: var(--color-volt);
+  color: var(--color-accent-text);
 }
 
 .footer__links {
@@ -1762,14 +1762,6 @@ h5 { font-size: 1rem; }
 .order-step--current { background: var(--color-volt); color: var(--color-on-volt); font-weight: 700; border-color: var(--color-ink); }
 
 /* --- Account pages --- */
-.account-grid {
-  display: grid;
-  gap: var(--space-xl);
-  grid-template-columns: 1fr;
-  align-items: start;
-}
-@media (min-width: 820px) { .account-grid { grid-template-columns: 300px 1fr; } }
-
 .order-card {
   border: 1px solid var(--color-border);
   background: var(--color-surface-raised);
@@ -2124,16 +2116,14 @@ h5 { font-size: 1rem; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .hero--dark,
   :root:not([data-theme="light"]) .footer,
-  :root:not([data-theme="light"]) .barcode-strip,
-  :root:not([data-theme="light"]) .announce-bar {
+  :root:not([data-theme="light"]) .barcode-strip {
     background: var(--color-elevated);
     color: var(--color-ink);
   }
 }
 :root[data-theme="dark"] .hero--dark,
 :root[data-theme="dark"] .footer,
-:root[data-theme="dark"] .barcode-strip,
-:root[data-theme="dark"] .announce-bar {
+:root[data-theme="dark"] .barcode-strip {
   background: var(--color-elevated);
   color: var(--color-ink);
 }

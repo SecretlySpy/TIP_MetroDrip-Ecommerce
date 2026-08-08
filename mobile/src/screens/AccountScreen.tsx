@@ -103,21 +103,7 @@ export default function AccountScreen() {
   ).length;
 
   const openOrders = () => {
-    if (recentOrders.length === 0) {
-      Alert.alert('My Orders', 'No orders yet — your next drop starts in the shop.');
-      return;
-    }
-    Alert.alert(
-      'My Orders',
-      undefined,
-      [
-        ...recentOrders.slice(0, 6).map((order) => ({
-          text: `${order.order_no} · ${order.status_display} · ${order.total_display}`,
-          onPress: () => navigation.navigate('OrderTracking', { token: order.status_token }),
-        })),
-        { text: 'Close', style: 'cancel' as const },
-      ],
-    );
+    navigation.navigate('Tabs', { screen: 'Orders' });
   };
 
   const signOut = () =>
@@ -133,7 +119,7 @@ export default function AccountScreen() {
       },
     ]);
 
-  const rows: Array<{ glyph: string; label: string; meta?: string; onPress: () => void }> = [
+  const rows: { glyph: string; label: string; meta?: string; onPress: () => void }[] = [
     { glyph: '▤', label: 'My Orders', meta: `${activeCount} active`, onPress: openOrders },
     {
       glyph: '♡',

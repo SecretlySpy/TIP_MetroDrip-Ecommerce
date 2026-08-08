@@ -28,6 +28,7 @@ import CartScreen from '@/screens/CartScreen';
 import CheckoutScreen from '@/screens/CheckoutScreen';
 import HomeScreen from '@/screens/HomeScreen';
 import NotificationsScreen from '@/screens/NotificationsScreen';
+import OrdersScreen from '@/screens/OrdersScreen';
 import OrderTrackingScreen from '@/screens/OrderTrackingScreen';
 import ProductDetailScreen from '@/screens/ProductDetailScreen';
 import ShopScreen from '@/screens/ShopScreen';
@@ -43,6 +44,7 @@ export type RootStackParamList = {
   Cart: undefined;
   Checkout: undefined;
   OrderTracking: { token: string };
+  Notifications: undefined;
   Auth: { mode?: 'signin' | 'register' } | undefined;
 };
 
@@ -126,7 +128,7 @@ function MainTabs() {
       <Tabs.Screen name="Home" component={HomeScreen} />
       <Tabs.Screen name="Shop" component={ShopScreen} />
       <Tabs.Screen name="Saved" component={WishlistScreen} />
-      <Tabs.Screen name="Orders" component={NotificationsScreen} />
+      <Tabs.Screen name="Orders" component={OrdersScreen} />
       <Tabs.Screen name="Account" component={AccountScreen} />
     </Tabs.Navigator>
   );
@@ -175,6 +177,7 @@ export function AppNavigator() {
               options={{ presentation: 'modal' }}
             />
             <Stack.Screen name="OrderTracking" component={OrderTrackingScreen} />
+            <Stack.Screen name="Notifications" component={NotificationsScreen} />
             <Stack.Screen name="Auth" component={AuthScreen} options={{ presentation: 'modal' }} />
           </>
         )}

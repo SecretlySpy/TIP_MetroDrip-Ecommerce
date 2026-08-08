@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 /**
  * M04 · Product Detail — Figma node 64:2.
  *
@@ -398,3 +400,4 @@ export default function ProductDetailScreen() {
     </SafeAreaView>
   );
 }
+

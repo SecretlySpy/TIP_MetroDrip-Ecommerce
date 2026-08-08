@@ -20,7 +20,7 @@ import { radius, space } from '@/theme/theme';
 import { fonts, lineHeightFor } from '@/theme/typography';
 
 /** Exact bar rhythm from the design (node 63:15): [width, isBright] pairs. */
-const BARS: Array<[number, boolean]> = [
+const BARS: [number, boolean][] = [
   [4, true], [2, false], [2, false], [2, true], [2, false], [4, false], [2, true],
   [2, false], [2, false], [2, true], [4, false], [2, false], [2, true], [2, false],
   [2, false], [4, true], [2, false], [2, false], [2, true], [2, false], [4, false],

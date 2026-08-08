@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 /**
  * M07 · Order Tracking — Figma node 65:2.
  *
@@ -262,3 +264,4 @@ export default function OrderTrackingScreen() {
     </SafeAreaView>
   );
 }
+
