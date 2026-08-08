@@ -2,7 +2,7 @@
 
 - **Scope:** Tasks A-1 through A-4, Epic B, and the Epic C/D/G storefront-commerce layer (through the 2026-07-19 QA/hardening pass)
 - **Status:** Accepted
-- **Authority:** Extends the locked decisions in `MetroDrip_AI_Handover.md` section 11.
+- **Authority:** Extends the locked decisions in `AI Documentation Notes.md`.
 - **Change rule:** Update this register when an implementation intentionally changes one of these contracts.
 
 ## ADR-A-001 — Domain application count

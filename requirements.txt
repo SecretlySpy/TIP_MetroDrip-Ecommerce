@@ -1,4 +1,4 @@
-# MetroDrip — locked stack (see MetroDrip_AI_Handover.md §2)
+# MetroDrip — locked stack (see AI Documentation Notes.md)
 # Python 3.14 / Django 5.2 LTS. MySQL 8 (InnoDB, utf8mb4) is the only supported database.
 
 Django~=5.2

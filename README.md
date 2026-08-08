@@ -4,7 +4,7 @@ B2C e-commerce + inventory system for a Metro Manila streetwear brand.
 
 **Stack:** Django 5.2 · MySQL 8 (InnoDB, utf8mb4) · Django Templates + HTMX + Alpine.js · DRF mobile API · Expo / React Native client.
 
-Governing docs: [MetroDrip_AI_Handover.md](MetroDrip_AI_Handover.md) · [DECISIONS.md](DECISIONS.md) · [AI Documentation Notes.md](AI%20Documentation%20Notes.md) · [mobile/README.md](mobile/README.md) · [deploy/README.md](deploy/README.md)
+Governing docs: [AI Documentation Notes.md](AI%20Documentation%20Notes.md) · [DECISIONS.md](DECISIONS.md) · [Tech Stack Setup Guide.md](Tech%20Stack%20Setup%20Guide.md) · [mobile/README.md](mobile/README.md) · [deploy/README.md](deploy/README.md)
 
 ## What is built (Epics A–H)
 

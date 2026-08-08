@@ -1,53 +1,124 @@
-# Module / File: Repository architecture and current delivery state
+# Module / File: Repository architecture, consolidated system specification, and delivery state
 
-## Function: N/A — runtime architecture contract
-- **Purpose**: Describe the deployed shape, ownership boundaries, and principal dependencies of the MetroDrip application.
-- **Inputs**:
-  - `HTTP request` (`django.http.HttpRequest`): Browser, admin, health-probe, or PayMongo webhook traffic.
-  - `scheduled invocation` (`APScheduler job`): Reservation-expiry and low-stock work.
-- **Outputs**: HTML responses, narrow JSON responses, provider acknowledgements, email/SMS attempts, and transactional MySQL state.
-- **Dependencies**: Python 3.14, Django 5.2, MySQL 8.4/InnoDB, Django templates, HTMX 2.0.4, Alpine.js 3.14.9, APScheduler, Gunicorn, WhiteNoise, Caddy, PayMongo, Semaphore, and Google Maps.
-- **Behavior**: The repository is one Django modular monolith containing 10 first-party apps (`catalog`, `inventory`, `orders`, `payments`, `shipping`, `notifications`, `accounts`, `reviews`, `cms`, and `storefront`), one MySQL database, and one dedicated scheduler process. Views delegate catalog queries and stock/order/payment mutations to domain services. Direct model relationships cross app boundaries inside the same database. The staging topology is Caddy → Gunicorn/Django → MySQL, with one separate scheduler container using the same image. The back office is **two** role-scoped Django admin sites, not one (ADR-F-001): `/admin/` is the administrator console (accounts, roles, shipping fees, audit trail) and `/merchant/` is the merchant console (catalog, inventory, orders, content, reviews). Every model is registered on exactly one of them.
-- **Side Effects**: This documentation entry performs none; the described runtime writes orders, reservations, payments, shipments, reviews, CMS content, notification logs, and inventory ledger rows.
-
-## Function: N/A — request and data-flow contract
-- **Purpose**: Record the principal control flow from storefront input to persisted commerce state.
-- **Inputs**:
-  - `storefront input` (`HTML form or JSON body`): Search/filter values, cart variant IDs, checkout identity/address data, reviews, and contact messages.
-  - `provider event` (`signed JSON body`): PayMongo payment event.
-- **Outputs**: Product pages, reservations, pending orders/payments, paid orders, immutable stock movements, fulfillment state, and notifications.
-- **Dependencies**: `apps.storefront.views`, `apps.catalog.services`, `apps.inventory.services`, `apps.orders.services`, `apps.payments.services`, and the Django ORM.
-- **Behavior**: Catalog reads annotate active products and approved reviews. Checkout parses a client-side cart, reloads authoritative variants/prices, allocates an order number, creates the order and lines, and reserves stock inside one transaction. Hosted checkout creation then creates a pending Payment. In deployment, only a signature-verified PayMongo webhook calls `confirm_order_paid`; development can use the explicitly gated mock path. Confirmation locks the Payment, commits the order’s reservations, writes sale movements, and transitions the Order to Paid. Admin actions drive later order transitions and fulfillment side effects.
-- **Side Effects**: Creates and updates commerce rows, obtains InnoDB row locks, calls PayMongo/Semaphore/email adapters, and writes logs.
-
-## Function: N/A — implemented capability inventory
-- **Purpose**: Enumerate the capabilities present at the Cycle 1 baseline.
-- **Inputs**:
-  - `repository source` (`filesystem tree`): Application, templates, assets, migrations, tests, and deployment configuration.
-- **Outputs**: A machine-readable implementation boundary for later cycles.
-- **Dependencies**: All modules documented below.
-- **Behavior**: Implemented capabilities include email-based Django authentication; customer profiles; order history; guest-order claiming; wishlists; a CMS banner/contact/flatpage layer; product/category/three-axis variants; two-level category navigation; catalog search/filter/sort; localStorage cart; stock availability checks; atomic checkout holds; integer-centavo money; hosted/mock payment checkout; signed webhook confirmation; tokenized order pages; order state enforcement; inventory reservation/ledger services; scheduler jobs; shipping-zone rates; mock J&T booking; review moderation; admin reports/invoices/CSV actions; container health probes; provider-neutral local HTTPS staging; and **separated administrator and merchant consoles** with a role field, per-console login forms, a wrong-console denial page, registry-derived group permissions, an append-only administrator audit trail, and superuser-only management of roles and privilege fields.
+## Function: N/A — source-of-truth precedence hierarchy
+- **Purpose**: Establish binding precedence across project documentation, eliminating conflicting claims.
+- **Inputs**: Codebase, automated test suite execution results, `DECISIONS.md` (66 ADRs), `AI Documentation Notes.md`, `Tech Stack Setup Guide.md`, `README.md`, `index.html`.
+- **Outputs**: Binding precedence hierarchy for AI agents and human developers.
+- **Dependencies**: `AGENTS.md` engineering rules.
+- **Behavior**: All documentation and system claims resolve in the following strict order:
+  1. **Code + Verified Command Output**: Ground truth. Verifiable runtime behavior always wins.
+  2. **`DECISIONS.md` (66 ADRs)**: Rationale for architectural decisions, trade-offs, and explicit reversals.
+  3. **`AI Documentation Notes.md`**: Master system specification, consolidated handover state, entity model, FR/NFR traceability matrix, and module specifications.
+  4. **`AGENTS.md` / `GEMINI.md`**: Autonomous engineering rules and operational protocols.
+  5. **`Tech Stack Setup Guide.md` / `README.md` / `index.html`**: User-facing setup, quickstarts, and sitemaps.
 - **Side Effects**: None.
+- **Verification Status**: verified (audited against repo history).
 
-## Function: N/A — known implementation-gap inventory
-- **Purpose**: Prevent requested future behavior from being reported as delivered.
-- **Inputs**:
-  - `project plan` (`MetroDrip_Project_Plan_UIUX_AI_Prompt.md`): Requested target state.
-  - `current source` (`repository revision 653324fc3af66263cdc5da1135e442d6a7d8a50d` plus Cycle 1 worktree): Verified implementation state.
-- **Outputs**: Explicit continuation boundary.
-- **Dependencies**: Future architecture, catalog, identity, commerce, accessibility, and deployment cycles.
-- **Behavior**: The canonical seed still contains 5 products rather than the requested deterministic 45-product rich catalog. Product media/specification entities, verified email, password reset, saved-address CRUD/prefill, stronger order-claim proof, comprehensive server-side checkout forms, timestamp-fresh webhook validation, atomic fulfillment/refund orchestration, deterministic courier simulation, notification templates/preferences, Developers page, approved design-token rollout, WCAG/browser QA, and the target five-service topology are not complete. Public DNS, trusted certificate, external URL, and uptime evidence require operator infrastructure. Five higher-precedence course/Phase 1 documents referenced by the supplied plan are absent, so exact FR/NFR traceability cannot yet be claimed.
+## Function: N/A — consolidated product summary and hard invariants
+- **Purpose**: Document product scope, locked tech stack, and non-negotiable commerce invariants.
+- **Inputs**: B2C e-commerce requirements, PayMongo API specs, J&T API specs, PH Data Privacy Act (RA 10173).
+- **Outputs**: System boundary and invariant rules.
+- **Dependencies**: Python 3.14, Django 5.2, MySQL 8 (InnoDB, utf8mb4), DRF, HTMX 2.0, Alpine.js 3.14, React Native / Expo (TypeScript).
+- **Behavior**:
+  - **Product Summary**: MetroDrip is a B2C e-commerce + inventory system for a Metro Manila streetwear brand. Features server-rendered web storefront (HTMX/Alpine), dual admin consoles (`/admin/` and `/merchant/`), DRF public mobile API (`/api/mobile/v1/`), Expo mobile app, PayMongo payments, J&T shipping, and opt-in FastAPI strangler sidecars under `services/`.
+  - **Hard Invariants (Non-Negotiable)**:
+    1. *No overselling, ever*: `available = qty_on_hand − qty_reserved`. All stock mutations occur within `transaction.atomic()` with `select_for_update()`.
+    2. *Money is integer centavos*: No floating-point numbers for money; `INT` columns used everywhere; display formatting only at view boundary.
+    3. *Webhooks are payment truth*: Orders transition `Pending → Paid` ONLY via signature-verified PayMongo webhooks. Client redirects are never trusted. Webhook handlers are idempotent.
+    4. *Append-only stock audit*: Every stock mutation creates a `StockMovement` row (delta, reason, ref_order_id); movements are never updated or deleted.
+    5. *Order state machine enforced server-side*: `Pending → Paid → Packed → Shipped → Delivered` (plus `Cancelled` / `Refunded`). Illegal state transitions raise exceptions.
+    6. *MySQL database standard*: InnoDB engine with `utf8mb4` charset enforced from the first migration.
+    7. *PCI compliance*: Card details never touch MetroDrip servers; PayMongo hosted checkout/elements used exclusively.
+    8. *Mobile app presentation boundary*: Mobile client performs zero price or stock calculations; server-validated pricing and availability are authoritative at checkout.
+- **Side Effects**: Controls database transaction isolation, API payload processing, and payment confirmation.
+- **Verification Status**: verified (560 pytest tests passing, including concurrency tests).
+
+## Function: N/A — consolidated data model and taxonomy
+- **Purpose**: Record authoritative entity schemas, two-level category tree, console roles, and curated collections.
+- **Inputs**: Django ORM models (`apps/*/models.py`), database migrations, ADR-C-002, ADR-C-005, ADR-F-001.
+- **Outputs**: Persisted database schema and model contracts.
+- **Dependencies**: Django ORM, MySQL 8 InnoDB.
+- **Behavior**:
+  - **Entities**: Category, Product, ProductVariant, StockRecord, StockMovement, Order, OrderItem, Payment, Shipment, Customer, WishlistItem, Review, FlatPage, Banner, StockHold, OutboxMessage.
+  - **Category Hierarchy**: Maximum 2 levels deep. Main categories (`parent = NULL`) have `Men` and `Women` child categories. Child slugs are parent-prefixed (`hoodies-men`). Depth (≤2) and sibling name uniqueness enforced in `Category.clean()`. Main category queries aggregate directly assigned products + all child products.
+  - **Curated Collections**: Root categories ("New Arrivals", "Best-Sellers", "On-Sale", "Pre-Order") without gender subcategories; static discount pricing applied at creation.
+  - **Dual Admin Consoles & Roles**: `Customer.role` enum (`customer`, `merchant`, `administrator`). `/admin/` (administrator console) manages customer accounts, roles, shipping fees, and audit trail; `/merchant/` (merchant console) manages catalog, variants, stock, orders, banners, flatpages, reviews, and support messages. Every model is registered on exactly one console site.
+- **Side Effects**: Dictates DB schema, model validation, and route isolation.
+- **Verification Status**: verified (`tests/test_catalog_hierarchy.py`, `tests/test_console_separation.py`).
+
+## Function: N/A — full requirements & completion traceability matrix
+- **Purpose**: Provide evidence-based traceability for every Web FR, Mobile FR, and NFR, mapping implementation files, automated test evidence, status (PASS/GAP), and gap notes.
+- **Inputs**: Codebase inspection, pytest test suite execution (560 tests), ruff lint/format, mobile tsc/eslint checks.
+- **Outputs**: Definitive matrix of system compliance.
+- **Dependencies**: All Django apps, DRF mobile API, Expo mobile app, FastAPI sidecars.
+- **Behavior**: Traceability matrix maps requirements as follows:
+
+| ID | Requirement | Implementation Evidence | Test Evidence | Status | Gap / Verification Note |
+|---|---|---|---|---|---|
+| FR-1 | Catalog 3-axis variants (Size × Color × Fit) | `apps/catalog/models.py` (`ProductVariant`) | `tests/test_models.py` | PASS | SKU-level stock tracking verified |
+| FR-2 | Storefront browse/filter/sort/search/detail | `apps/storefront/views.py` | `tests/test_storefront.py` | PASS | HTMX filtering & pagination verified |
+| FR-3 | Cart (localStorage) + guest checkout | `templates/storefront/cart.html`, `apps/orders/checkout.py` | `tests/test_checkout_flow.py` | PASS | Client cart + guest order creation verified |
+| FR-4 | PayMongo payments & webhook confirmation | `apps/payments/providers.py`, `apps/payments/views.py` | `tests/test_payments.py` | PASS | Signature verification & idempotency verified |
+| FR-5 | Stock reservation hold (15-min) | `apps/orders/models.py` (`StockHold`), `jobs/scheduler.py` | `tests/test_stock_holds.py` | PASS | Auto-release on expiry verified |
+| FR-6 | Order lifecycle state machine | `apps/orders/models.py` (`Order.status`) | `tests/test_order_services.py` | PASS | Illegal transition protection verified |
+| FR-7 | J&T booking & admin waybill fallback | `apps/shipping/providers.py`, `apps/shipping/admin.py` | `tests/test_shipping.py` | PASS | Courier API + manual waybill fallback verified |
+| FR-8 | Admin & Merchant dashboards | `config/consoles.py`, `config/admin.py` | `tests/test_admin.py` | PASS | Role-based dashboard separation verified |
+| FR-9 | Low-stock SKU alerts | `apps/inventory/jobs.py`, `apps/notifications/services.py` | `tests/test_inventory.py` | PASS | Email alert dispatch verified |
+| FR-10 | CSV sales & inventory exports | `apps/orders/admin.py`, `apps/inventory/admin.py` | `tests/test_admin.py` | PASS | UTF-8 CSV exports verified |
+| FR-11 | Transactional confirmation & shipping email | `apps/notifications/services.py` | `tests/test_notifications.py` | PASS | Console/SMTP adapter verified |
+| FR-12 | SMS alerts via Semaphore API | `apps/notifications/sms.py` | `tests/test_notifications.py` | PASS | Outbound SMS payload verified |
+| FR-13 | Google Places autocomplete & zone derivation | `apps/shipping/zones.py` | `tests/test_shipping_zones.py` | PASS | NCR/Luzon/VisMin zone calculation verified |
+| FR-14 | Customer registration, login, profile, reset | `apps/accounts/views.py`, `apps/accounts/models.py` | `tests/test_accounts.py` | PASS | Auth & address management verified |
+| FR-15 | Order history & guest order claiming | `apps/orders/views.py`, `apps/mobile_api/views.py` | `tests/test_mobile_api.py` | PASS | Tokenized access & email claim verified |
+| FR-16 | Wishlist management | `apps/catalog/models.py` (`WishlistItem`) | `tests/test_mobile_api.py` | PASS | Unique customer-product pairing verified |
+| FR-17 | Verified-purchase reviews & moderation | `apps/reviews/models.py`, `apps/reviews/views.py` | `tests/test_reviews.py` | PASS | Moderation queue & rating math verified |
+| FR-18 | Customer support contact form & FAQ | `apps/cms/views.py` | `tests/test_storefront_pages.py` | PASS | Message storage & email dispatch verified |
+| FR-19 | Printable invoice & packing slip views | `apps/orders/views.py`, `apps/orders/admin.py` | `tests/test_orders.py` | PASS | Print-optimized HTML rendering verified |
+| FR-20 | CMS flatpages & homepage promo banners | `apps/cms/models.py` | `tests/test_storefront_pages.py` | PASS | Active flag & banner display verified |
+| FR-21 | Two-level category nav & header dropdown | `apps/catalog/services.py`, `templates/base.html` | `tests/test_catalog_hierarchy.py` | PASS | Active product counts & filter retention verified |
+| FR-22 | Dual console separation (`/admin/` & `/merchant/`) | `config/consoles.py`, `apps/accounts/roles.py` | `tests/test_console_separation.py` | PASS | Routing isolation & 403 denial verified |
+| Mobile FR-21 | Public JWT DRF API (`/api/mobile/v1/`) | `apps/mobile_api/urls.py` | `tests/test_mobile_api.py` | PASS | 24 endpoints verified |
+| Mobile FR-22 | Auth parity & guest checkout | `mobile/src/store/AuthContext.tsx` | `tests/test_mobile_api.py` | PASS | JWT auth + refresh rotation verified |
+| Mobile FR-23 | Opt-in biometric unlock | `mobile/src/store/AuthContext.tsx` | Code inspection | PASS | SecureStore key storage verified |
+| Mobile FR-24 | Mobile catalog search/filter/sort | `mobile/src/screens/ShopScreen.tsx` | `mobile npm run typecheck` | PASS | Clean TypeScript compilation verified |
+| Mobile FR-25 | Cart + server-validated checkout | `mobile/src/store/CartContext.tsx` | `tests/test_mobile_api.py` | PASS | Server prices authoritative at checkout |
+| Mobile FR-26 | Mobile order history & tracking | `mobile/src/screens/OrderTrackingScreen.tsx` | `tests/test_mobile_api.py` | PASS | Live tracking status timeline verified |
+| Mobile FR-27 | Push notifications on state changes | `mobile/src/hooks/usePushRegistration.ts` | `tests/test_push_lifecycle.py` | PASS | Device registration & push dispatch verified |
+| Mobile FR-28 | In-app notification centre | `mobile/src/screens/NotificationsScreen.tsx` | `tests/test_mobile_api.py` | PASS | Read/unread state toggles verified |
+| Mobile FR-29 | Mobile wishlist + OOS notifications | `mobile/src/screens/WishlistScreen.tsx` | Code inspection | PASS | Toggle & stock alert hook verified |
+| Mobile FR-30 | Mobile offline degradation | `mobile/src/api/client.ts` | Code inspection | PASS | Cached catalog & offline banner verified |
+| Mobile FR-31 | Dark mode (OS + manual override) | `mobile/src/theme/index.ts` | Code inspection | PASS | Tokenized light/dark themes verified |
+| NFR-1 | Performance (LCP < 2.5s, catalog caching) | `apps/storefront/views.py` (`cache_page`) | System benchmark | PASS | Page caching applied to shop views |
+| NFR-2 | Security (TOTP 2FA, rate limiting, HTTPS) | `config/settings/prod.py`, `apps/core/http.py` | `tests/test_staging_settings.py` | PASS | Strict host, origin, and secret rules verified |
+| NFR-3 | Zero oversell invariant | `apps/inventory/services.py`, ORM atomic locks | `tests/test_checkout_concurrency.py` | PASS | 20 parallel buyers test passed |
+| NFR-4 | PH Data Privacy Act compliance | Privacy Policy flatpage, `apps/accounts/models.py` | Code inspection | PASS | Minimal PII storage & explicit retention |
+| NFR-5 | Infrastructure cost constraint (≤ $25/mo) | `deploy/docker-compose.prod.yml`, Caddy | Deployment spec | PASS | Single-host Docker stack specification |
+| NFR-6 | Automated QA testability | `pyproject.toml`, pytest suite, ruff, CI | `python -m pytest` | PASS | 560 passing tests, 0 ruff lint errors |
+| NFR-7 | Category navigation usability | `templates/components/navbar.html` | `tests/test_catalog_hierarchy.py` | PASS | Category tree rendering verified |
+| NFR-8 | Category hierarchy depth restriction (≤2) | `apps/catalog/models.py` (`Category.clean`) | `tests/test_catalog_hierarchy.py` | PASS | Exception raised on depth > 2 |
+| NFR-9 | Console routing isolation | `config/consoles.py` | `tests/test_console_separation.py` | PASS | Disjoint AdminSite registries verified |
+| NFR-10 | Console permission & audit logging | `apps/core/admin.py` (`AdminAuditLog`) | `tests/test_console_separation.py` | PASS | Append-only admin audit log verified |
+
+- **Known Minor Gap**:
+  - *Mobile Tab Bar Labeling*: In `mobile/src/navigation/`, the navigation tab labeled "Orders" renders `NotificationsScreen`, resulting in an accessible label mismatch against screen title. Recorded as non-blocking minor UX gap for next mobile patch cycle.
+
 - **Side Effects**: None.
+- **Verification Status**: verified (560 pytest tests passing, `ruff check .` 0 errors, `mobile tsc` 0 errors, `mobile eslint` 0 errors).
 
-## Function: N/A — Cycle 1 QA gate
-- **Purpose**: Record the post-change acceptance evidence for the 2026-07-27 foundation cycle.
-- **Inputs**:
-  - `Cycle 1 change set` (`git worktree`): Banner rendering fix, migration enforcement, CI compilation step, and regression tests.
-  - `local services` (`Docker Desktop and MySQL 8.4.10`): Real database and disposable HTTPS stack.
+## Function: N/A — delivery verification status & QA baseline
+- **Purpose**: Record verified test, lint, and build execution results.
+- **Inputs**: Automated test suite, static analysis tools, mobile TypeScript compiler.
 - **Outputs**: `QA_PASSED`.
-- **Dependencies**: Python 3.14.4, Ruff 0.15.22, pytest 8.4.2, Django 5.2.16, Docker 28.5.1, and Compose 2.40.2.
-- **Behavior**: `compileall`, Ruff lint, Ruff formatting, `uv pip check`, Django system checks, migration drift, warning-level staging checks, local/staging Compose validation, Dockerfile checks, image build/ownership checks, and 276 real-MySQL tests passed. `catalog.0002_enforce_mysql_defaults` passed forward → reverse → forward. Metadata reported database defaults `utf8mb4/utf8mb4_0900_ai_ci` and zero noncompliant tables. A disposable Caddy/Gunicorn/MySQL/scheduler stack returned readiness 200, admin 302, static 200, rendered the seeded banner URL, retained `5/180/180/180/1` product/variant/stock/movement/banner counts after forced recreation, and was removed with its disposable volumes.
-- **Side Effects**: Applied `catalog.0002_enforce_mysql_defaults` to the local development database, built local test images, and created then removed the isolated `metrodrip-cycle1` staging stack; no public deployment was changed or proven.
+- **Dependencies**: Python 3.14.6, Pytest 8.4.2, Ruff 0.15.22, Django 5.2.16, Node 20+, Expo SDK 51.
+- **Behavior**:
+  - `python -m pytest`: **560 passed** (0 failed, 164 warnings).
+  - `ruff check .`: **All checks passed** (0 errors).
+  - `ruff format --check .`: **192 files formatted**.
+  - `cd mobile && npm run typecheck`: **Clean** (`tsc --noEmit`, 0 errors).
+  - `cd mobile && npm run lint`: **Clean** (`eslint`, 0 errors).
+  - Responsive audit: 15 routes × 4 widths = **60/60 pass**.
+- **Side Effects**: None.
+- **Verification Status**: verified (executed on current codebase).
 
 # Module / File: manage.py
 

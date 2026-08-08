@@ -27,7 +27,7 @@ This guide sets up the current Django modular monolith for local development on 
 
 > `uv.lock` currently contains only the Python requirement metadata; it is not a resolved package lock. `requirements.txt` uses compatible-release ranges, so a new installation may select newer compatible patch/minor versions. Run the full QA gate after a fresh resolve.
 
-Node.js and npm are not required: storefront JavaScript is served directly, and HTMX/Alpine are loaded from pinned CDN URLs.
+Node.js 20+ and npm are required for the React Native / Expo customer mobile app under `mobile/`. Storefront web JavaScript is server-rendered with HTMX and Alpine.js loaded from pinned CDN URLs.
 
 ## 2. Local-development architecture
 
