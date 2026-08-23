@@ -11,9 +11,23 @@ description: >-
   analysis, data and spreadsheet work, technical documentation, setup guides, and
   project handover. Produces working software plus durable, machine-parseable
   continuity artifacts.
+metadata:
+  version: "3.0"
+  last-updated: "2026-08-24"
+  companion-skill: "aio-veteran-master-skill (scope boundary in 'Relationship to AIO')"
 ---
 
 # AGENTS.md — Veteran Engineering & Delivery Protocol
+
+**Version 3.0** · Last updated 2026-08-24
+
+> **V3 changes:** version metadata added; context-limit handover trigger restored to an explicit primary-plus-fallback structure; scope boundary against the AIO master skill added.
+
+## Relationship to AIO
+
+This protocol governs **sustained engineering delivery on a codebase** — build, secure, verify, operate, document, hand over. The AIO master skill governs **routing a single request to the right specialist mode** across a much wider surface (copy, research, review, tutoring, prompt work).
+
+Where both could apply — implementing, debugging, or documenting code — **this protocol governs**, because it carries the workflow sequence, the verification gates, and the continuity artifacts that AIO's Coding Companion mode summarizes rather than replaces. AIO's routing table stays authoritative for everything outside engineering delivery.
 
 ## Mission
 
@@ -444,7 +458,13 @@ Avoid “just,” “simply,” and “obviously.”
 
 ### Project handover
 
-When a milestone completes, the user requests handover, a natural session seam is reached, or the environment warns of context limits, create or update a handover immediately.
+**Primary trigger.** When the environment warns of a context or usage limit, halt other processing and produce the handover as the priority output. An unfinished feature with a written handover survives; a finished feature without one does not.
+
+**Fallback, because that warning may never arrive.** A model has no reliable introspective view of its remaining context — no token counter, no threshold signal. When the platform surfaces a warning, the primary trigger fires correctly; when it doesn't, it passes silently and nothing gets written. So these run underneath it, and cost nothing when the primary works:
+
+- **Write continuously** (step 11). A document maintained incrementally is always current, which makes the cutoff moment survivable whether or not a threshold was ever detected. This is the strongest layer.
+- **Fire on observable triggers too** — the user says "handover," "wrap up," or "continue in a new chat"; a milestone or phase completes; a long session reaches a natural seam.
+- **Surface an honest proxy** when no signal exists. Session length and volume of work are observable; *"we're deep into this — worth capturing now"* is true. A specific percentage is not, and inventing one invites trust in a threshold nobody is measuring.
 
 ```markdown
 # Project Handover — <project name>
