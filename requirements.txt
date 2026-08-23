@@ -32,6 +32,13 @@ uvicorn
 sqlalchemy
 aiomysql
 
+# Back-office 2FA (ADR-P3-029). django-otp supplies the TOTP device model,
+# verification, and its admin; qrcode renders the enrollment QR that the device
+# admin links to — without it that page errors, which is the one moment an
+# operator actually needs it.
+django-otp~=1.7
+qrcode~=8.0
+
 # Public mobile API (Epic H / FR-21): DRF + JWT auth with rotation/blacklist.
 djangorestframework~=3.16
 djangorestframework-simplejwt~=5.5

@@ -80,6 +80,29 @@ _WRITE_POLICY = CallPolicy(
     breaker_key="inventory.write",
 )
 
+# The commit that runs *inside the payment transaction* (ADR-P3-028).
+#
+# `_WRITE_POLICY` costs up to 3 × (1s + 5s) ≈ 18s of wall clock, and on this one
+# path every second of it is spent holding a row lock on `Payment` — ADR-P3-018
+# already names that shape ("network latency inside a row lock is how a slow
+# sidecar becomes a stalled database") but the commit path was still using it.
+#
+# Retrying here buys nothing, which is what makes cutting it safe rather than a
+# trade: `consume_order_holds` writes an outbox row in the same transaction
+# before it ever calls, so a failure is already durable intent. The drainer then
+# retries with the full budget *outside* any transaction, which is exactly where
+# ADR-P3-018 says retries belong. One tight attempt, then let the outbox do its
+# job: worst case falls from ~18s to ~3s, and the only thing lost on a timeout is
+# the immediacy of the common case, never the commit itself.
+_IN_TXN_WRITE_POLICY = CallPolicy(
+    connect_timeout=1.0,
+    read_timeout=2.0,
+    attempts=1,
+    # Deliberately the same breaker as _WRITE_POLICY: a ledger that is failing
+    # should trip once for every caller, not keep a separate tally per path.
+    breaker_key="inventory.write",
+)
+
 
 def _base_url() -> str:
     """Resolve from settings, not module-level os.environ.
@@ -196,13 +219,19 @@ class ServiceInventoryProvider(InventoryProvider):
             for row in parsed.reservations
         ]
 
-    def commit_holds(self, *, checkout_id, order_no="", order_id=None):
-        """Turn the group's holds into sales. Idempotent on the service side."""
+    def commit_holds(self, *, checkout_id, order_no="", order_id=None, inside_transaction=False):
+        """Turn the group's holds into sales. Idempotent on the service side.
+
+        `inside_transaction` selects the tight single-attempt budget described at
+        `_IN_TXN_WRITE_POLICY`. Callers holding a database transaction open must
+        pass it; the outbox drainer and the reconciliation sweep must not, since
+        they are the retry path and run with no transaction held.
+        """
         try:
             data = call(
                 "POST",
                 f"{_base_url()}{ROUTE_COMMIT.format(checkout_id=checkout_id)}",
-                policy=_WRITE_POLICY,
+                policy=_IN_TXN_WRITE_POLICY if inside_transaction else _WRITE_POLICY,
                 json=CommitRequest(order_no=order_no or "").model_dump(),
                 service_token=_service_token(),
                 token_setting_name="INVENTORY_SERVICE_TOKEN",

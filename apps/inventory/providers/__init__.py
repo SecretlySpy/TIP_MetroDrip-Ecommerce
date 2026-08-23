@@ -27,8 +27,13 @@ class InventoryProvider(abc.ABC):
         """
 
     @abc.abstractmethod
-    def commit_holds(self, *, checkout_id, order_no="", order_id=None):
-        """Convert a checkout group's ACTIVE holds into sales. Returns a count."""
+    def commit_holds(self, *, checkout_id, order_no="", order_id=None, inside_transaction=False):
+        """Convert a checkout group's ACTIVE holds into sales. Returns a count.
+
+        `inside_transaction` warns the provider that the caller is holding a
+        database transaction open, so any remote work must run on a tight,
+        non-retrying budget (ADR-P3-028). In-process providers ignore it.
+        """
 
     @abc.abstractmethod
     def release_holds(self, *, checkout_id):

@@ -32,3 +32,9 @@ DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
 testpaths = ["tests", "apps"]
 addopts = "-ra"
+markers = [
+    # Wall-clock assertions against a deliberately unresponsive service. These
+    # cannot be made fast without measuring something other than the timeout
+    # they exist to pin (ADR-P3-028). Deselect with: -m "not slow"
+    "slow: takes seconds by design because it measures a timeout budget",
+]

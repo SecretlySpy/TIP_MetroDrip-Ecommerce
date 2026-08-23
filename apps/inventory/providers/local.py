@@ -187,7 +187,7 @@ class LocalInventoryProvider(InventoryProvider):
                 )
             return created
 
-    def commit_holds(self, *, checkout_id, order_no="", order_id=None):
+    def commit_holds(self, *, checkout_id, order_no="", order_id=None, inside_transaction=False):
         """Convert every ACTIVE hold in a checkout group into a sale.
 
         Returns `{variant_id: qty}` for what was actually committed. The paid

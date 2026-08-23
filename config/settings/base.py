@@ -42,6 +42,12 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.sites",
     "django.contrib.flatpages",
+    # TOTP two-factor for the back-office consoles (ADR-P3-029). `django_otp`
+    # must follow `django.contrib.auth`: its middleware decorates the user that
+    # AuthenticationMiddleware resolved.
+    "django_otp",
+    "django_otp.plugins.otp_totp",
+    "django_otp.plugins.otp_static",
     # MetroDrip apps (handover §8) — strict build order, one domain per app.
     "apps.catalog",
     "apps.inventory",
@@ -70,6 +76,9 @@ MIDDLEWARE = [
     "apps.mobile_api.middleware.MobileClientVersionMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Adds `request.user.is_verified()`. Must sit after AuthenticationMiddleware,
+    # which is what supplies the user it decorates (ADR-P3-029).
+    "django_otp.middleware.OTPMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -182,6 +191,44 @@ CURRENCY_MINOR_UNITS = 2
 # The temporary M1 seed browser must never leak into development/production by
 # accident. Only staging.py can opt in through an explicit environment flag.
 STAGING_SEED_PREVIEW_ENABLED = False
+
+# --- Back-office console login hardening (ADR-P3-029) ---
+# DRF's throttles are applied per view class and so cover /api/mobile/v1/ only.
+# These protect /admin/ and /merchant/, which hold staff access to every order
+# and customer record and previously had no brute-force control at all.
+#
+# Failures are counted, not attempts, and a success clears both buckets — so a
+# staff member who mistypes a password twice never walks toward a lockout.
+CONSOLE_LOGIN_WINDOW_SECONDS = 15 * 60
+# Per username: the load-bearing limit. Unaffected by proxies or address
+# rotation, and only ever inconveniences the account actually under attack.
+CONSOLE_LOGIN_MAX_ATTEMPTS_PER_USER = 5
+# Per client address: looser on purpose. Staff share office NAT, so a tight
+# per-IP limit punishes a whole team for one person's typo.
+CONSOLE_LOGIN_MAX_ATTEMPTS_PER_IP = 20
+# How many proxies of ours sit in front of Django. 0 means read REMOTE_ADDR and
+# ignore X-Forwarded-For, which is the only safe default: the header is
+# client-supplied, so trusting it unconditionally would let an attacker mint a
+# fresh bucket per request and make the per-IP limit worse than none. Set this
+# to 1 wherever Caddy terminates traffic (see deploy/ and ADR-P3-029).
+CONSOLE_LOGIN_TRUSTED_PROXY_DEPTH = 0
+
+# Blanket 2FA for the consoles. Users with a confirmed TOTP device are *always*
+# required to present a token regardless of this flag — that is what makes
+# enrollment meaningful. This turns the requirement on for everyone, including
+# accounts that never enrolled, so it stays off until they have: flipping it
+# first would refuse every account including the superuser needed to enroll
+# anyone. `python manage.py check_console_otp` reports readiness.
+CONSOLE_REQUIRE_OTP = os.environ.get("CONSOLE_REQUIRE_OTP", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+# Shown in the TOTP enrollment QR code, so it is what staff see naming the
+# account in their authenticator app.
+OTP_TOTP_ISSUER = "MetroDrip"
 
 # --- Inventory reservations (FR-5) and low-stock alerts (FR-9) ---
 # Checkout holds stock for 15 minutes; the sweep job releases abandoned holds so

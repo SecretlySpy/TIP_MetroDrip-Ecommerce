@@ -1183,7 +1183,7 @@
   - `queryset` (`QuerySet[Order]`): Selected orders.
 - **Outputs**: `None`; admin result messages.
 - **Dependencies**: Order transition API, Reservation, and `release_reservation`.
-- **Behavior**: Transitions each eligible order then releases every active order-linked reservation.
+- **Behavior**: Per order, inside one `transaction.atomic()` block (ADR-P3-027): transitions to CANCELLED then releases every active hold by `checkout_id`. Non-transition failures are caught per order so one bad row cannot abort the selection; release is the safe direction and the TTL sweep is its backstop.
 - **Side Effects**: Updates Order, Reservation, and StockRecord rows and writes admin messages.
 
 ## Function: OrderAdmin.mark_as_refunded(self, request, queryset)
@@ -1194,7 +1194,9 @@
   - `queryset` (`QuerySet[Order]`): Selected orders.
 - **Outputs**: `None`; admin result messages.
 - **Dependencies**: Order transition API, order items, `adjust_stock`, and MovementReason.RETURN.
-- **Behavior**: Transitions the order first, then restores each line with a positive return movement; illegal transitions are reported. The multi-line orchestration is not yet one encompassing transaction.
+- **Behavior**: Per order, inside one `transaction.atomic()` block: transitions to REFUNDED and restores every line with a positive return movement. Illegal transitions are reported per order; any other failure is caught, logged, and reported without aborting the rest of the selection.
+- **Transaction boundary**: one block **per order**, not per queryset (ADR-P3-027) — a refund is a complete unit of work, so order B failing must not un-refund order A. The earlier caveat here ("the multi-line orchestration is not yet one encompassing transaction") is resolved for `INVENTORY_PROVIDER=local`.
+- **Known limit under `INVENTORY_PROVIDER=service`**: `adjust_stock` is then an HTTP call to a ledger writing on its own connection, so the block cannot roll its writes back. A mid-loop failure rolls back the order transition while the ledger keeps the lines already applied, and a retry re-applies them because a signed delta is not idempotent — an oversell direction. This makes the refund path an unmet precondition for selecting `service`; closing it needs an idempotency-keyed restore on the ledger contract, not another transaction.
 - **Side Effects**: Updates Order/StockRecord rows, inserts StockMovement rows, and writes messages.
 
 # Module / File: apps/payments/services.py
@@ -2457,3 +2459,67 @@ All three sidecars (notifications, fulfillment, inventory) are fully wired:
 - **Security Notes**: Forensic audit CLEAN. All Hard Invariants 1–8 verified. Sidecar auth fail-closed (HMAC compare_digest, 503 on unconfigured).
 - **Verification Status**: tested (560/560 pytest PASS, 0 ruff errors, 40/40 responsive, mobile tsc/eslint clean, all verified by direct execution 2026-08-09).
 
+
+# Module / File: apps/accounts/login_throttle.py
+
+## Purpose
+Failure-counting rate limits for the two back-office console logins (`/admin/`, `/merchant/`). DRF's throttles are applied per view class and so cover `/api/mobile/v1/` only; this covers the Django admin surfaces they never reached (ADR-P3-029). It owns counting and lockout decisions only — it does not authenticate, and it is called by `config.consoles.ConsoleAuthenticationForm`.
+
+## Public Interfaces
+
+### Function: `client_address(request)`
+- **Purpose**: Resolve the address a login failure should be attributed to.
+- **Inputs**: `request` (`HttpRequest`): the login request.
+- **Outputs**: `str` — an address, or `""` when none can be determined.
+- **Errors**: None; returns `""` rather than raising.
+- **Dependencies**: `settings.CONSOLE_LOGIN_TRUSTED_PROXY_DEPTH`.
+- **Behavior**: At depth `0` (default) returns `REMOTE_ADDR` and ignores `X-Forwarded-For` entirely. Above `0`, returns the Nth-from-right entry of `X-Forwarded-For`, falling back to `REMOTE_ADDR` when fewer hops are present than configured.
+- **Side Effects**: None.
+- **Security & Privacy Notes**: `X-Forwarded-For` is client-supplied. Trusting it by default would let an attacker mint a fresh bucket per request, making the per-IP limit worse than none because it would read as a control while enforcing nothing. Counting from the right is what makes the value unforgeable: each trusted proxy appends the address it actually saw. An empty return means "skip the per-IP bucket", never "share one bucket", which would otherwise lock out every anonymous request at once.
+- **Verification Status**: executed — `tests/test_console_login_security.py::test_x_forwarded_for_is_ignored_unless_a_proxy_depth_is_configured` asserts both depths.
+
+### Function: `is_locked_out(*, username, request)`
+- **Purpose**: Decide whether to refuse a login before checking credentials.
+- **Inputs**: `username` (`str`), `request` (`HttpRequest | None`).
+- **Outputs**: `bool`.
+- **Dependencies**: `django.core.cache`, `CONSOLE_LOGIN_MAX_ATTEMPTS_PER_USER`, `CONSOLE_LOGIN_MAX_ATTEMPTS_PER_IP`, `CONSOLE_LOGIN_WINDOW_SECONDS`.
+- **Behavior**: Returns `True` if either the per-username or per-address counter has reached its limit. A window of `<= 0` disables the control.
+- **Side Effects**: Cache reads only.
+- **Security & Privacy Notes**: Called *before* `authenticate()`, so a locked-out guess costs a cache read rather than a password hash and leaves no timing difference between a real and a nonexistent account.
+- **Performance / DSA Notes**: Two cache reads, O(1). Fixed window, not sliding — chosen so a lockout expires a bounded time after the first failure instead of sliding forward forever under a slow trickle of guesses.
+- **Verification Status**: executed — lockout, cross-account probing, and clear-on-success are all asserted.
+
+### Function: `record_failure(*, username, request)`
+- **Purpose**: Count one failed console login against both buckets.
+- **Behavior**: `cache.add` then `cache.incr`, so concurrent failures cannot both read *n* and both write *n+1*. `incr` deliberately does not extend the window.
+- **Security & Privacy Notes**: The attempted username is **never logged**. A failed login's username is attacker-controlled input, and it is also where a password lands when someone types one field early — logging it verbatim would write both into a retained, widely-readable log.
+- **Verification Status**: executed.
+
+### Function: `clear(*, username, request)`
+- **Purpose**: Forget both buckets after a successful login, so typo-then-correct traffic never accumulates toward a lockout.
+- **Verification Status**: executed — `test_a_successful_login_clears_the_counter`.
+
+## Data Flow
+Login POST → `ConsoleAuthenticationForm.clean` → `is_locked_out` (refuse, or continue) → `authenticate` → on failure `record_failure`, on success `clear`. State lives only in `CACHES["default"]`; nothing is persisted to the database.
+
+## Known Risks / Follow-ups
+- **`CACHES["default"]` is unconfigured and therefore per-process LocMemCache.** Under multiple Gunicorn workers each process keeps its own counters, so the effective limit is roughly the configured value × worker count. It still bounds the attack, but not at the stated number. Pointing `CACHES` at the Redis already present in Compose is the fix; open, and flagged in README.md and ADR-P3-029.
+- Usernames are hashed into cache keys (SHA-256, truncated) so personal data stays out of keys that are readable by anyone with cache access and outlive the request.
+
+# Module / File: apps/accounts/management/commands/check_console_otp.py
+
+## Purpose
+Report which active staff accounts have no confirmed TOTP device — that is, who would be locked out by turning `CONSOLE_REQUIRE_OTP` on. Exists because that flag refuses unenrolled accounts including the superuser needed to enroll anyone, so flipping it blind is self-inflicted lockout (ADR-P3-029).
+
+## Public Interfaces
+### Command: `python manage.py check_console_otp [--strict]`
+- **Inputs**: `--strict` (flag): exit non-zero if any active staff account is unenrolled, for use as a CI or deploy gate.
+- **Outputs**: counts of enrolled/unenrolled accounts on stdout, then each unenrolled account's email and role.
+- **Dependencies**: `django_otp.devices_for_user`, the user model.
+- **Behavior**: Iterates active staff, partitions by whether a confirmed device exists, prints the summary and next step.
+- **Side Effects**: Reads only; writes nothing.
+- **Security & Privacy Notes**: Prints staff email addresses to stdout. Intended for an operator terminal or a CI log the same people already read — not for a shared or public log.
+- **Verification Status**: executed (2026-08-24) — run against the dev database: reported 9 active staff, 0 with a confirmed device, and `--strict` exited 1. That result is also the evidence for ADR-P3-029's default-off decision: turning `CONSOLE_REQUIRE_OTP` on at that moment would have refused every account, including all three superusers. No automated test asserts the output text.
+
+## Known Risks / Follow-ups
+- Reports only *active* staff. A deactivated account cannot sign in anyway, but a reactivated one is unenrolled and will be refused once the flag is on.

@@ -26,12 +26,17 @@ merchant account with no group still sees an empty console (NFR-10, deny by
 default). `sync_console_roles` grants the matching group permissions.
 """
 
+from django import forms
+from django.conf import settings
 from django.contrib import admin
 from django.contrib.admin.forms import AdminAuthenticationForm
 from django.core.exceptions import ValidationError
 from django.shortcuts import render
 from django.urls import NoReverseMatch, reverse
+from django_otp import devices_for_user
+from django_otp.forms import OTPAuthenticationFormMixin
 
+from apps.accounts import login_throttle
 from apps.accounts.roles import StaffRole
 
 #: Console role -> URL instance namespace, used to point a signed-in user at the
@@ -42,8 +47,44 @@ CONSOLE_NAMESPACE = {
 }
 
 
-class ConsoleAuthenticationForm(AdminAuthenticationForm):
-    """Admin login form that also enforces the console's role.
+def _has_confirmed_device(user):
+    """Whether `user` has at least one confirmed OTP device.
+
+    `devices_for_user` yields a generator across every installed plugin, not a
+    queryset, so this short-circuits on the first hit rather than materialising
+    a list of every device the user owns.
+    """
+    return any(True for _ in devices_for_user(user, confirmed=True))
+
+
+def otp_required_for(user):
+    """Whether `user` must present a TOTP token to sign in (ADR-P3-029).
+
+    Two independent triggers, and the first is the one that matters most:
+
+    1. **The user has a confirmed device.** Enrolling is then irreversible from
+       the attacker's side — a stolen password alone stops working the moment a
+       device exists. Without this, 2FA would be advisory: anyone holding the
+       password could simply decline to send a token.
+    2. **`CONSOLE_REQUIRE_OTP` is on.** Blanket enforcement for the whole
+       console, which is the launch posture once every staff account is
+       enrolled.
+
+    The flag defaults to off deliberately. Defaulting it on would mean the first
+    deployment locks out every account that exists, including the superuser
+    needed to enroll anyone — the control would have to be disabled to recover
+    from it, which is a worse outcome than enabling it on a schedule. Enrol
+    first, then flip it; `python manage.py check_console_otp` reports readiness.
+    """
+    if user is None:
+        return False
+    if _has_confirmed_device(user):
+        return True
+    return bool(getattr(settings, "CONSOLE_REQUIRE_OTP", False))
+
+
+class ConsoleAuthenticationForm(OTPAuthenticationFormMixin, AdminAuthenticationForm):
+    """Admin login form that enforces the console's role, 2FA, and rate limits.
 
     Without this, `/admin/login/` would accept a merchant's credentials (they
     are `is_staff`, which is all `AdminAuthenticationForm` checks), redirect to
@@ -52,8 +93,69 @@ class ConsoleAuthenticationForm(AdminAuthenticationForm):
     turns that into one clear error message.
     """
 
+    otp_device = forms.CharField(required=False, widget=forms.Select)
+    otp_token = forms.CharField(
+        required=False,
+        label="Authentication code",
+        widget=forms.TextInput(attrs={"autocomplete": "one-time-code", "inputmode": "numeric"}),
+    )
+    otp_challenge = forms.CharField(required=False)
+
     console_role = None
     console_label = "this console"
+
+    def clean(self):
+        """Authenticate, but refuse first if this login is locked out (ADR-P3-029).
+
+        The lockout check runs *before* `super().clean()` so a locked-out
+        attempt never reaches `authenticate()` — no password hash computed, no
+        database read, and no timing difference between a real and a nonexistent
+        account to measure.
+
+        The error is deliberately the same shape as a wrong password. Saying
+        "this account is locked" would confirm the username exists, turning the
+        control into an account-enumeration oracle.
+        """
+        username = self.cleaned_data.get("username") or self.data.get("username") or ""
+
+        if login_throttle.is_locked_out(username=username, request=self.request):
+            raise ValidationError(
+                "Too many failed sign-in attempts. Please try again later.",
+                code="rate_limited",
+            )
+
+        try:
+            cleaned = super().clean()
+            # Second factor, after the password is known good. Running it only
+            # for users who owe one keeps unenrolled staff working while making
+            # enrollment a one-way door: once a device exists, the password on
+            # its own is no longer a way in (ADR-P3-029).
+            user = self.get_user()
+            if otp_required_for(user):
+                if not _has_confirmed_device(user):
+                    # CONSOLE_REQUIRE_OTP is on and this account never enrolled.
+                    # Refusing is the point of the flag, so say so plainly —
+                    # this message is only ever shown after a correct password,
+                    # so it reveals nothing to someone who does not have one.
+                    raise ValidationError(
+                        "This console requires two-factor authentication and no "
+                        "device is enrolled on this account. Ask an administrator "
+                        "to enroll a TOTP device for you.",
+                        code="otp_enrollment_required",
+                    )
+                self.clean_otp(user)
+        except ValidationError:
+            # Covers a wrong password, a wrong TOTP token, and
+            # `confirm_login_allowed` refusals alike: all are failed attempts to
+            # get into this console, and an attacker who could probe one for
+            # free would just use that one. In particular, counting bad tokens
+            # here is what stops an attacker with a stolen password from
+            # brute-forcing a six-digit code, which is only a million guesses.
+            login_throttle.record_failure(username=username, request=self.request)
+            raise
+
+        login_throttle.clear(username=username, request=self.request)
+        return cleaned
 
     def confirm_login_allowed(self, user):
         super().confirm_login_allowed(user)  # is_active, then is_staff
@@ -94,11 +196,24 @@ class ConsoleSite(admin.AdminSite):
         console's role. Anonymous users fail on `is_active`, so the `role` lookup
         is never reached for them — `getattr` guards it anyway, because
         `AnonymousUser` has no such attribute.
+
+        The OTP check lives here rather than only in the login form because a
+        session can outlive the state the form saw (ADR-P3-029): a user who was
+        signed in *before* a device was enrolled for them would otherwise keep
+        an unverified session for its full lifetime, which is precisely the
+        window an enrollment is meant to close.
         """
         user = request.user
         if not (user.is_active and user.is_staff):
             return False
-        return bool(user.is_superuser) or getattr(user, "role", None) == self.console_role
+        if not (bool(user.is_superuser) or getattr(user, "role", None) == self.console_role):
+            return False
+        if otp_required_for(user):
+            # `is_verified` is added by OTPMiddleware; `getattr` keeps the gate
+            # closed rather than open if the middleware is ever removed.
+            verify = getattr(user, "is_verified", None)
+            return bool(verify and verify())
+        return True
 
     def each_context(self, request):
         """Add the console identity every admin template can branch on."""

@@ -38,9 +38,19 @@ def reserve_lines(*, checkout_id, lines, session_key="", ttl_minutes=None):
     )
 
 
-def commit_holds(*, checkout_id, order_no="", order_id=None):
-    """Turn a checkout group's holds into sales; safe to replay."""
-    return _provider().commit_holds(checkout_id=checkout_id, order_no=order_no, order_id=order_id)
+def commit_holds(*, checkout_id, order_no="", order_id=None, inside_transaction=False):
+    """Turn a checkout group's holds into sales; safe to replay.
+
+    Pass `inside_transaction=True` from any caller holding a database
+    transaction open, so a remote ledger gets a tight non-retrying budget
+    instead of putting up to 18s of retries inside a row lock (ADR-P3-028).
+    """
+    return _provider().commit_holds(
+        checkout_id=checkout_id,
+        order_no=order_no,
+        order_id=order_id,
+        inside_transaction=inside_transaction,
+    )
 
 
 def release_holds(*, checkout_id):

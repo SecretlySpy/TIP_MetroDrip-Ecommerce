@@ -32,7 +32,7 @@ The first two became genuinely cut-over capable only recently: `prod.py` previou
 
 Remaining strangler steps: **3** stock ownership is **complete and evidenced** — the ledger implements the full contract, 30 parity assertions cover both providers, and the M2 no-oversell gate passes with 20 concurrent buyers reserving across a real socket to a real ledger process. **4** schema split is designed and deliberately not executed (ADR-P3-013). **5** checkout saga stays gated (ADR-P3-007).
 
-`INVENTORY_PROVIDER=service` is now *permitted* in deployed environments; the **default is still `local`**. The sidecars ship behind the `services` Compose profile in staging too (`docker compose --profile services up -d --build`), so a default deploy runs none of them. Widening the allowlist does not flip a default — it lets an operator open the seam deliberately. One residual hazard is documented rather than hidden: the stock commit is a synchronous HTTP call made inside the payment transaction. See `DECISIONS.md` ADR-P3-025.
+`INVENTORY_PROVIDER=service` is now *permitted* in deployed environments; the **default is still `local`**. The sidecars ship behind the `services` Compose profile in staging too (`docker compose --profile services up -d --build`), so a default deploy runs none of them. Widening the allowlist does not flip a default — it lets an operator open the seam deliberately. The stock commit is still a synchronous HTTP call made inside the payment transaction, but it no longer carries the full retry budget: it runs on a single tight attempt (measured 2.0s worst case, down from 15.1s) because the transactional outbox already guarantees delivery, and the drainer retries outside the transaction. See `DECISIONS.md` ADR-P3-025 and ADR-P3-028.
 
 ## Local development
 
@@ -58,6 +58,51 @@ python manage.py seed_demo
 # 5. API (bind 0.0.0.0 so the Android emulator can reach it)
 PAYMENT_PROVIDER=simulated python manage.py runserver 0.0.0.0:8080
 ```
+
+### Which seed command is canonical
+
+**`seed_demo` is the only canonical catalog seed** (ADR-A-012): 5 curated products with real copy and imagery. Anything customer- or stakeholder-facing should be seeded from it alone.
+
+The other scripts are **development fixtures, not alternatives**, and they are not equivalent:
+
+| Script | Produces | Use it for |
+|---|---|---|
+| `manage.py seed_demo` | 5 curated products | **Canonical.** Demos, stakeholder review, screenshots |
+| `manage.py seed_mock_catalog` | bulk mock catalog | Pagination and filter testing |
+| `seed_assignment.py`, `seed_more.py`, `seed_200.py`, `seed_collections.py` | ~150+ placeholder-copy products | Local pagination/perf work only |
+
+A dev database that has had the padded scripts run against it holds **far more** than the canonical five — the count depends entirely on which scripts were run and how often, and they stack. (Measured on one working dev database on 2026-08-24: **1,003 products**. Check yours rather than assuming a number: `python manage.py shell -c "from apps.catalog.models import Product; print(Product.objects.count())"`.)
+
+That is useful for exercising pagination and filters and harmless locally — but it is **not** what the demo is supposed to look like. To reset a demo-facing environment, truncate the catalog and run `seed_demo` alone.
+
+### Back-office 2FA and login limits
+
+`/admin/` and `/merchant/` are rate-limited and support TOTP two-factor (ADR-P3-029).
+
+```bash
+# Who could still sign in with only a password?
+python manage.py check_console_otp            # --strict exits non-zero if any account is unenrolled
+```
+
+Enroll a device at `/admin/otp_totp/totpdevice/add/`, scan the QR code with any
+authenticator app, then confirm it. **Once an account has a confirmed device, its
+password alone stops working** — there is no opt-out path.
+
+| Setting | Default | Notes |
+|---|---|---|
+| `CONSOLE_LOGIN_MAX_ATTEMPTS_PER_USER` | `5` | Per 15-minute window. The load-bearing limit |
+| `CONSOLE_LOGIN_MAX_ATTEMPTS_PER_IP` | `20` | Looser on purpose — staff share office NAT |
+| `CONSOLE_LOGIN_TRUSTED_PROXY_DEPTH` | `0` | `0` reads `REMOTE_ADDR` and ignores `X-Forwarded-For`. **Set to `1` behind Caddy**, or per-IP limiting is measuring the proxy |
+| `CONSOLE_REQUIRE_OTP` | off | Requires 2FA of *every* account, enrolled or not |
+
+> **Enrol before enabling `CONSOLE_REQUIRE_OTP`.** It refuses any account without a
+> confirmed device — including the superuser needed to enroll others. Run
+> `check_console_otp` first; it lists exactly who would be locked out.
+
+> **Rate-limit counters live in `CACHES["default"]`,** which is unconfigured and
+> therefore per-process. Under multiple Gunicorn workers the effective limit is
+> roughly the configured value × worker count. Point `CACHES` at the Redis already
+> in Compose before treating the numbers as exact.
 
 Optional sidecars (not required for normal dev — defaults are in-process):
 

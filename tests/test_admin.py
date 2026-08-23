@@ -183,3 +183,147 @@ class TestVariantMatrixGenerator:
         total = product.variants.count()
         assert total == 18  # 6 × 1 ("Default") × 3
         assert product.variants.filter(color="Default").exists()
+
+
+# ---------------------------------------------------------------------------
+# Refund / cancel atomicity (ADR-P3-027)
+# ---------------------------------------------------------------------------
+
+
+@patch("django.contrib.admin.ModelAdmin.message_user")
+class TestRefundAtomicity:
+    """A refund that fails mid-loop must leave the order and its stock untouched.
+
+    The action previously transitioned the order first and then restored each
+    line in a bare loop, so a failure on line 2 of 3 committed the REFUNDED
+    transition and part of the restock. Both assertions below fail against that
+    version, which is what makes them a regression test rather than a
+    restatement of the implementation.
+    """
+
+    @staticmethod
+    def _order_with_lines(n_lines, tag="a"):
+        """A PAID order with `n_lines` distinct single-unit variants.
+
+        `tag` namespaces every unique key so one test can build several orders.
+        """
+        from apps.accounts.models import Customer
+        from apps.catalog.models import Category, Fit, Product, ProductVariant, Size
+        from apps.inventory.models import StockRecord
+        from apps.orders.models import Order, OrderItem, OrderStatus
+
+        category = Category.objects.create(name=f"Refund {tag}", slug=f"refund-cat-{tag}")
+        product = Product.objects.create(
+            name=f"Refund Product {tag}",
+            slug=f"refund-product-{tag}",
+            category=category,
+            base_price=100_00,
+        )
+        customer = Customer.objects.create_user(
+            email=f"refund-buyer-{tag}@test.local", password="testpass123", name="Buyer"
+        )
+        order = Order.objects.create(
+            order_no=f"MD-2026-9{ord(tag) % 10}{n_lines:03d}",
+            customer=customer,
+            subtotal=100_00 * n_lines,
+            shipping_fee=0,
+            total=100_00 * n_lines,
+            shipping_address={"name": "Buyer", "email": "refund-buyer@test.local"},
+        )
+        # Invariant 5: orders are born PENDING and only ever move along a legal
+        # edge, so PAID has to be reached rather than assigned.
+        order.transition_to(OrderStatus.PAID)
+        variants = []
+        for index in range(n_lines):
+            variant = ProductVariant.objects.create(
+                product=product,
+                sku=f"MD-REF-{tag}-{index:03d}",
+                size=Size.M,
+                color=f"Color{tag}{index}",
+                fit=Fit.REGULAR,
+            )
+            StockRecord.objects.create(variant=variant, qty_on_hand=0, qty_reserved=0)
+            OrderItem.objects.create(
+                order=order, variant=variant, qty=1, unit_price_snapshot=100_00
+            )
+            variants.append(variant)
+        return order, variants
+
+    def test_failure_on_line_two_rolls_back_the_whole_refund(
+        self, mock_message_user, request_factory, admin_site
+    ):
+        from apps.accounts.models import Customer
+        from apps.inventory.models import StockRecord
+        from apps.orders.admin import OrderAdmin
+        from apps.orders.models import Order, OrderStatus
+
+        order, variants = self._order_with_lines(3)
+
+        model_admin = OrderAdmin(Order, admin_site)
+        request = request_factory.post("/merchant/")
+        request.user = Customer.objects.create_superuser(
+            email="admin-refund@test.local", password="testpass123", name="Admin"
+        )
+
+        # Restore line 1, then fail line 2. The real adjust_stock is used for the
+        # first call so there is a committed-looking write for the rollback to
+        # actually have to undo — a mock that never writes would pass trivially.
+        real_adjust = __import__("apps.inventory.services", fromlist=["adjust_stock"]).adjust_stock
+        calls = {"n": 0}
+
+        def flaky_adjust(**kwargs):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise RuntimeError("ledger unavailable")
+            return real_adjust(**kwargs)
+
+        with patch("apps.inventory.services.adjust_stock", side_effect=flaky_adjust):
+            model_admin.mark_as_refunded(request, Order.objects.filter(pk=order.pk))
+
+        order.refresh_from_db()
+        assert order.status == OrderStatus.PAID, (
+            "order must not stay REFUNDED after a failed restore"
+        )
+
+        for variant in variants:
+            record = StockRecord.objects.get(variant=variant)
+            assert record.qty_on_hand == 0, f"{variant.sku} was restocked despite the rollback"
+
+    def test_one_bad_order_does_not_abort_the_rest_of_the_selection(
+        self, mock_message_user, request_factory, admin_site
+    ):
+        """A ledger fault on order A must still let order B refund.
+
+        Only IllegalTransition was caught before, so any other exception escaped
+        the action entirely and every order after the failure was silently
+        skipped with a 500.
+        """
+        from apps.accounts.models import Customer
+        from apps.orders.admin import OrderAdmin
+        from apps.orders.models import Order, OrderStatus
+
+        bad_order, _ = self._order_with_lines(1, tag="b")
+        good_order, _ = self._order_with_lines(1, tag="c")
+
+        model_admin = OrderAdmin(Order, admin_site)
+        request = request_factory.post("/merchant/")
+        request.user = Customer.objects.create_superuser(
+            email="admin-refund2@test.local", password="testpass123", name="Admin"
+        )
+
+        real_adjust = __import__("apps.inventory.services", fromlist=["adjust_stock"]).adjust_stock
+
+        def only_bad_order_fails(**kwargs):
+            if kwargs.get("ref_order") and kwargs["ref_order"].pk == bad_order.pk:
+                raise RuntimeError("ledger unavailable")
+            return real_adjust(**kwargs)
+
+        with patch("apps.inventory.services.adjust_stock", side_effect=only_bad_order_fails):
+            model_admin.mark_as_refunded(
+                request, Order.objects.filter(pk__in=[bad_order.pk, good_order.pk])
+            )
+
+        bad_order.refresh_from_db()
+        good_order.refresh_from_db()
+        assert bad_order.status == OrderStatus.PAID
+        assert good_order.status == OrderStatus.REFUNDED, "the healthy order was skipped"

@@ -82,6 +82,10 @@ def consume_order_holds(order):
                 checkout_id=checkout_id,
                 order_no=order.order_no,
                 order_id=order.pk,
+                # This runs with the payment transaction open, so the remote
+                # budget is one tight attempt and the outbox row enqueued above
+                # carries the retry (ADR-P3-028).
+                inside_transaction=True,
             )
         except ReservationUnavailable:
             logger.exception(
@@ -113,6 +117,14 @@ def _cover_shortfall(order, committed_by_variant):
     that; it is also the last line of defence when a commit came back
     uncertain. When even this fails the order is paid and cannot be fulfilled,
     which is a refund decision for a human — hence CRITICAL.
+
+    **This path keeps the full retry budget on purpose** (ADR-P3-028), and the
+    asymmetry with `consume_order_holds` above is the whole point. Cutting the
+    retries there is free because an outbox row was already committed and the
+    drainer will finish the job. Nothing enqueues these calls: this *is* the
+    last attempt, so a tight budget here would trade lock-hold time for orders
+    that are paid and unfulfillable. Do not "make it consistent" — the two paths
+    differ because their safety nets differ.
     """
     for item in order.items.all():
         shortfall = item.qty - committed_by_variant.get(item.variant_id, 0)
