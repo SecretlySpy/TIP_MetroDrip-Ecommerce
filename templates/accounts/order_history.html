@@ -47,16 +47,5 @@
     </div>
   {% endif %}
 
-  <!-- Claim Guest Order -->
-  <section style="margin-top: 4rem; padding-top: 2rem; border-top: 2px solid var(--color-ink);">
-    <h2 style="font-family: var(--font-display); font-size: 1.5rem; text-transform: uppercase; margin-bottom: 1rem;">Claim Guest Order</h2>
-    <p style="margin-bottom: 1rem; color: var(--color-muted);">Did you place an order before creating an account? Enter the order number below to attach it to your profile. (The order's email must match your account email: <strong>{{ user.email }}</strong>)</p>
-    
-    <form method="POST" action="{% url 'accounts:claim-guest-order' %}" style="display: flex; gap: 1rem; max-width: 400px;">
-      {% csrf_token %}
-      <input type="text" name="order_no" placeholder="e.g. ORD-12345" required style="flex-grow: 1; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: 4px; font-family: var(--font-mono);">
-      <button type="submit" class="btn btn--primary">Claim</button>
-    </form>
-  </section>
 </div>
 {% endblock %}

@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable react-hooks/exhaustive-deps */
 /**
  * M02 · Home (Tab) — Figma node 63:67.
  *
@@ -82,6 +80,7 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Starts an asynchronous catalog refresh.
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer]);
@@ -135,10 +134,10 @@ export default function HomeScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
-            hitSlop={12}
             onPress={() => navigation.navigate('Notifications')}
+            style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
           >
-            <Text style={{ fontSize: 19, color: colors.ink, fontFamily: fonts.body }}>◔</Text>
+            <Text style={{ fontSize: 20, color: colors.ink }}>🔔</Text>
             {unread > 0 ? (
               <View
                 style={{
@@ -156,8 +155,8 @@ export default function HomeScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Cart"
-            hitSlop={12}
             onPress={() => navigation.navigate('Cart')}
+            style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
           >
             <Text style={{ fontSize: 17, color: colors.ink, fontFamily: fonts.body }}>🛍</Text>
           </Pressable>
@@ -187,8 +186,8 @@ export default function HomeScreen() {
             style={{
               fontFamily: fonts.display,
               fontSize: 38,
-              // Was a literal 38 — a 1.0 ratio that RN never scales, so at 200%
-              // the lines overlapped. lineHeightFor tracks the OS text size.
+              // Keep the intended ratio; React Native scales font and line box
+              // together when the OS text-size setting changes.
               lineHeight: lineHeightFor(38, 1.1),
               color: onInk.onInkSurface,
               maxWidth: 300,
@@ -293,4 +292,3 @@ export default function HomeScreen() {
     </SafeAreaView>
   );
 }
-

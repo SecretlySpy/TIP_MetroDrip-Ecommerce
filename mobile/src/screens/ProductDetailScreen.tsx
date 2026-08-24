@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable react-hooks/exhaustive-deps */
 /**
  * M04 · Product Detail — Figma node 64:2.
  *
@@ -14,7 +12,7 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -24,7 +22,6 @@ import type { ProductDetail, Variant } from '@/api/types';
 import {
   EmptyState,
   LoadingState,
-  MicroLabel,
   Mono,
   NavBar,
   OfflineBanner,
@@ -68,7 +65,7 @@ export default function ProductDetailScreen() {
   const [wishlisted, setWishlisted] = useState(false);
   const [added, setAdded] = useState(false);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     setError(null);
     catalog
@@ -82,14 +79,14 @@ export default function ProductDetailScreen() {
         setError(err instanceof OfflineError ? 'offline' : 'failed');
       })
       .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params.slug]);
 
-  const variants = product?.variants ?? [];
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Starts an asynchronous product refresh.
+    load();
+  }, [load]);
+
+  const variants = useMemo(() => product?.variants ?? [], [product?.variants]);
   const sizes = useMemo(
     () => [...new Set(variants.map((v) => v.size))].sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b)),
     [variants],
@@ -400,4 +397,3 @@ export default function ProductDetailScreen() {
     </SafeAreaView>
   );
 }
-

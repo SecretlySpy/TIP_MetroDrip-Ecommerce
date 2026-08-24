@@ -10,9 +10,9 @@ below mirror Steps 8 and 11-13 of that page — keep the two in step when either
 
 ## 1. Supported stack
 
-| Layer | Repository constraint | Cycle 1 verified version | Purpose |
+| Layer | Repository constraint | Verified locally 2026-08-24 | Purpose |
 |---|---:|---:|---|
-| Python | `>=3.14` | `3.14.4` | Application runtime |
+| Python | `>=3.14` | `3.14.6` | Application runtime |
 | Django | `~=5.2` (`>=5.2,<6.0`) | `5.2.16` | Web framework, ORM, auth, admin, templates |
 | MySQL | Docker image `mysql:8.4` | `8.4.10` | Only supported database; InnoDB + `utf8mb4_0900_ai_ci` |
 | PyMySQL | `~=1.1` (`>=1.1,<2.0`) | `1.2.0` | Pure-Python MySQL driver |
@@ -25,15 +25,17 @@ below mirror Steps 8 and 11-13 of that page — keep the two in step when either
 | Alpine.js | Pinned CDN asset | `3.14.9` | Variant, cart, checkout, and badge behavior |
 | pytest | `~=8.3` (`>=8.3,<9.0`) | `8.4.2` | Test runner |
 | pytest-django | `~=4.9` (`>=4.9,<5.0`) | `4.12.0` | Django test integration |
-| Ruff | `~=0.11` (`>=0.11,<1.0`) | `0.15.22` locally | Python linting and formatting |
-| uv | No repository pin | `0.11.12` locally | Virtual environment and package installation |
-| Docker Engine | Modern Docker with BuildKit | `28.5.1` locally | MySQL and staging containers |
-| Docker Compose | Compose v2 plugin | `2.40.2` locally | Local/staging orchestration |
+| Ruff | `~=0.11` (`>=0.11,<1.0`) | `0.16.1` locally | Python linting and formatting |
+| uv | No repository pin | `0.12.1` locally | Virtual environment and package installation |
+| Docker Engine | Modern Docker with BuildKit | `29.7.2` locally | MySQL and staging containers |
+| Docker Compose | Compose v2 plugin | `2.40.3` locally | Local/staging orchestration |
 | Caddy | Docker image `caddy:2-alpine` | Major line `2` | HTTPS ingress and reverse proxy |
 
 > `uv.lock` currently contains only the Python requirement metadata; it is not a resolved package lock. `requirements.txt` uses compatible-release ranges, so a new installation may select newer compatible patch/minor versions. Run the full QA gate after a fresh resolve.
 
-Node.js 20+ and npm are required for the React Native / Expo customer mobile app under `mobile/`. Storefront web JavaScript is server-rendered with HTMX and Alpine.js loaded from pinned CDN URLs.
+Node.js 22.13+ and npm are required for the Expo 57 / React Native 0.86 customer app under
+`mobile/`. Storefront web JavaScript is server-rendered with HTMX and Alpine.js loaded from pinned
+CDN URLs.
 
 ## 2. Local-development architecture
 
@@ -99,9 +101,9 @@ Install these before cloning:
 
 Required only for the mobile app (section 14), and safely skipped otherwise:
 
-- Node.js 20+ and npm
-- For an Android build: JDK 17 and the Android SDK (platform-tools, an API 35 system image)
-- For an iOS build: macOS with Xcode and CocoaPods — there is no Windows or Linux path
+- Node.js 22.13+ and npm
+- For an Android build: JDK 17 and Android platform/build tools plus a Google APIs API 36 image
+- For an iOS build: macOS with Xcode 26.4+ / the iOS 26 SDK — there is no Windows or Linux path
 
 Confirm the tools:
 
@@ -133,8 +135,8 @@ uv pip install --python .venv/bin/python -r requirements.txt
 # Create the untracked local environment file.
 cp .env.example .env
 
-# Start only the local MySQL service and wait for its health check.
-docker compose up -d db --wait
+# Start MySQL and Redis and wait for their health checks.
+docker compose up -d db redis --wait
 
 # Apply schema migrations and load the canonical idempotent demo.
 .venv/bin/python manage.py migrate
@@ -165,8 +167,8 @@ uv pip install --python .venv\Scripts\python.exe -r requirements.txt
 # Create the untracked local environment file.
 Copy-Item .env.example .env
 
-# Start only MySQL and wait for it to become healthy.
-docker compose up -d db --wait
+# Start MySQL and Redis and wait for both to become healthy.
+docker compose up -d db redis --wait
 
 # Apply schema migrations and load the canonical idempotent demo.
 .\.venv\Scripts\python.exe manage.py migrate
@@ -198,7 +200,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 # Configure local values, start MySQL, migrate, and seed.
 cp .env.example .env
-docker compose up -d db --wait
+docker compose up -d db redis --wait
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py seed_demo
 
@@ -221,7 +223,9 @@ docker compose up -d db --wait
 | Flatpages | 3 |
 | Homepage banners | 1 |
 
-Rerunning updates stable catalog metadata but does not reset existing stock or duplicate the initial stock ledger.
+Rerunning updates stable catalog metadata but does not reset existing stock or duplicate the initial
+stock ledger. The command leaves each product's `images` list empty and creates only five root
+categories; product imagery and Men/Women children are not part of this canonical seed.
 
 ### Creating console accounts
 
@@ -266,7 +270,11 @@ superuser, which removes the boundary entirely.
 
 ### Category hierarchy
 
-Categories are two levels deep: main categories such as **Hoodies**, each with **Men** and **Women** subcategories. Migration `catalog.0003_category_hierarchy` adds those children to whatever main categories a database already holds, and `seed_mock_catalog` re-establishes them for any added later.
+Categories support two levels: main categories such as **Hoodies** may have **Men** and **Women**
+subcategories. Migration `catalog.0003_category_hierarchy` added children only to categories present
+when that migration ran. A normal fresh install migrates before seeding, so `seed_demo` creates five
+root categories with no children. `seed_mock_catalog` deliberately creates/re-establishes Men/Women
+children for every root when filter and pagination fixtures are needed.
 
 Child slugs are parent-prefixed (`hoodies-men`) because `Category.name` is intentionally not unique — "Men" has to exist under every parent. The slug is the only globally unique identifier.
 
@@ -313,7 +321,7 @@ python manage.py seed_mock_catalog --count 40
 | Behaviour | Detail |
 |---|---|
 | `--count` | Number of **placeholders** to maintain, not the total catalog size. A database with 12 real products ends with 112. |
-| Distribution | Round-robin across every subcategory. 100 over 18 leaves gives ten leaves 6 products and eight leaves 5. |
+| Distribution | Round-robin across every generated audience subcategory; the exact per-leaf count depends on how many root categories exist. |
 | Rerun | Creates nothing. Slugs derive from (category, audience, sequence), so a second run resolves to rows that already exist. |
 | Existing stock | Never reset. Quantities, reservations, and thresholds are left exactly as found. |
 | Over target | Reported as a warning. The command has no delete path. |
@@ -342,7 +350,7 @@ MySQL must be healthy before the full test suite.
 ### macOS/Linux
 
 ```bash
-.venv/bin/python -m compileall -q apps config jobs tests manage.py
+.venv/bin/python -m compileall -q apps config contracts jobs services tests manage.py
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 uv pip check --python .venv/bin/python
@@ -357,7 +365,7 @@ docker build --check .
 ### Windows PowerShell
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q apps config jobs tests manage.py
+.\.venv\Scripts\python.exe -m compileall -q apps config contracts jobs services tests manage.py
 .\.venv\Scripts\ruff.exe check .
 .\.venv\Scripts\ruff.exe format --check .
 uv pip check --python .venv\Scripts\python.exe
@@ -369,7 +377,9 @@ docker compose --env-file deploy/.env.staging.example -f deploy/compose.staging.
 docker build --check .
 ```
 
-Cycle 2 evidence is 388 passing tests against real MySQL. SQLite is unsupported because it cannot prove the InnoDB row-locking contracts.
+The passing-case count changes as coverage grows and is not a documentation contract. The required
+evidence is a fresh complete run against real MySQL. SQLite is unsupported because it cannot prove
+the InnoDB row-locking contracts.
 
 ## 10. Staging startup flow
 
@@ -423,7 +433,8 @@ Local HTTPS tests using a locally trusted/self-signed certificate prove containe
 | `MYSQL_PASSWORD` | `metrodrip` | Strong value, at least 16 characters/five distinct |
 | `MYSQL_HOST` | `127.0.0.1` | Compose fixes `db` |
 | `MYSQL_PORT` | `3306` | Valid port; Compose fixes `3306` |
-| `PAYMONGO_SECRET_KEY` | Empty; enables dev mock | Real sandbox/live secret when exercising provider flow |
+| `PAYMENT_PROVIDER` | Blank: infer `paymongo` when a secret exists, otherwise `simulated` | Deployed settings pin `paymongo`; simulated payments are refused |
+| `PAYMONGO_SECRET_KEY` | Empty; automatic dev fallback is `simulated` | Real sandbox/live secret when exercising provider flow |
 | `PAYMONGO_WEBHOOK_SECRET` | Empty | Required before accepting provider webhooks |
 | `SEMAPHORE_API_KEY` | Empty; SMS logs only | Optional provider credential |
 | `GOOGLE_MAPS_API_KEY` | Empty | Optional Places autocomplete credential |
@@ -476,7 +487,7 @@ Expected: `manage.py` and `entrypoint.sh` at `mode=755 owner=0:0`, `staticfiles`
 ```text
 [ ] Python reports 3.14.x
 [ ] Docker engine is running
-[ ] docker compose ps shows metrodrip-mysql healthy
+[ ] docker compose ps shows metrodrip-mysql and metrodrip-redis healthy
 [ ] .env exists and is not tracked by Git
 [ ] manage.py migrate completes
 [ ] manage.py seed_demo completes
@@ -494,24 +505,28 @@ Expected: `manage.py` and `entrypoint.sh` at `mode=755 owner=0:0`, `staticfiles`
 Mobile app (section 14), if in scope:
 
 ```text
-[ ] node --version reports v20 or newer
-[ ] mobile/ npm install completes
+[ ] node --version reports v22.13 or newer
+[ ] JDK reports version 17 and Android API 36 / Build Tools 36.0.0 are installed
+[ ] mobile/ npm ci completes
 [ ] mobile/.env exists and its URL matches the target device
 [ ] Django is bound to 0.0.0.0:8080
 [ ] adb devices shows "device" (Android), or the simulator is booted (iOS)
-[ ] npm start prints "env: load .env" and Metro serves
-[ ] the app renders the splash screen
+[ ] npm run android builds and installs the development client the first time
+[ ] npm start serves later JavaScript-only development-client sessions
+[ ] the app renders the splash and Home screens on the API 36 emulator
 [ ] a guest checkout reaches Order Tracking at Paid
-[ ] that order is visible in /admin/ under Orders
-[ ] npm run typecheck and npm run lint are clean
+[ ] a signed-in checkout creates "Order confirmed" under Home → bell → Notifications
+[ ] the signed-in order is visible in /merchant/ under Orders
+[ ] dependency check, Doctor, typecheck, lint, Android/iOS exports, prebuild, and Android assembly pass
 ```
 
 ## 14. Mobile app setup and execution
 
-The customer app lives in `mobile/`: React Native `0.74.5` on Expo SDK `51.0.39`, TypeScript, eleven
-screens, one codebase for both platforms. It consumes the public API at `/api/mobile/v1/` and holds
-no credentials of its own. The Merchant and Administrator consoles stay web-only by decision (D-14),
-so there is no mobile back office.
+The customer app lives in `mobile/`: React Native `0.86.2` on Expo SDK `57.0.16`, React `19.2.3`,
+TypeScript `6.0.3`, and twelve screen components from one codebase. Eleven correspond to the Figma
+frames; `OrdersScreen` is the fifth tab and is separate from the notification centre. The app
+consumes `/api/mobile/v1/` and carries no credentials of its own. Merchant and Administrator
+consoles remain web-only by decision (D-14).
 
 `mobile/README.md` documents the app's internals; `mobile/EMULATOR.md` documents the Android
 emulator setup and its failure modes. This section is the setup and run path only.
@@ -524,53 +539,53 @@ emulator setup and its failure modes. This section is the setup and run path onl
 | Linux | Emulator or USB device | Not possible | Same |
 | macOS | Emulator or device | Simulator or device | The only host covering both |
 
-### 14.2 Three run modes, in increasing order of setup cost
+### 14.2 Supported run and distribution modes
 
 | Mode | Command | Requires | Notes |
 |---|---|---|---|
-| Expo Go / dev client | `npm start` | Node 20+ | Fastest edit loop. See the SDK 51 caveat below |
-| Native debug build | `npm run android` / `npm run ios` | JDK 17 + Android SDK; or macOS + Xcode + CocoaPods | Needed for anything touching native modules |
-| EAS cloud build | `npm run build:android` / `npm run build:ios` | Expo account, real `projectId`, brand assets, Apple team for iOS | Scaffolded, not yet usable as shipped |
+| First local native build | `npm run android` / `npm run ios` | Node 22.13+, JDK 17/API 36; or macOS/Xcode 26.4+ | CNG generates the ignored native project, installs the development client, and starts Metro |
+| Later JavaScript-only loop | `npm start` | An installed MetroDrip development client | Runs `expo start --dev-client`; it does not target Expo Go |
+| EAS internal build | `npm run build:android` / `npm run build:ios` | Expo project/account, environment URL, signing credentials, final assets | Profiles exist; external inputs are intentionally absent |
 
-**The SDK 51 caveat.** `mobile/` contains committed `android/` and `ios/` native folders, so a
-*development build* is the intended client rather than the store Expo Go app. Expo Go on the stores
-tracks only current SDKs; `mobile/EMULATOR.md` pins **Expo Go 2.31.2** as the client for SDK 51,
-which can be sideloaded on Android. iOS has no equivalent — an older App Store build cannot be
-installed — so **iOS requires mode 2 or mode 3**.
+Expo Go is not the supported client. The app uses native modules and `expo-dev-client`; using the
+development build prevents the installed store version of Expo Go from determining which SDKs and
+native capabilities are available.
 
 **EAS scaffolding gaps**, all verifiable in the files themselves:
 
-- `app.json` carries the placeholder `extra.eas.projectId` of `00000000-0000-0000-0000-000000000000`
-  and `owner: metrodrip`. Run `eas init` to replace them.
-- No brand `assets/` exist (`icon.png`, `splash.png`, `adaptive-icon.png`).
-- `eas.json`'s `preview` profile points at `https://staging.example.test/...`, a placeholder host.
-- `submit.production.ios.ascAppId` is the literal string `REPLACE_WITH_APP_STORE_CONNECT_APP_ID`.
-- Because the native folders exist, an EAS build **will not sync** `orientation`, `scheme`,
-  `userInterfaceStyle`, `backgroundColor`, `splash`, `ios`, `android`, or `plugins` from `app.json`.
-  `npx expo-doctor` reports this as its one failing check; on this repository that result is
-  expected rather than a defect.
+- `app.json` intentionally contains no Expo owner or EAS project ID. `eas init` supplies them for
+  the account that actually owns the project.
+- No approved icon, adaptive icon, splash artwork, or store listing assets have been supplied.
+- `eas.json` selects named EAS environments; each must receive its real
+  `EXPO_PUBLIC_API_URL` through EAS environment configuration. No production URL is hardcoded.
+- Apple/Google signing, App Store Connect/Play Console records, privacy metadata, and remote-push
+  credentials are external launch inputs, not repository defaults.
+
+The repository uses **Continuous Native Generation (CNG)**. `android/` and `ios/` are ignored build
+outputs generated from `app.json`; do not make durable changes inside them. Add native settings via
+Expo configuration or a config plugin, then validate with a clean prebuild. See ADR-H-006.
 
 ### 14.3 Android toolchain versions
 
-From `mobile/android/build.gradle` and the Gradle wrapper:
+`mobile/app.json` is the source of truth; Expo prebuild materializes these values:
 
 | Piece | Value | Note |
 |---|---|---|
-| JDK | 17 | Newer JDKs commonly break the Gradle build |
-| Gradle | 8.8 | Fetched by the wrapper |
-| `compileSdk` / `targetSdk` | 34 | Build target |
-| `minSdk` | 23 | Android 6.0+ |
-| NDK | 26.1.10909125 | Only used if a dependency compiles native code |
-| Emulator image | **API 35**, `google_apis;x86_64` | Not API 34 — see below |
+| JDK | 17 | CI and the setup contract pin Temurin/OpenJDK 17 |
+| `compileSdk` / `targetSdk` | 36 | Android 16 / current Play submission target |
+| Build Tools | 36.0.0 | Installed explicitly in CI and the Windows setup script |
+| `minSdk` | 24 | Android 7.0+; the same clean APK was smoke-tested on API 24 and API 36 |
+| Emulator image | API 36, `google_apis;x86_64` | Named `MetroDrip_Pixel_API36` in repository tasks |
 
-On an `android-34;google_apis` image the SDK 51 Expo Go client fails at boot with
-`Failed to create NativeModule 'UIManager'`; the same bundle runs on API 35. `mobile/EMULATOR.md`
-records the diagnosis. Two related invariants: keep `react-native-reanimated/plugin` **last** in
-`mobile/babel.config.js`, and run only one emulator at a time — Expo installs onto the first `adb`
-device it finds and ignores `ANDROID_SERIAL`.
+The versioned `withAndroidCoreLibraryDesugaring` CNG plugin adds
+`desugar_jdk_libs` 2.0.3 so Java time APIs work on API 24–25; the generated Gradle edit is not made
+by hand. The app no longer carries a custom Babel/Reanimated stack. The VS Code workflow reserves
+`emulator-5554`, verifies that it is running the exact named AVD, waits for
+`sys.boot_completed=1` and the boot animation to stop, then tells Expo to use that AVD. It refuses
+to hijack a different emulator already occupying the reserved port.
 
 Windows has a scripted path that installs the SDK, accepts licences, and creates the
-`MetroDrip_Pixel_API35` AVD:
+`MetroDrip_Pixel_API36` AVD with a 10 GB data partition:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\setup-android-emulator.ps1
@@ -580,18 +595,23 @@ It is idempotent. Restart the editor afterwards so it inherits `ANDROID_HOME`.
 
 ### 14.4 iOS toolchain
 
-macOS only. Xcode from the App Store (opened once to finish installing components),
-`xcode-select --install`, and `brew install cocoapods`. The iOS project uses Hermes and targets
-iOS 13.4+ (`mobile/ios/Podfile`). There is **no committed `Podfile.lock`**, so a first
-`pod install` resolves fresh versions rather than reproducing a known-good set — suspect that first
-if a pod fails to build, and keep the generated lock file locally.
+macOS only. Use Xcode 26.4+ with the iOS 26 SDK and finish Xcode's first-launch component install.
+Expo prebuild sets deployment target iOS 16.4, bundle identifier `ph.metrodrip.app`, Face ID copy,
+local-network usage copy, local-network transport permission, and the non-exempt-encryption
+declaration from `app.json`. CocoaPods and `Podfile.lock` are generated inside the ignored `ios/`
+directory.
+
+An iOS simulator uses `http://localhost:8080/api/mobile/v1`. A physical iPhone uses the host's LAN
+address, requires the local-network permission prompt to be accepted, and requires signing. No iOS
+build has been executed in this Linux workspace; the exact macOS/iOS capture and verification
+checklists are recorded in `docs/images/README.md`.
 
 ### 14.5 Install and configure
 
 ```bash
-node --version            # must be v20 or newer
+node --version            # must be v22.13 or newer
 cd mobile
-npm install
+npm ci
 cp .env.example .env      # Windows: Copy-Item .env.example .env
 ```
 
@@ -626,16 +646,18 @@ docker compose up -d db redis --wait          # wait for: both Healthy
 PAYMENT_PROVIDER=simulated .venv/bin/python manage.py runserver 0.0.0.0:8080
 
 # 3. Device — Android
-$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API35
+$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API36 -port 5554
 adb devices                                    # want: "device", not "offline"
 
 # 3. Device — iOS (macOS)
 open -a Simulator                              # or let `npm run ios` boot one
 
-# 4. The app
-cd mobile && npm start                         # then press a / i
-cd mobile && npm run android                   # or build the native debug app
-cd mobile && npm run ios
+# 4. First native build/install
+cd mobile && npm run android
+cd mobile && npm run ios                       # macOS only
+
+# Later JavaScript-only sessions, after the development client is installed
+cd mobile && npm start
 ```
 
 Windows PowerShell equivalents for steps 2 and 3:
@@ -644,12 +666,13 @@ Windows PowerShell equivalents for steps 2 and 3:
 $env:PAYMENT_PROVIDER="simulated"
 .venv\Scripts\python.exe manage.py runserver 0.0.0.0:8080
 
-& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd MetroDrip_Pixel_API35
+.venv\Scripts\python.exe scripts\launch-android-emulator.py `
+  --avd MetroDrip_Pixel_API36 --port 5554 --timeout 240
 ```
 
-`PAYMENT_PROVIDER=simulated` is belt-and-braces: `config/settings/dev.py` already selects the
-simulated provider whenever no PayMongo key is configured, so on a stock `.env` it changes nothing.
-Setting it explicitly makes the command behave identically on a machine that does have sandbox keys.
+`PAYMENT_PROVIDER=simulated` is deliberate. Development honors an explicit `simulated` or
+`paymongo`; when blank it selects PayMongo only if `PAYMONGO_SECRET_KEY` is present. An invalid value
+or explicit keyless `paymongo` fails during settings import rather than at checkout.
 
 A healthy Metro start prints the two lines that prove your address reached the bundle:
 
@@ -665,37 +688,52 @@ built-in `http://10.0.2.2:8080/api/mobile/v1` — correct for an Android emulato
 
 ### 14.7 Editor tasks
 
-`.vscode/tasks.json` (used as-is by VS Code and Antigravity) ships the whole sequence:
-`MetroDrip: Full mobile stack` runs Docker, the API, the emulator, and Expo in order. The individual
-tasks are `MySQL + Redis (docker)`, `Django API (0.0.0.0:8080)`, `Start Android emulator`,
-`Expo on Android`, `Backend QA`, and `Mobile typecheck`. All are Android-oriented; iOS has no task.
+`.vscode/tasks.json` (used as-is by VS Code and Antigravity) ships the whole sequence.
+`MetroDrip: Full mobile stack` waits for healthy MySQL/Redis, starts Django with simulated payments,
+polls `/healthz/ready/`, starts and verifies `MetroDrip_Pixel_API36` on `emulator-5554`, then runs
+Expo against that named AVD. Individual tasks expose each boundary plus Backend QA and Mobile
+typecheck. The native orchestration is Android-oriented; iOS has no repository task.
 
 ### 14.8 Definition of working
 
-With the simulated payment provider a purchase completes without any payment credential, which makes
-one walkthrough sufficient proof that app, API, and database are one system:
+With the simulated payment provider a purchase completes without payment credentials. Verify the two
+ownership paths separately rather than implying that a guest order belongs to a later account:
 
-1. Splash → *Continue as guest*
-2. Home → product → size / colour / fit → **Add to Cart**
-3. Cart → **Checkout** → form → zone → **Pay**
-4. Order Tracking shows the timeline at *Paid*
-5. Notification centre shows "Order confirmed"
-6. The same order appears in `/admin/` under **Orders**
+| Flow | Expected result |
+|---|---|
+| Guest: Continue as guest → product/variant → Cart → Checkout → Pay | Public Order Tracking reaches **Paid**. There is no customer notification or account order because the order has no customer. |
+| Signed in before checkout → product/variant → Cart → Checkout → Pay | Tracking reaches **Paid**; Home → bell → Notifications contains **Order confirmed**; the same order number appears in `/merchant/` → Orders. |
 
-A network error at step 3, or an offline banner anywhere, is almost always the server binding or
+A network error during checkout, or an offline banner anywhere, is almost always the server binding or
 `EXPO_PUBLIC_API_URL`, not the app.
 
 ### 14.9 Mobile QA
 
 ```bash
 cd mobile
-npm run typecheck        # tsc --noEmit
-npm run lint             # eslint src --ext .ts,.tsx
+npm ci
+npm run dependencies:check
+npm run doctor
+npm run typecheck
+npm run lint
+npm run export:android
+npm run export:ios
+
+# Clean CNG + native Android gate (JDK 17 and API 36 installed)
+npm run prebuild:android
+./android/gradlew -p android --no-daemon :app:assembleDebug
 
 # D-13: the app must never compute money. Matches in comments are fine;
 # a match in real code is a defect.
 grep -rnE "(price|subtotal|total|fee)\s*[*+/-]" src/
 ```
+
+Windows PowerShell uses the same commands, with the final assembly command as
+`.\android\gradlew.bat -p android --no-daemon :app:assembleDebug`.
+
+Runtime acceptance installs the same clean debug APK on API 24 and API 36 emulators and confirms
+that it renders. Its generated manifest/build configuration reports compile/minimum/target SDK
+36/24/36. The API 36 AVD remains the documented daily-development target.
 
 The API also enforces a version header (NFR-22), which is worth knowing because it is the fastest
 way to test the API without any mobile tooling at all:
@@ -717,17 +755,13 @@ attached.
 | `emulator: command not found` | `PATH` not reloaded | Restart terminal and editor so `ANDROID_HOME` is inherited |
 | `adb devices` empty | Emulator still booting | Wait for the home screen and retry |
 | Emulator hangs on the boot logo | Virtualisation disabled | Enable in BIOS (Windows) or check `kvm-ok` (Linux); or use a device |
-| Expo Go dies instantly, log names `UIManager` | API 34 image, or Reanimated plugin not last | Use the API 35 AVD; keep the plugin last in `babel.config.js` |
+| Expo opens Expo Go or cannot find a development build | The MetroDrip native client has not been installed | Run `npm run android` or, on macOS, `npm run ios` once; use `npm start` afterwards |
 | Stale bundle after edits | Metro cache | `npx expo start -c` |
-| Expo opens the wrong emulator | It takes the first `adb` device | Boot one emulator, or `adb -s <serial> emu kill` the rest |
+| Reserved `emulator-5554` runs a different AVD | Another emulator occupies the task's port | Stop that emulator; rerun the named-emulator helper. It refuses to kill or reuse the wrong AVD |
+| `expo-doctor` reports native/config drift | A generated native directory is present or was edited | Remove only the ignored generated `android/`/`ios/`, then run a clean Expo prebuild; keep durable settings in `app.json` |
 | `400 Bad Request` naming the host, on a device | LAN address not allowed | Usually automatic; otherwise add it in `config/settings/dev.py` |
-| `pod install` fails | Fresh pod resolution, no committed lock | `cd mobile/ios && pod repo update && pod install`; keep the lock file |
-
-`mobile/EMULATOR.md` also documents an **unresolved host-level emulator failure** (Windows 10 19045,
-WHPX, emulator 37.1.11.0, 2026-08-02) in which every AVD stopped booting mid-session with no guest
-output at all. A new AVD, both API levels, a host reboot, stopping Docker and WSL, clearing lock
-files, `-wipe-data`, and every GPU mode were each ruled out by testing. On a machine showing those
-symptoms, use a physical device; the app itself was verified rendering on API 35 in the same session.
+| iPhone cannot reach the LAN API | Wrong URL, server bound to loopback, or local-network permission denied | Use the host LAN URL, bind Django to `0.0.0.0:8080`, and allow MetroDrip's local-network prompt |
+| iOS native build fails | Apple toolchain/signing is missing or stale | Use macOS with Xcode 26.4+/iOS 26 SDK, run a clean prebuild, select a development team, and record the result; Linux cannot verify this |
 
 ## 15. Back-office 2FA and login rate limiting
 
@@ -739,12 +773,11 @@ python manage.py check_console_otp            # who could still sign in with onl
 python manage.py check_console_otp --strict   # exits non-zero if anyone is unenrolled (CI gate)
 ```
 
-Enrol at `/admin/otp_totp/totpdevice/add/`: pick the account, save, scan the QR code, then confirm it
-with a generated code. The QR is labelled `MetroDrip` (`OTP_TOTP_ISSUER`).
-
-> **Enrolment is one-way for that account.** Once a device is confirmed, the password alone stops
-> working — there is no opt-out and no trusted-device exemption. Enrol a second administrator before
-> the first, or accept that losing the authenticator means recovering through the database.
+The stock `/admin/otp_totp/totpdevice/add/` form is a low-level device editor, not a safe beginner
+enrolment wizard. A saved device can become confirmed before a generated code is proved, and the
+repository has no self-service recovery-code flow. Do not use that form as this guide's enrolment
+path. An authorized operator must first test scan-and-confirm and recovery with a second
+administrator. Once a device is confirmed, the password alone stops working while that device exists.
 
 | Setting | Default | Notes |
 |---|---|---|
@@ -754,8 +787,8 @@ with a generated code. The QR is labelled `MetroDrip` (`OTP_TOTP_ISSUER`).
 | `CONSOLE_REQUIRE_OTP` | off | Requires a token from *every* staff account, enrolled or not |
 
 > **Run `check_console_otp` before enabling `CONSOLE_REQUIRE_OTP`.** It makes no exception for the
-> superuser needed to enrol anyone else, so turning it on with nothing enrolled locks out every
-> account at once.
+> superuser needed to recover anyone else, so turning it on with nothing safely provisioned locks out
+> every account at once. Production rollout remains blocked on a verified enrolment and recovery flow.
 
 > **Attempt counters live in `CACHES["default"]`,** which this project does not configure outside the
 > test suite. Locally that means per-process, in-memory counting that a restart clears; under several

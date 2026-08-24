@@ -10,8 +10,10 @@
 
 import * as SecureStore from 'expo-secure-store';
 
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '');
+
 export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8080/api/mobile/v1';
+  configuredApiUrl ?? 'http://10.0.2.2:8080/api/mobile/v1';
 
 export const CLIENT_VERSION = '1.0.0';
 

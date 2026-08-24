@@ -165,15 +165,24 @@ def test_register_login_refresh_logout_cycle(api):
 
 
 @pytest.mark.django_db
-def test_registration_claims_matching_guest_orders(api, customer_factory=None):
+def test_registration_does_not_claim_matching_guest_orders(api):
     variant = _make_variant()
     zone = _make_zone()
     with override_settings(PAYMENT_PROVIDER="simulated"):
-        api.post(
+        checkout = api.post(
             reverse("mobile_api:checkout"),
             json.dumps(_checkout_payload(variant, zone, email="claim@example.com")),
             content_type="application/json",
         )
+        assert checkout.status_code == 201
+        confirmed = api.post(
+            reverse("mobile_api:checkout-confirm-simulated"),
+            {"status_token": checkout.json()["status_token"]},
+            content_type="application/json",
+        )
+        assert confirmed.status_code == 200
+        assert confirmed.json()["status"] == OrderStatus.PAID
+
     register = api.post(
         reverse("mobile_api:register"),
         {"email": "claim@example.com", "password": "s3cretpass!A9", "name": "Claimer"},
@@ -181,7 +190,17 @@ def test_registration_claims_matching_guest_orders(api, customer_factory=None):
     )
     assert register.status_code == 201
     order = Order.objects.get()
-    assert order.customer.email == "claim@example.com"
+    assert order.customer_id is None
+
+    auth = {**VERSION_HEADERS, **_bearer(register.json())}
+    history = api.get(reverse("mobile_api:order-list"), headers=auth)
+    assert history.status_code == 200
+    assert history.json()["results"] == []
+
+    tracking = api.get(reverse("mobile_api:order-track", args=[checkout.json()["status_token"]]))
+    assert tracking.status_code == 200
+    assert tracking.json()["order_no"] == order.order_no
+    assert tracking.json()["status"] == OrderStatus.PAID
 
 
 @pytest.mark.django_db

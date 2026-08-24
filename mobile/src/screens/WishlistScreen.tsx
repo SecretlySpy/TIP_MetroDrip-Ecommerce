@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable react-hooks/exhaustive-deps */
 /**
  * M11 · Saved / Wishlist (Tab) — Figma node 67:45.
  *
@@ -11,7 +9,7 @@
 
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -38,7 +36,7 @@ export default function WishlistScreen() {
   const [loadError, setLoadError] = useState<'offline' | 'failed' | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     // Was `.catch(() => undefined)`, which left `entries` empty and rendered
     // the "Nothing saved yet" state — telling the shopper their wishlist was
@@ -54,11 +52,12 @@ export default function WishlistScreen() {
         setLoadError(err instanceof OfflineError ? 'offline' : 'failed');
       })
       .finally(() => setLoading(false));
-  };
+  }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Starts an asynchronous wishlist refresh.
     if (focused && customer) load();
-  }, [focused, customer]);
+  }, [focused, customer, load]);
 
   if (!customer) {
     return (
@@ -228,4 +227,3 @@ export default function WishlistScreen() {
     </SafeAreaView>
   );
 }
-

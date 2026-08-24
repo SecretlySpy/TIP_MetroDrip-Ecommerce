@@ -1,5 +1,5 @@
 """Customer account views (Epic G: registration, login, profile, wishlist,
-order history, guest-order claiming)."""
+and registered-customer order history)."""
 
 import json
 import logging
@@ -52,16 +52,6 @@ def register_view(request):
 
         user = Customer.objects.create_user(email=email, password=password, name=name, phone=phone)
         login(request, user)
-
-        # FR-15: guest orders with this email become claimable; auto-attach the
-        # exact matches right away so history is complete on first login.
-        claimed = 0
-        for order in Order.objects.filter(customer__isnull=True, shipping_address__email=email):
-            order.customer = user
-            order.save(update_fields=["customer"])
-            claimed += 1
-        if claimed:
-            messages.success(request, f"We attached {claimed} previous order(s) to your account.")
 
         return redirect("accounts:profile")
 
@@ -129,28 +119,6 @@ def profile_view(request):
 def order_history(request):
     orders = Order.objects.filter(customer=request.user).order_by("-created_at")
     return render(request, "accounts/order_history.html", {"orders": orders})
-
-
-@login_required
-@require_POST
-def claim_guest_order(request):
-    """Attach a guest order to the logged-in account when the emails match (FR-15)."""
-    order_no = str(request.POST.get("order_no", "")).strip()
-    try:
-        order = Order.objects.get(order_no=order_no, customer__isnull=True)
-    except Order.DoesNotExist:
-        messages.error(request, "No unclaimed order with that number was found.")
-        return redirect("accounts:order-history")
-
-    if order.shipping_address.get("email", "").lower() == request.user.email.lower():
-        order.customer = request.user
-        order.save(update_fields=["customer"])
-        messages.success(request, f"Order {order.order_no} is now attached to your account.")
-    else:
-        # Same message as not-found: never confirm that a guessed order number
-        # exists but belongs to someone else's email.
-        messages.error(request, "No unclaimed order with that number was found.")
-    return redirect("accounts:order-history")
 
 
 @login_required

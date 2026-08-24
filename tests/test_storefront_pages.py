@@ -15,6 +15,7 @@ from django.urls import reverse
 from apps.accounts.models import Customer
 from apps.catalog.models import Product
 from apps.cms.models import ContactMessage
+from apps.orders.models import Order
 from apps.shipping.models import ShippingZone
 
 
@@ -68,6 +69,23 @@ def test_checkout_page_renders_with_zones(client, seeded):
     assert "csrfmiddlewaretoken" in content  # the JSON POST needs the CSRF cookie
 
 
+@pytest.mark.parametrize(
+    ("provider", "expected", "unexpected"),
+    [
+        ("simulated", "no-charge payment simulator", "handled securely by PayMongo"),
+        ("paymongo", "handled securely by PayMongo", "no-charge payment simulator"),
+    ],
+)
+def test_checkout_page_describes_the_active_payment_provider(
+    client, seeded, provider, expected, unexpected
+):
+    with override_settings(PAYMENT_PROVIDER=provider):
+        content = client.get(reverse("storefront:checkout")).content.decode()
+    assert f'data-payment-provider="{provider}"' in content
+    assert expected in content
+    assert unexpected not in content
+
+
 @pytest.mark.django_db
 def test_contact_page_stores_and_alerts(client):
     assert client.get(reverse("storefront:contact")).status_code == 200
@@ -98,6 +116,36 @@ def test_login_and_register_pages_render(client, db):
     # See test_cart_page_renders — base.html now queries the category tree.
     assert client.get(reverse("accounts:login")).status_code == 200
     assert client.get(reverse("accounts:register")).status_code == 200
+
+
+@pytest.mark.django_db
+def test_web_registration_does_not_claim_matching_guest_order(client):
+    guest_order = Order.objects.create(
+        order_no="MD-2026-90001",
+        shipping_address={"email": "guest@example.test"},
+    )
+
+    response = client.post(
+        reverse("accounts:register"),
+        {
+            "email": "guest@example.test",
+            "password": "s3cretpass!A9",
+            "name": "Former Guest",
+        },
+    )
+
+    assert response.status_code == 302
+    guest_order.refresh_from_db()
+    assert guest_order.customer_id is None
+    history = client.get(reverse("accounts:order-history"))
+    assert history.status_code == 200
+    history_html = history.content.decode()
+    assert guest_order.order_no not in history_html
+    assert "Claim Guest Order" not in history_html
+    assert (
+        client.post("/accounts/orders/claim/", {"order_no": guest_order.order_no}).status_code
+        == 404
+    )
 
 
 def test_profile_page_renders(client, customer):

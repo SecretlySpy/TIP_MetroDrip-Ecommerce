@@ -2,12 +2,12 @@
 
 ## Function: N/A — source-of-truth precedence hierarchy
 - **Purpose**: Establish binding precedence across project documentation, eliminating conflicting claims.
-- **Inputs**: Codebase, automated test suite execution results, `DECISIONS.md` (66 ADRs), `AI Documentation Notes.md`, `Tech Stack Setup Guide.md`, `README.md`, `index.html`.
+- **Inputs**: Codebase, automated test suite execution results, `DECISIONS.md` (72 ADRs), `AI Documentation Notes.md`, `Tech Stack Setup Guide.md`, `README.md`, `index.html`.
 - **Outputs**: Binding precedence hierarchy for AI agents and human developers.
 - **Dependencies**: `AGENTS.md` engineering rules.
 - **Behavior**: All documentation and system claims resolve in the following strict order:
   1. **Code + Verified Command Output**: Ground truth. Verifiable runtime behavior always wins.
-  2. **`DECISIONS.md` (66 ADRs)**: Rationale for architectural decisions, trade-offs, and explicit reversals.
+  2. **`DECISIONS.md` (72 ADRs)**: Rationale for architectural decisions, trade-offs, and explicit reversals.
   3. **`AI Documentation Notes.md`**: Master system specification, consolidated handover state, entity model, FR/NFR traceability matrix, and module specifications.
   4. **`AGENTS.md` / `GEMINI.md`**: Autonomous engineering rules and operational protocols.
   5. **`Tech Stack Setup Guide.md` / `README.md` / `index.html`**: User-facing setup, quickstarts, and sitemaps.
@@ -31,7 +31,8 @@
     7. *PCI compliance*: Card details never touch MetroDrip servers; PayMongo hosted checkout/elements used exclusively.
     8. *Mobile app presentation boundary*: Mobile client performs zero price or stock calculations; server-validated pricing and availability are authoritative at checkout.
 - **Side Effects**: Controls database transaction isolation, API payload processing, and payment confirmation.
-- **Verification Status**: verified (560 pytest tests passing, including concurrency tests).
+- **Verification Status**: verified by the complete real-MySQL suite; record run-specific counts in
+  the completion report rather than treating a changing count as a contract.
 
 ## Function: N/A — consolidated data model and taxonomy
 - **Purpose**: Record authoritative entity schemas, two-level category tree, console roles, and curated collections.
@@ -40,7 +41,11 @@
 - **Dependencies**: Django ORM, MySQL 8 InnoDB.
 - **Behavior**:
   - **Entities**: Category, Product, ProductVariant, StockRecord, StockMovement, Order, OrderItem, Payment, Shipment, Customer, WishlistItem, Review, FlatPage, Banner, StockHold, OutboxMessage.
-  - **Category Hierarchy**: Maximum 2 levels deep. Main categories (`parent = NULL`) have `Men` and `Women` child categories. Child slugs are parent-prefixed (`hoodies-men`). Depth (≤2) and sibling name uniqueness enforced in `Category.clean()`. Main category queries aggregate directly assigned products + all child products.
+  - **Category Hierarchy**: Maximum 2 levels deep. Main categories (`parent = NULL`) may have `Men`
+    and `Women` children; `seed_demo` creates only roots, while `seed_mock_catalog` creates/reconciles
+    the audience children used for filter/pagination fixtures. Child slugs are parent-prefixed
+    (`hoodies-men`). Depth (≤2) and sibling name uniqueness are enforced in `Category.clean()`.
+    Main-category queries aggregate directly assigned products plus all child products.
   - **Curated Collections**: Root categories ("New Arrivals", "Best-Sellers", "On-Sale", "Pre-Order") without gender subcategories; static discount pricing applied at creation.
   - **Dual Admin Consoles & Roles**: `Customer.role` enum (`customer`, `merchant`, `administrator`). `/admin/` (administrator console) manages customer accounts, roles, shipping fees, and audit trail; `/merchant/` (merchant console) manages catalog, variants, stock, orders, banners, flatpages, reviews, and support messages. Every model is registered on exactly one console site.
 - **Side Effects**: Dictates DB schema, model validation, and route isolation.
@@ -48,7 +53,8 @@
 
 ## Function: N/A — full requirements & completion traceability matrix
 - **Purpose**: Provide evidence-based traceability for every Web FR, Mobile FR, and NFR, mapping implementation files, automated test evidence, status (PASS/GAP), and gap notes.
-- **Inputs**: Codebase inspection, pytest test suite execution (560 tests), ruff lint/format, mobile tsc/eslint checks.
+- **Inputs**: Codebase inspection, complete pytest execution against MySQL, Ruff lint/format, Expo
+  dependency/Doctor checks, mobile TypeScript/ESLint, exports, prebuild, and Android assembly.
 - **Outputs**: Definitive matrix of system compliance.
 - **Dependencies**: All Django apps, DRF mobile API, Expo mobile app, FastAPI sidecars.
 - **Behavior**: Traceability matrix maps requirements as follows:
@@ -58,22 +64,22 @@
 | FR-1 | Catalog 3-axis variants (Size × Color × Fit) | `apps/catalog/models.py` (`ProductVariant`) | `tests/test_models.py` | PASS | SKU-level stock tracking verified |
 | FR-2 | Storefront browse/filter/sort/search/detail | `apps/storefront/views.py` | `tests/test_storefront.py` | PASS | HTMX filtering & pagination verified |
 | FR-3 | Cart (localStorage) + guest checkout | `templates/storefront/cart.html`, `apps/orders/checkout.py` | `tests/test_checkout_flow.py` | PASS | Client cart + guest order creation verified |
-| FR-4 | PayMongo payments & webhook confirmation | `apps/payments/providers.py`, `apps/payments/views.py` | `tests/test_payments.py` | PASS | Signature verification & idempotency verified |
+| FR-4 | PayMongo payments & webhook confirmation | `apps/payments/providers/paymongo.py`, `apps/payments/views.py` | `tests/test_checkout_flow.py` | PASS | Signature verification & idempotency verified |
 | FR-5 | Stock reservation hold (15-min) | `apps/orders/models.py` (`StockHold`), `jobs/scheduler.py` | `tests/test_stock_holds.py` | PASS | Auto-release on expiry verified |
 | FR-6 | Order lifecycle state machine | `apps/orders/models.py` (`Order.status`) | `tests/test_order_services.py` | PASS | Illegal transition protection verified |
-| FR-7 | J&T booking & admin waybill fallback | `apps/shipping/providers.py`, `apps/shipping/admin.py` | `tests/test_shipping.py` | PASS | Courier API + manual waybill fallback verified |
+| FR-7 | J&T booking & admin waybill fallback | `apps/shipping/providers/jnt.py`, `apps/shipping/admin.py` | `tests/test_shipping_http.py`, `tests/test_fulfillment_docs.py` | PASS | Courier API + manual waybill fallback verified |
 | FR-8 | Admin & Merchant dashboards | `config/consoles.py`, `config/admin.py` | `tests/test_admin.py` | PASS | Role-based dashboard separation verified |
-| FR-9 | Low-stock SKU alerts | `apps/inventory/jobs.py`, `apps/notifications/services.py` | `tests/test_inventory.py` | PASS | Email alert dispatch verified |
+| FR-9 | Low-stock SKU alerts | `jobs/scheduler.py`, `apps/notifications/services.py` | `tests/test_inventory.py` | PASS | Email alert dispatch verified |
 | FR-10 | CSV sales & inventory exports | `apps/orders/admin.py`, `apps/inventory/admin.py` | `tests/test_admin.py` | PASS | UTF-8 CSV exports verified |
-| FR-11 | Transactional confirmation & shipping email | `apps/notifications/services.py` | `tests/test_notifications.py` | PASS | Console/SMTP adapter verified |
-| FR-12 | SMS alerts via Semaphore API | `apps/notifications/sms.py` | `tests/test_notifications.py` | PASS | Outbound SMS payload verified |
+| FR-11 | Transactional confirmation & shipping email | `apps/notifications/services.py` | `tests/test_checkout_flow.py` | PASS | Console/SMTP adapter verified |
+| FR-12 | SMS alerts via Semaphore API | `apps/notifications/sms.py` | `tests/contract/test_notifications_v1.py` | PASS | Outbound SMS payload verified |
 | FR-13 | Google Places autocomplete & zone derivation | `apps/shipping/zones.py` | `tests/test_shipping_zones.py` | PASS | NCR/Luzon/VisMin zone calculation verified |
-| FR-14 | Customer registration, login, profile, reset | `apps/accounts/views.py`, `apps/accounts/models.py` | `tests/test_accounts.py` | PASS | Auth & address management verified |
-| FR-15 | Order history & guest order claiming | `apps/orders/views.py`, `apps/mobile_api/views.py` | `tests/test_mobile_api.py` | PASS | Tokenized access & email claim verified |
+| FR-14 | Customer registration, login, profile, reset | `apps/accounts/views.py`, `apps/accounts/models.py` | `tests/test_storefront_pages.py`, `tests/test_mobile_api.py` | PASS | Auth & address management verified |
+| FR-15 | Account order history & public guest tracking | `apps/accounts/views.py`, `apps/storefront/views.py`, `apps/mobile_api/views.py` | `tests/test_storefront_pages.py`, `tests/test_mobile_api.py` | PASS | Guest orders remain unowned and available only through signed public tracking tokens |
 | FR-16 | Wishlist management | `apps/catalog/models.py` (`WishlistItem`) | `tests/test_mobile_api.py` | PASS | Unique customer-product pairing verified |
-| FR-17 | Verified-purchase reviews & moderation | `apps/reviews/models.py`, `apps/reviews/views.py` | `tests/test_reviews.py` | PASS | Moderation queue & rating math verified |
+| FR-17 | Verified-purchase reviews & moderation | `apps/reviews/models.py`, `apps/reviews/views.py` | `tests/test_models.py`, `tests/test_mobile_api.py` | PASS | Moderation queue & rating math verified |
 | FR-18 | Customer support contact form & FAQ | `apps/cms/views.py` | `tests/test_storefront_pages.py` | PASS | Message storage & email dispatch verified |
-| FR-19 | Printable invoice & packing slip views | `apps/orders/views.py`, `apps/orders/admin.py` | `tests/test_orders.py` | PASS | Print-optimized HTML rendering verified |
+| FR-19 | Printable invoice & packing slip views | `apps/storefront/views.py`, `apps/orders/admin.py` | `tests/test_fulfillment_docs.py` | PASS | Print-optimized HTML rendering verified |
 | FR-20 | CMS flatpages & homepage promo banners | `apps/cms/models.py` | `tests/test_storefront_pages.py` | PASS | Active flag & banner display verified |
 | FR-21 | Two-level category nav & header dropdown | `apps/catalog/services.py`, `templates/base.html` | `tests/test_catalog_hierarchy.py` | PASS | Active product counts & filter retention verified |
 | FR-22 | Dual console separation (`/admin/` & `/merchant/`) | `config/consoles.py`, `apps/accounts/roles.py` | `tests/test_console_separation.py` | PASS | Routing isolation & 403 denial verified |
@@ -92,33 +98,37 @@
 | NFR-2 | Security (TOTP 2FA, rate limiting, HTTPS) | `config/settings/prod.py`, `apps/core/http.py` | `tests/test_staging_settings.py` | PASS | Strict host, origin, and secret rules verified |
 | NFR-3 | Zero oversell invariant | `apps/inventory/services.py`, ORM atomic locks | `tests/test_checkout_concurrency.py` | PASS | 20 parallel buyers test passed |
 | NFR-4 | PH Data Privacy Act compliance | Privacy Policy flatpage, `apps/accounts/models.py` | Code inspection | PASS | Minimal PII storage & explicit retention |
-| NFR-5 | Infrastructure cost constraint (≤ $25/mo) | `deploy/docker-compose.prod.yml`, Caddy | Deployment spec | PASS | Single-host Docker stack specification |
-| NFR-6 | Automated QA testability | `pyproject.toml`, pytest suite, ruff, CI | `python -m pytest` | PASS | 560 passing tests, 0 ruff lint errors |
-| NFR-7 | Category navigation usability | `templates/components/navbar.html` | `tests/test_catalog_hierarchy.py` | PASS | Category tree rendering verified |
+| NFR-5 | Infrastructure cost constraint (≤ $25/mo) | `deploy/compose.staging.yml`, Caddy | Deployment spec | PASS | Single-host Docker stack specification |
+| NFR-6 | Automated QA testability | `pyproject.toml`, pytest suite, Ruff, CI | `python -m pytest` plus the mobile CI job | PASS | Run-specific counts belong in CI/completion evidence, not this durable contract |
+| NFR-7 | Category navigation usability | `templates/base.html`, `templates/storefront/_category_menu.html` | `tests/test_catalog_hierarchy.py` | PASS | Category tree rendering verified |
 | NFR-8 | Category hierarchy depth restriction (≤2) | `apps/catalog/models.py` (`Category.clean`) | `tests/test_catalog_hierarchy.py` | PASS | Exception raised on depth > 2 |
 | NFR-9 | Console routing isolation | `config/consoles.py` | `tests/test_console_separation.py` | PASS | Disjoint AdminSite registries verified |
 | NFR-10 | Console permission & audit logging | `apps/core/admin.py` (`AdminAuditLog`) | `tests/test_console_separation.py` | PASS | Append-only admin audit log verified |
 
-- **Known Minor Gap**:
-  - *Mobile Tab Bar Labeling*: In `mobile/src/navigation/`, the navigation tab labeled "Orders" renders `NotificationsScreen`, resulting in an accessible label mismatch against screen title. Recorded as non-blocking minor UX gap for next mobile patch cycle.
-
 - **Side Effects**: None.
-- **Verification Status**: verified (560 pytest tests passing, `ruff check .` 0 errors, `mobile tsc` 0 errors, `mobile eslint` 0 errors).
+- **Verification Status**: verified by the repository QA gates. The Orders tab now renders the
+  distinct `OrdersScreen`; Notifications remains a stack screen opened from Home's bell.
 
 ## Function: N/A — delivery verification status & QA baseline
-- **Purpose**: Record verified test, lint, and build execution results.
-- **Inputs**: Automated test suite, static analysis tools, mobile TypeScript compiler.
-- **Outputs**: `QA_PASSED`.
-- **Dependencies**: Python 3.14.6, Pytest 8.4.2, Ruff 0.15.22, Django 5.2.16, Node 20+, Expo SDK 51.
+- **Purpose**: Define the current verification gate without freezing volatile case counts.
+- **Inputs**: Backend suite/static checks, guide structure/accessibility checks, and the complete
+  Expo/CNG mobile gate.
+- **Outputs**: Run-specific evidence; `QA_PASSED` is valid only when no executed check has an
+  unresolved finding.
+- **Dependencies**: Python 3.14.6, Pytest 8.4.2, Ruff 0.16.1, Django 5.2.16, Node 22.13+, JDK 17,
+  Expo 57.0.16, React Native 0.86.2, Android API 24/36, and real MySQL 8/InnoDB.
 - **Behavior**:
-  - `python -m pytest`: **560 passed** (0 failed, 164 warnings).
-  - `ruff check .`: **All checks passed** (0 errors).
-  - `ruff format --check .`: **192 files formatted**.
-  - `cd mobile && npm run typecheck`: **Clean** (`tsc --noEmit`, 0 errors).
-  - `cd mobile && npm run lint`: **Clean** (`eslint`, 0 errors).
-  - Responsive audit: 15 routes × 4 widths = **60/60 pass**.
+  - Backend: compile `apps config contracts jobs services tests manage.py`; Ruff check/format;
+    dependency, Django, migration, staging, full pytest, Compose, and Docker build checks.
+  - Mobile: `npm ci`, Expo dependency alignment, Doctor, TypeScript, flat-config ESLint,
+    Android/iOS exports, clean Android prebuild, API 36 debug assembly, and API 24/API 36 runtime
+    smoke tests of the same APK.
+  - Guide: unique anchors, valid internal/local asset links and intrinsic dimensions, unique alt
+    text, figure coverage for Steps 1–13, five preserved diagrams, responsive/zoom/manual review,
+    Lighthouse accessibility/best-practices/SEO, and console-error review.
 - **Side Effects**: None.
-- **Verification Status**: verified (executed on current codebase).
+- **Verification Status**: command-defined; each completion report must state what was executed,
+  observed, reasoned only, and not verified.
 
 # Module / File: manage.py
 
@@ -141,7 +151,13 @@
   - `process environment` (`mapping[str, str]`): Database, provider, notification, and secret settings.
 - **Outputs**: Django settings for 10 apps, middleware, templates, MySQL, authentication, currency, inventory jobs, providers, and static files.
 - **Dependencies**: `python-dotenv`, PyMySQL, Django, MySQL 8, and WhiteNoise.
-- **Behavior**: Base settings install PyMySQL as MySQLdb, select `django.db.backends.mysql`, request `utf8mb4`, set InnoDB/strict SQL mode for every connection, define PHP integer-centavo settings, register `accounts.Customer`, and keep preview/mock features disabled. Development enables debug, localhost, console email, and mock payments only when no PayMongo key exists. Tests retain real MySQL, switch to fast password hashing/in-memory email, and use DummyCache to prevent cached-page leakage.
+- **Behavior**: Base settings install PyMySQL as MySQLdb, select `django.db.backends.mysql`, request
+  `utf8mb4`, set InnoDB/strict SQL mode for every connection, define PHP integer-centavo settings,
+  register `accounts.Customer`, and keep preview/mock features disabled. Development enables debug,
+  device-reachable local hosts, and console email. An explicit `PAYMENT_PROVIDER=simulated|paymongo`
+  wins; a blank value infers PayMongo only from a non-empty secret, invalid values fail at import,
+  and explicit PayMongo requires its secret. Tests retain real MySQL, use fast password hashing and
+  in-memory email, and use DummyCache to prevent cached-page leakage.
 - **Side Effects**: Loads `.env`, installs the PyMySQL compatibility hook, and configures global Django behavior during import.
 
 # Module / File: config/settings/prod.py
@@ -552,9 +568,9 @@
 - **Inputs**:
   - `request` (`HttpRequest`): GET or registration form POST.
 - **Outputs**: Registration HTML, validation HTML, or redirect to profile.
-- **Dependencies**: Customer manager, Django login, Order, messages, and templates.
-- **Behavior**: Redirects authenticated users, normalizes submitted email, requires email/password/name, rejects duplicate email, creates/logs in the customer, and attaches guest orders whose JSON email exactly matches.
-- **Side Effects**: Inserts a Customer, creates a session, may attach multiple Orders, and may enqueue a success message.
+- **Dependencies**: Customer manager, Django login, messages, and templates.
+- **Behavior**: Redirects authenticated users, normalizes submitted email, requires email/password/name, rejects duplicate email, and creates/logs in the customer. Matching-email guest orders deliberately remain unowned and public-token-only.
+- **Side Effects**: Inserts a Customer, creates a session, and may enqueue a success message; it never changes order ownership.
 
 ## Function: login_view(request)
 - **Purpose**: Authenticate an email/password customer safely.
@@ -595,15 +611,6 @@
 - **Dependencies**: Order ORM, template rendering, and `login_required`.
 - **Behavior**: Queries customer-owned orders newest first.
 - **Side Effects**: Database reads only.
-
-## Function: claim_guest_order(request)
-- **Purpose**: Attach an unclaimed guest order when its snapshot email matches the logged-in account.
-- **Inputs**:
-  - `request` (`HttpRequest`): Authenticated POST containing `order_no`.
-- **Outputs**: Redirect to order history with a non-enumerating message.
-- **Dependencies**: Order ORM, Customer session, Django messages, and `require_POST`.
-- **Behavior**: Looks up only unclaimed orders, compares lowercase emails, attaches exact matches, and uses the same failure message for nonexistent and mismatched orders.
-- **Side Effects**: May update one Order customer foreign key and write a message.
 
 ## Function: toggle_wishlist(request)
 - **Purpose**: Toggle a product bookmark for the authenticated customer.
@@ -748,7 +755,11 @@
   - `options` (`dict[str, object]`): Django command options.
 - **Outputs**: `None`; writes a compact created-count summary.
 - **Dependencies**: Category, Product, ProductVariant, StockRecord, StockMovement, ShippingZone, FlatPage, Site, HomepageBanner, settings, and transaction.
-- **Behavior**: Upserts five stable products/categories, creates 180 deterministic variants, creates stock only when absent, writes one matching +10 restock movement per new stock row, creates three zones/flatpages/banner, preserves live stock on rerun, and wraps all writes in one transaction.
+- **Behavior**: Upserts five stable root products/categories, creates 180 deterministic variants,
+  creates stock only when absent, writes one matching +10 restock movement per new stock row,
+  creates three zones/flatpages/banner, preserves live stock on rerun, and wraps all writes in one
+  transaction. It intentionally assigns `images=[]` and does not create Men/Women children;
+  `seed_mock_catalog` owns the optional audience hierarchy and placeholder dataset.
 - **Side Effects**: Inserts/updates catalog and CMS data, inserts create-only inventory/ledger data, attaches flatpages to the configured Site, and writes command output.
 
 # Module / File: apps/catalog/migrations/0001_initial.py
@@ -1506,9 +1517,16 @@
 - **Inputs**:
   - `environment` (`mapping[str, str]`): Secrets, hosts, ports, MySQL credentials, and staging flags.
   - `repository source` (`Docker build context`): Application and dependency manifest.
-- **Outputs**: Local MySQL service, non-root Django image, four-service staging stack, HTTPS ingress, and two CI jobs.
+- **Outputs**: Local MySQL service, non-root Django image, four-service staging stack, HTTPS ingress, and three CI jobs.
 - **Dependencies**: Docker 28+, Compose 2.40+, `python:3.14-slim`, `mysql:8.4`, `caddy:2-alpine`, Gunicorn, and WhiteNoise.
-- **Behavior**: Local Compose publishes only MySQL for host-run Django. The image installs requirements, keeps source root-owned, grants UID/GID 10001 write access only to static output, and runs the entrypoint. Entrypoint validates seed flags, collects static, migrates, optionally seeds, then execs Gunicorn. Staging isolates MySQL on an internal network and exposes only Caddy. CI now compiles Python before Ruff, runs real-MySQL tests/reversible migrations, builds the image, checks ownership, and exercises disposable HTTPS persistence.
+- **Behavior**: Local Compose publishes MySQL and Redis for host-run Django. The image installs
+  requirements, keeps source root-owned, grants UID/GID 10001 write access only to static output,
+  and runs the entrypoint. Entrypoint validates seed flags, collects static, migrates, optionally
+  seeds, then execs Gunicorn. Staging isolates MySQL on an internal network and exposes only Caddy.
+  Backend CI compiles Python before Ruff, runs real-MySQL tests/reversible migrations, builds the
+  image, checks ownership, and exercises disposable HTTPS persistence. The mobile CI job uses Node
+  22/JDK 17 for dependency alignment, Doctor, type/lint, both exports, clean Android CNG, and API 36
+  debug assembly.
 - **Side Effects**: Builds images, creates containers/networks/volumes, applies migrations/seeds, and may obtain public certificates when deployed with real DNS.
 
 ## Function: N/A — executable-mode invariant
@@ -1528,20 +1546,42 @@
 - **Inputs**:
   - `repository root` (`GitHub Pages publishing source`): Branch `main`, root directory.
   - `viewer OS selection` (`radio input state`): Chooses which platform's commands are displayed. Defaults to Windows.
-- **Outputs**: A static, self-contained fifteen-section guide covering toolchain installation, configuration, database startup, migration and seeding, running the server, admin creation, verification, tests, teardown, troubleshooting, and a command cheat sheet.
-- **Dependencies**: GitHub Pages static hosting, Google Fonts (Anton, Inter, IBM Plex Mono). No build step, no framework, no external scripts, no local asset references.
-- **Behavior**: Pages serves static files only and executes no application code, so the Django storefront cannot be hosted there; the guide states this explicitly rather than implying a broken deployment. Empty `.nojekyll` disables the Jekyll build, which would otherwise pass tracked Markdown containing Django template tags through Liquid. Documentation links target GitHub's blob view because Pages serves sibling `.md` files as raw text. Platform-specific commands are switched by one radio group at the top of `.osroot` using CSS sibling selectors, so the guide works without JavaScript; `.only-win|mac|linux` toggle `display:block` and `.only-win-i|mac-i|linux-i` toggle `display:inline` for OS-specific words mid-sentence. Inline `style` attributes must never be used on these classes — they defeat the `display:none` default and reveal all three platforms simultaneously. The single script adds clipboard buttons as progressive enhancement. An inline SVG renders the browser → Django → MySQL topology with a `<title>`/`<desc>` pair for screen readers. Seven `<figure>` elements carry captured images from `docs/images/`, each with a descriptive `alt`, `loading="lazy"`, and accurate `width`/`height` so scrolling does not reflow. The `.ph` placeholder styling is retained for figures added before their image exists.
+- **Outputs**: A static, self-contained 13-step guide covering toolchain installation,
+  configuration, data services, migration/seeding, storefront/consoles, web and mobile walkthroughs,
+  QA, safe teardown, troubleshooting, and a command cheat sheet.
+- **Dependencies**: GitHub Pages static hosting and Google Fonts (Anton, Inter, IBM Plex Mono). No
+  application build or frontend framework is required; local PNG/SVG evidence lives under
+  `docs/images/`.
+- **Behavior**: Pages serves static files only and executes no Django code. Empty `.nojekyll`
+  disables Jekyll/Liquid processing. The guide provides keyboard-accessible OS and mobile-target
+  controls beside their labels, compact mobile section navigation, skip/return links, high-contrast
+  focus and masthead code styles, reduced-motion behavior, focusable table/diagram overflow, and
+  full-resolution screenshot links. Only command-only blocks receive Copy controls. Every Step
+  1–13 has image evidence. Four inline SVGs keep their accessible title/description and the existing
+  troubleshooting diagram remains. Screenshot markup carries unique descriptive alt text, lazy
+  loading, async decoding, and exact dimensions.
 - **Side Effects**: Publishes a public page at the repository's Pages URL on push to `main`.
 
 ## Function: N/A — guide image provenance
-- **Purpose**: Record how the seven guide images were produced so they can be regenerated rather than retouched when the UI changes.
+- **Purpose**: Record how the complete step-based screenshot set was produced so it can be
+  regenerated rather than retouched when the UI changes.
 - **Inputs**:
-  - `running dev server` (`http://127.0.0.1:8000`): Live storefront and admin, seeded catalogue.
-  - `real command output` (`text`): Version checks and Compose status from a development machine.
-- **Outputs**: `docs/images/01`-`07` PNGs, roughly 390 KB total, each at most 1600 px wide.
-- **Dependencies**: Playwright driving the installed Edge (`channel="msedge"`), the seeded MySQL database, and a local superuser for the admin capture.
-- **Behavior**: Application screenshots (03-06) were captured by navigating the real storefront - opening a product, selecting one option per variant axis, adding to cart, and logging into the admin - so the cart and checkout images carry a genuine SKU rather than fabricated data. Selecting one option per axis matters: Alpine keeps the add-to-cart button disabled until Size, Color, and Fit are all chosen, so a loop that re-queries a global button list re-clicks the same element and never enables it. Images 01 and 02 are real terminal output typeset as a terminal, which stays legible at the guide's column width where a console crop would not. Image 07 is a hand-authored SVG rendered to PNG. Captures use a 1280 px viewport at a 1.25 device scale factor, landing exactly on the 1600 px ceiling.
-- **Side Effects**: None on the application; capture is read-only apart from the cart entry written to browser localStorage in a disposable context.
+  - `disposable capture stack`: MySQL/Redis and database `metrodrip_guide_capture`, fictional
+    accounts, simulated payment/push providers.
+  - `running dev server`: live storefront, consoles, mobile API, and merchant order evidence.
+  - `real API 36 AVD`: installed MetroDrip development client and ADB framebuffer.
+  - `real sanitized command output`: tool, setup, QA, and teardown evidence.
+- **Outputs**: 25 `step-*` PNGs for Steps 1–13, the preserved troubleshooting PNG, four preserved
+  inline SVGs, and an SVG favicon. Legacy `01-` through `08-` screenshots remain unreferenced.
+- **Dependencies**: Linux host, Playwright/browser capture, Android API 36 AVD, ADB, disposable
+  database/services, and lossless PNG processing.
+- **Behavior**: Terminal/tooling captures use the final 1598×918 canvas; browser captures use a 1280×860 viewport
+  at 1.25 scale (1600×1075); Android captures use the raw 1080×2400 framebuffer. Canonical flows
+  run after `seed_demo` and before optional mock fixtures. Signed-in checkout is correlated across
+  Paid tracking, the in-app Order confirmed notification, and the merchant-console order number.
+  Windows/macOS/iOS shots remain explicitly unverified checklist slots and are never fabricated.
+- **Side Effects**: Writes only disposable capture data and browser/device-local state; the capture
+  stack is isolated from the developer's normal database and contains no real personal data.
 
 # Module / File: tests/
 
@@ -1550,9 +1590,9 @@
 - **Inputs**:
   - `pytest invocation` (`command`): `python -m pytest` using `config.settings.test`.
   - `MySQL service` (`MySQL 8/InnoDB`): Real lock and constraint behavior.
-- **Outputs**: 276 collected passing cases from 174 source-level test functions as of Cycle 1.
+- **Outputs**: Run-specific passing evidence recorded by CI and the Step 10 guide capture; no durable case count is frozen here.
 - **Dependencies**: pytest, pytest-django, Django test client, threading/concurrency helpers, seeded data, HMAC fixtures, and MySQL metadata.
-- **Behavior**: Coverage spans admin actions/registration, checkout/payment/webhook flow, two inventory concurrency gates, reservation/ledger semantics, model/database constraints, order allocation/state guards, centavo boundaries, health probes, staging settings/preview, catalog/storefront behavior, template rendering, banner URL regression, and migration-operation regression. Parametrization expands source functions into the 276 executed cases.
+- **Behavior**: Coverage spans admin actions/registration, checkout/payment/webhook flow, inventory concurrency and remote-ledger gates, reservation/ledger semantics, model/database constraints, order allocation/state guards, centavo boundaries, health probes, staging settings/preview, catalog/storefront behavior, mobile API contracts, tooling helpers, and guide structure/image accessibility.
 - **Side Effects**: Creates and destroys isolated test database state, sends mail only through the test backend, and may run concurrent database transactions.
 
 # Module / File: apps/accounts/admin.py
@@ -2137,8 +2177,16 @@
   - `Cycle 2 change set` (`git worktree`): Two admin sites, `Customer.role` plus migration `accounts.0002`, re-pointed registrations across nine apps, two management commands, the wrong-console page, the storefront console shortcut, and the homepage cache fix.
   - `local services` (`Docker Desktop, MySQL 8.4`): Real database plus a live `runserver` instance on port 8123.
 - **Outputs**: `QA_PASSED`.
-- **Dependencies**: Python 3.14.4, Django 5.2.16, Ruff, pytest 8.4.2, requests.
-- **Behavior**: 388 tests pass against real MySQL, up from 323. `ruff check` and `ruff format --check` are clean across 106 files; `compileall` is clean; `manage.py check` reports no issues; `makemigrations --check --dry-run` reports no drift; `check --deploy --fail-level WARNING` under staging settings reports no issues, 1 silenced. `accounts.0002_customer_role` was verified forward, reverse, and forward again on a throwaway database, and its data migration was verified against rows inserted at the 0001 schema: a pre-existing `is_staff` row lands on `administrator` and keeps console access, a shopper row stays `customer`. Registry inspection confirms 6 administrator models, 12 merchant models, and an empty intersection. Live-server checks confirm both login pages render their own heading, a merchant reaches all 12 merchant model pages, `/merchant/accounts/customer/` returns 404, `/admin/accounts/customer/` returns 302 then 403 with no customer data in the body, merchant credentials are refused at `/admin/login/` with an explanatory message rather than a redirect loop, and the storefront navbar shows the console shortcut to staff only. The three homepage-cache tests were each confirmed to fail with the fix removed.
+- **Dependencies**: Historical Cycle 2 environment: Python/Django, Ruff, pytest, requests, and real
+  MySQL 8. Current supported versions are recorded in `Tech Stack Setup Guide.md`.
+- **Behavior**: Historical Cycle 2 snapshot: 388 tests passed against real MySQL, up from 323.
+  `ruff check` and `ruff format --check` were clean across 106 files; `compileall`, Django checks,
+  migration drift, and deployed staging checks were clean. `accounts.0002_customer_role` was
+  verified forward/reverse/forward on a throwaway database and against pre-existing rows. Registry
+  inspection confirmed 6 administrator models, 12 merchant models, and an empty intersection.
+  Live-server checks covered both login pages, all merchant model pages, hidden customer routes,
+  wrong-console messaging, staff navbar behavior, and homepage-cache regressions. This is retained
+  as dated evidence, not the current suite count.
 - **Side Effects**: Applied `accounts.0002_customer_role` to the local development database; created the `Merchants` and `Administrators` groups with 36 and 19 permissions and a demo merchant account `seller@metrodrip.test`; created and destroyed throwaway test databases. No public deployment was changed.
 
 ## Function: N/A — Sprint P3/P4 capabilities updates
@@ -2150,12 +2198,13 @@
 - **Side Effects**: Reduced monolithic complexity, decoupled the catalog from inventory management in anticipation of separate scaling characteristics.
 
 
-## Sprint H — Mobile Application and Public API (2026-08-01)
+## Sprint H — Mobile Application and Public API (2026-08-01; mobile stack amended 2026-08-24)
 
 - **Purpose:** Document the public mobile surface and the React Native client added by the v1.3 Planning Addendum.
 - **Inputs:** Mobile HTTP requests carrying `X-Client-Version` and (mostly) a JWT bearer token.
 - **Outputs:** JSON payloads whose money fields are integer centavos **plus** a server-formatted display string.
-- **Dependencies:** DRF, SimpleJWT (rotation + blacklist), the existing domain services, Expo SDK 51.
+- **Dependencies:** DRF, SimpleJWT (rotation + blacklist), the existing domain services, Expo SDK
+  57 / React Native 0.86 development client.
 - **Behavior:** The API is a second consumer of the same services the web storefront uses; the app computes nothing (addendum D-13).
 
 ### Module: `apps/mobile_api/views.py`
@@ -2192,11 +2241,17 @@
 
 ### Client: `mobile/`
 
-- **Purpose:** The iOS/Android customer app, 11 screens matching the Figma frames one-to-one.
+- **Purpose:** The iOS/Android customer app: eleven Figma-mapped screens plus a distinct Orders tab.
 - **Inputs:** `/api/mobile/v1/`, the OS colour scheme, biometric enrolment, push permission.
 - **Outputs:** Rendered screens, server-validated checkout, deep links back from the payment flow.
-- **Dependencies:** Expo SDK 51, React Navigation 6, `expo-secure-store`, `expo-local-authentication`, `expo-notifications`.
-- **Behavior:** `src/theme/theme.ts` is the only file containing colour literals (grep-verified). Money is never computed on-device (grep-verified). JWTs live only in the OS keychain. `src/api/client.ts` transparently refreshes an expired access token once then replays the request; a network failure raises `OfflineError`, which screens render as the FR-30 offline banner over cached content.
+- **Dependencies:** Expo 57.0.16, React Native 0.86.2, React 19.2.3, React Navigation 7,
+  `expo-dev-client`, `expo-secure-store`, `expo-local-authentication`, and `expo-notifications`.
+- **Behavior:** `src/theme/theme.ts` is the only file containing colour literals (grep-verified).
+  Money is never computed on-device. JWTs live only in the OS keychain. `src/api/client.ts`
+  refreshes an expired access token once then replays the request; a network failure raises
+  `OfflineError`, rendered as the FR-30 offline banner over cached content. Home's bell opens the
+  notification stack screen while the Orders tab renders `OrdersScreen`. Native projects are CNG
+  outputs derived from `app.json` and intentionally ignored (ADR-H-006).
 
 | Screen | Figma frame | Node |
 |---|---|---|
@@ -2211,14 +2266,15 @@
 | `AccountScreen` | M09 Account | `65:155` |
 | `AuthScreen` | M10 Sign In / Register | `67:2` |
 | `WishlistScreen` | M11 Saved / Wishlist | `67:45` |
+| `OrdersScreen` | Additional Orders tab | No separate supplied frame |
 
 ### Test Module: `tests/test_mobile_api.py`
 
 - **Purpose:** Pin the Epic H contracts including the M7 QA gate.
 - **Inputs:** Real MySQL, version-header clients, 20 concurrent checkout threads.
-- **Outputs:** 19 passing cases.
+- **Outputs:** Executable coverage for the mobile API contracts; the exact passing-test count is recorded by each current test run rather than treated as permanent documentation.
 - **Dependencies:** pytest-django, `override_settings`, the simulated payment provider.
-- **Behavior:** Covers the missing-version-header 400, anonymous 401, credential 429, register/login/refresh/logout with refresh-token blacklisting, guest-order claiming on registration, password reset round-trip, the 20-item page cap, server-priced cart validation, tamper-proof checkout (client prices ignored), 409 rollback, gated and idempotent simulated confirmation, **20 parallel API buyers against 10 units producing exactly 10 orders**, tracking timeline states, cross-customer order 404, wishlist toggle, the verified-purchase review rule, and device registration plus notification-centre read state.
+- **Behavior:** Covers the missing-version-header 400, anonymous 401, credential 429, register/login/refresh/logout with refresh-token blacklisting, matching-email registration leaving guest orders unowned, public-token guest tracking, password reset round-trip, the 20-item page cap, server-priced cart validation, tamper-proof checkout (client prices ignored), 409 rollback, gated and idempotent simulated confirmation, **20 parallel API buyers against 10 units producing exactly 10 orders**, tracking timeline states, cross-customer order 404, wishlist toggle, the verified-purchase review rule, and device registration plus notification-centre read state.
 
 ### Regression: inventory provider registry
 
@@ -2228,18 +2284,20 @@
 - **Dependencies:** `INVENTORY_PROVIDER` setting.
 - **Behavior:** The microservice extraction had replaced the row-locked implementation outright, leaving `adjust_stock`, `release_expired_reservations`, and `scan_low_stock` as stubs and making commits/releases fire-and-forget. 19 tests including the M2 no-oversell gate were failing. The proven Epic B code is restored as the default provider; the service client is preserved verbatim behind an explicit opt-in.
 
-### QA gate — Sprint H
+### QA gate — current mobile stack
 
-| Check | Command | Result |
-|---|---|---|
-| Ruff lint | `.venv/Scripts/ruff check .` | Passed |
-| Ruff format | `.venv/Scripts/ruff format --check .` | Passed; 139 files |
-| Django system check | `manage.py check` | Passed; 0 issues |
-| Migration drift | `manage.py makemigrations --check --dry-run` | Passed; no changes |
-| Backend tests | `.venv/Scripts/pytest -q` | Passed; 407 on MySQL 8 |
-| Mobile typecheck | `npx tsc --noEmit` | Passed; 0 errors |
-| No on-device money math | grep for arithmetic on price/total/fee in `mobile/src` | Passed; comments only |
-| No hardcoded hex | grep for `#RRGGBB` in `mobile/src` | Passed; `theme.ts` only |
+| Check | Command |
+|---|---|
+| Dependency alignment | `npm run dependencies:check` |
+| Expo project diagnostics | `npm run doctor` |
+| Type and lint | `npm run typecheck && npm run lint` |
+| Production bundle exports | `npm run export:android && npm run export:ios` |
+| Clean Android CNG | `npm run prebuild:android` |
+| API 36 native assembly | `./android/gradlew -p android --no-daemon :app:assembleDebug` |
+| Server boundary | grep for arithmetic on price/total/fee in `mobile/src` |
+
+Run-specific results belong in CI and the completion report. An iOS JavaScript export is not a
+native iOS build; native iOS remains unverified until the macOS checklist passes.
 
 ## Sprint I — Fulfillment completion and printable documents (2026-08-02)
 
@@ -2523,3 +2581,120 @@ Report which active staff accounts have no confirmed TOTP device — that is, wh
 
 ## Known Risks / Follow-ups
 - Reports only *active* staff. A deactivated account cannot sign in anyway, but a reactivated one is unenrolled and will be refused once the flag is on.
+
+# Module / File: mobile/package.json, mobile/app.json, mobile/eas.json, and mobile/.gitignore
+
+## Purpose
+Define the Expo 57 customer client's reproducible JavaScript dependencies,
+Continuous Native Generation inputs, local-development commands, and external
+distribution boundaries (ADR-H-006).
+
+## Public Interfaces
+
+### Scripts: `start`, `android`, `ios`, `dependencies:check`, `doctor`, `typecheck`, `lint`, `export:*`, `prebuild:android`, and `build:*`
+- **Purpose**: Provide one stable command vocabulary for development, validation,
+  native generation, and EAS builds.
+- **Inputs**: Node 22.13+, npm lockfile, public `EXPO_PUBLIC_API_URL`, and the
+  platform toolchain appropriate to the command.
+- **Outputs**: Development-client Metro server, generated native project,
+  installed debug application, production bundle exports, or EAS build request.
+- **Errors**: Dependency drift, invalid Expo config, TypeScript/ESLint errors,
+  missing Android/iOS toolchain, missing EAS project/signing/environment inputs.
+- **Dependencies**: Expo 57.0.16, React Native 0.86.2, React 19.2.3,
+  TypeScript 6.0.3, React Navigation 7, `expo-dev-client`, and Expo modules.
+- **Behavior**: `npm run android`/`ios` are the first native build/install;
+  `npm start` explicitly targets the installed development client. Prebuild
+  recreates ignored native output from `app.json`. Android pins compile/target
+  36, Build Tools 36.0.0, and minimum 24. The versioned
+  `withAndroidCoreLibraryDesugaring` plugin adds `desugar_jdk_libs` 2.0.3 so Java time APIs remain
+  available on API 24–25. iOS pins minimum 16.4 and local-network, Face ID, encryption, bundle, and
+  orientation settings. EAS files contain no
+  fake owner/project IDs, API hosts, or App Store identifiers.
+- **Side Effects**: Installs dependencies, creates ignored `android/`, `ios/`,
+  or `dist/` output, starts local processes, and may submit an EAS build only
+  when an authorized operator supplies external account configuration.
+- **Security & Privacy Notes**: `EXPO_PUBLIC_*` values are readable from the
+  installed bundle and must never contain credentials. JWTs remain in
+  SecureStore. Store signing and push credentials remain outside the repository.
+- **Accessibility / UX Notes**: Splash hiding is failure-safe when fonts fail;
+  fallback fonts keep the app usable. Orders and Notifications are distinct
+  destinations with truthful labels.
+- **Verification Status**: The Linux/Android gate passed, and one clean debug APK with
+  compile/minimum/target SDK 36/24/36 rendered on API 24 and API 36 emulators. Native
+  Windows/macOS/iOS status is recorded separately;
+  an iOS export is not represented as a native iOS compile.
+
+## Data Flow
+`package-lock.json` + `app.json` → npm/Expo CLI → CNG native output and Metro
+bundle → development client → `/api/mobile/v1/`.
+
+## Known Risks / Follow-ups
+- Final owner/project ID, API environments, brand assets, signing/store records,
+  privacy metadata, and remote-push credentials are externally blocked launch
+  inputs.
+- Any native requirement not expressible in current Expo config needs a versioned
+  config plugin; editing ignored generated files is not a durable fix.
+
+# Module / File: scripts/wait-for-http.py, scripts/launch-android-emulator.py, scripts/setup-android-emulator.ps1, and .vscode/tasks.json
+
+## Purpose
+Orchestrate the local mobile dependency graph without racing service health,
+booting an arbitrary emulator, or allowing Expo to choose the wrong device.
+
+## Public Interfaces
+
+### Command: `wait-for-http.py URL [--status 200] [--timeout 90] [--interval 0.5]`
+- **Purpose**: Poll a readiness URL until the required status or a bounded
+  deadline.
+- **Inputs**: URL, expected status, timeout, and interval.
+- **Outputs**: Success line and exit 0, or a concise timeout/configuration error.
+- **Errors**: Network/HTTP failures are retried until the deadline; invalid
+  non-positive timing values fail immediately.
+- **Dependencies**: Python standard library only.
+- **Side Effects**: Bounded HTTP GET requests.
+- **Observability Notes**: Final output names the URL/status; timeout reports the
+  last observed failure without leaking response bodies.
+- **Verification Status**: Executed against an available local server and an
+  unavailable port on 2026-08-24.
+
+### Command: `launch-android-emulator.py [--avd MetroDrip_Pixel_API36] [--port 5554] [--timeout 240]`
+- **Purpose**: Launch or reuse only the exact MetroDrip AVD, then wait for a
+  fully booted guest.
+- **Inputs**: Exact AVD name, safe even console port, and bounded timeout.
+- **Outputs**: Verified serial `emulator-<port>` or a fail-safe error.
+- **Errors**: Missing SDK/executable/AVD, unsafe port, early process exit, wrong
+  AVD on the reserved serial, subprocess failure, or boot timeout.
+- **Dependencies**: Python standard library, Android `adb`, and `emulator`.
+- **Behavior**: Validates the installed AVD list, starts the emulator detached
+  only when the reserved serial is absent, verifies the running AVD name, and
+  waits for both `sys.boot_completed=1` and stopped boot animation. It never
+  kills an existing emulator.
+- **Side Effects**: May start the ADB server and the named emulator process.
+- **Security & Privacy Notes**: Resolves only the local SDK; executes no
+  user-supplied shell string.
+- **Verification Status**: Unit contracts cover invalid ports, missing AVD,
+  wrong-AVD refusal, and full-ready success. Real API 36 Android evidence was
+  captured on Linux; Windows execution remains unverified.
+
+### Script/task graph: Windows installer and `MetroDrip: Full mobile stack`
+- **Purpose**: Install API 36/Build Tools 36.0.0 under JDK 17, create the 10 GB
+  AVD, and run the complete local stack in dependency order.
+- **Behavior**: Compose uses `--wait`; Django runs with explicit simulated
+  payments; the readiness helper polls `/healthz/ready/`; the named-emulator
+  helper verifies port 5554; Expo targets `MetroDrip_Pixel_API36`.
+- **Side Effects**: The installer writes the Android SDK/AVD and user-scoped SDK
+  environment variables. The task graph starts containers, Django, emulator,
+  Metro, and the debug app.
+- **Verification Status**: JSON, Python compile/Ruff, Compose flag availability,
+  and targeted tests executed. PowerShell parser/runtime is unverified because
+  `pwsh` was unavailable on the Linux verification host.
+
+## Data Flow
+Compose health → Django background task → HTTP readiness → exact AVD boot
+→ Expo native build/install on the verified device.
+
+## Known Risks / Follow-ups
+- Execute the exact Windows capture checklist in `docs/images/README.md` before
+  marking that installer path verified.
+- The fixed port intentionally fails if another AVD owns it; the operator must
+  identify and stop that emulator rather than letting automation kill it.

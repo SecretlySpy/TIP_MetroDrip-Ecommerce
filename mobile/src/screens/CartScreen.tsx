@@ -12,7 +12,7 @@
 
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -39,12 +39,18 @@ export default function CartScreen() {
     total?: string;
     zoneName?: string;
   }>({});
+  const [validatedCartSignature, setValidatedCartSignature] = useState('');
+  const validationRequest = useRef(0);
+  const cartSignature = cart.lines
+    .map((line) => `${line.variantId}:${line.qty}`)
+    .sort()
+    .join('|');
 
   useEffect(() => {
     if (!focused || cart.lines.length === 0) {
-      setValidation(null);
       return;
     }
+    const requestId = ++validationRequest.current;
     (async () => {
       // Default preview zone = first active zone (NCR); checkout re-selects.
       const zoneList = zone ? null : await commerce.zones().catch(() => null);
@@ -57,6 +63,8 @@ export default function CartScreen() {
         : commerce.validateCart(items)
       ).catch(() => null)) as (CartValidation & Record<string, string>) | null;
 
+      if (requestId !== validationRequest.current) return;
+
       if (data) {
         setValidation(data);
         setServerTotals({
@@ -64,13 +72,23 @@ export default function CartScreen() {
           total: data.total_display,
           zoneName: data.zone_name,
         });
+      } else {
+        setValidation(null);
+        setServerTotals({});
       }
+      setValidatedCartSignature(cartSignature);
     })();
+    return () => {
+      if (validationRequest.current === requestId) validationRequest.current += 1;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focused, cart.lines]);
+  }, [focused, cartSignature]);
+
+  const currentValidation = validatedCartSignature === cartSignature ? validation : null;
+  const currentServerTotals = validatedCartSignature === cartSignature ? serverTotals : {};
 
   const lineFor = (variantId: number) =>
-    validation?.lines.find((line) => line.variant_id === variantId);
+    currentValidation?.lines.find((line) => line.variant_id === variantId);
 
   const clearBag = () => {
     Alert.alert('Clear bag', 'Remove all items from your bag?', [
@@ -197,13 +215,13 @@ export default function CartScreen() {
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <Text style={{ fontFamily: fonts.body, fontSize: 13, color: colors.muted }}>Subtotal</Text>
-                <Mono size={13} weight="semibold">{validation?.subtotal_display ?? '—'}</Mono>
+                <Mono size={13} weight="semibold">{currentValidation?.subtotal_display ?? '—'}</Mono>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <Text style={{ fontFamily: fonts.body, fontSize: 13, color: colors.muted }}>
-                  Shipping{serverTotals.zoneName ? ` — ${serverTotals.zoneName}` : ''}
+                  Shipping{currentServerTotals.zoneName ? ` — ${currentServerTotals.zoneName}` : ''}
                 </Text>
-                <Mono size={13} weight="semibold">{serverTotals.shipping ?? 'At checkout'}</Mono>
+                <Mono size={13} weight="semibold">{currentServerTotals.shipping ?? 'At checkout'}</Mono>
               </View>
               <View
                 style={{
@@ -215,7 +233,7 @@ export default function CartScreen() {
               >
                 <Text style={{ fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink }}>Total</Text>
                 <Text style={{ fontFamily: fonts.display, fontSize: 26, color: colors.ink }}>
-                  {serverTotals.total ?? validation?.subtotal_display ?? '—'}
+                  {currentServerTotals.total ?? currentValidation?.subtotal_display ?? '—'}
                 </Text>
               </View>
             </View>
@@ -223,7 +241,7 @@ export default function CartScreen() {
 
           <StickyBar>
             <PillButton
-              label={`Checkout — ${serverTotals.total ?? validation?.subtotal_display ?? ''}`}
+              label={`Checkout — ${currentServerTotals.total ?? currentValidation?.subtotal_display ?? ''}`}
               variant="ink"
               style={{ minHeight: 54 }}
               textStyle={{ fontFamily: fonts.bodyBold, fontSize: 16 }}

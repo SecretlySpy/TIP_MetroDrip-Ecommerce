@@ -68,18 +68,6 @@ def _auth_payload(customer):
     return {**_tokens_for(customer), "customer": ProfileSerializer(customer).data}
 
 
-def _claim_guest_orders(customer):
-    """FR-15/FR-22 parity with web registration: attach matching guest orders."""
-    claimed = 0
-    for order in Order.objects.filter(
-        customer__isnull=True, shipping_address__email=customer.email
-    ):
-        order.customer = customer
-        order.save(update_fields=["customer"])
-        claimed += 1
-    return claimed
-
-
 # ---------------------------------------------------------------------------
 # H-3: Auth
 # ---------------------------------------------------------------------------
@@ -97,7 +85,6 @@ class RegisterView(APIView):
         customer = Customer.objects.create_user(
             email=data["email"], password=data["password"], name=data["name"], phone=data["phone"]
         )
-        _claim_guest_orders(customer)
         return Response(_auth_payload(customer), status=status.HTTP_201_CREATED)
 
 

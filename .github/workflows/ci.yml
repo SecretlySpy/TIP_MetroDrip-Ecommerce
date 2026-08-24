@@ -211,6 +211,10 @@ jobs:
   # so strict-mode tsc is the only thing that notices when the two drift.
   mobile:
     runs-on: ubuntu-latest
+    env:
+      # Public build-time configuration only; never put credentials in an
+      # EXPO_PUBLIC_* variable because Metro inlines it into the bundle.
+      EXPO_PUBLIC_API_URL: https://mobile-ci.example.test/api/mobile/v1
     defaults:
       run:
         working-directory: mobile
@@ -221,9 +225,37 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
       - name: Install dependencies
         run: npm ci
+      - name: Verify Expo dependency alignment
+        run: npm run dependencies:check
+      - name: Expo project diagnostics
+        run: npm run doctor
       - name: Typecheck (tsc --noEmit, strict)
         run: npm run typecheck
-      - name: Lint (eslint)
+      - name: Lint (Expo flat ESLint config)
         run: npm run lint
+      - name: Export Android production bundle
+        run: npm run export:android
+      - name: Export iOS production bundle
+        run: npm run export:ios
+      - name: Install Android API 36 toolchain
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "platforms;android-36"
+          "build-tools;36.0.0"
+          "ndk;27.1.12297006"
+          "cmake;3.22.1"
+      - name: Generate Android project from Expo config
+        run: npm run prebuild:android
+      - name: Assemble Android API 36 debug app
+        run: >-
+          ./android/gradlew -p android --no-daemon
+          -PreactNativeArchitectures=x86_64
+          :app:assembleDebug
+        env:
+          NODE_ENV: development

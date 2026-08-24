@@ -289,7 +289,11 @@ def checkout_page(request):
         return render(
             request,
             "storefront/checkout.html",
-            {"zones": zones, "GOOGLE_MAPS_API_KEY": settings.GOOGLE_MAPS_API_KEY},
+            {
+                "zones": zones,
+                "GOOGLE_MAPS_API_KEY": settings.GOOGLE_MAPS_API_KEY,
+                "payment_provider": settings.PAYMENT_PROVIDER,
+            },
         )
     if request.method != "POST":
         return HttpResponseNotAllowed(["GET", "POST"])

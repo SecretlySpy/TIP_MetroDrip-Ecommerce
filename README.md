@@ -14,7 +14,7 @@ Governing docs: [AI Documentation Notes.md](AI%20Documentation%20Notes.md) · [D
 | Merchant console | `/merchant/` | Orders, packing slips, inventory — staff role enforced |
 | Administrator console | `/admin/` | Full admin; **not** interchangeable with merchant (see `tests/test_console_separation.py`) |
 | Mobile API | `/api/mobile/v1/` | JWT auth, catalog, cart validate, checkout, orders, account, wishlist, reviews, notifications |
-| Mobile app | `mobile/` | Expo SDK 51, 11 screens, SecureStore tokens, **no client-side money math (D-13)** |
+| Mobile app | `mobile/` | Expo SDK 57 / React Native 0.86, 12 screens, SecureStore tokens, **no client-side money math (D-13)** |
 | Health | `/healthz/live/`, `/healthz/ready/` | Liveness + readiness |
 | Providers | payments / shipping / notifications | Config-driven adapters; **`PAYMENT_PROVIDER=simulated`** is the local default |
 
@@ -36,7 +36,8 @@ Remaining strangler steps: **3** stock ownership is **complete and evidenced** �
 
 ## Local development
 
-Requires **Python 3.14**, Docker (MySQL 8 + Redis), and Node 20+ for the mobile app.
+Requires **Python 3.14** and Docker (MySQL 8 + Redis). Mobile development additionally requires
+Node.js **22.13+**; native Android development uses JDK 17 and Android API 36.
 
 ```bash
 # 1. Python env
@@ -61,7 +62,10 @@ PAYMENT_PROVIDER=simulated python manage.py runserver 0.0.0.0:8080
 
 ### Which seed command is canonical
 
-**`seed_demo` is the only canonical catalog seed** (ADR-A-012): 5 curated products with real copy and imagery. Anything customer- or stakeholder-facing should be seeded from it alone.
+**`seed_demo` is the only canonical catalog seed** (ADR-A-012): five curated products with stable
+copy, variants, inventory, shipping zones, flatpages, and a homepage banner. It does **not** attach
+product imagery or create Men/Women child categories. Anything customer- or stakeholder-facing
+should start from it alone; add approved imagery separately.
 
 The other scripts are **development fixtures, not alternatives**, and they are not equivalent:
 
@@ -71,7 +75,10 @@ The other scripts are **development fixtures, not alternatives**, and they are n
 | `manage.py seed_mock_catalog` | bulk mock catalog | Pagination and filter testing |
 | `seed_assignment.py`, `seed_more.py`, `seed_200.py`, `seed_collections.py` | ~150+ placeholder-copy products | Local pagination/perf work only |
 
-A dev database that has had the padded scripts run against it holds **far more** than the canonical five — the count depends entirely on which scripts were run and how often, and they stack. (Measured on one working dev database on 2026-08-24: **1,003 products**. Check yours rather than assuming a number: `python manage.py shell -c "from apps.catalog.models import Product; print(Product.objects.count())"`.)
+A dev database that has had the padded scripts run against it can hold **far more** than the
+canonical five. The count depends on which fixtures ran and is not an API or screenshot contract.
+Check the active database instead of assuming a number:
+`python manage.py shell -c "from apps.catalog.models import Product; print(Product.objects.count())"`.
 
 That is useful for exercising pagination and filters and harmless locally — but it is **not** what the demo is supposed to look like. To reset a demo-facing environment, truncate the catalog and run `seed_demo` alone.
 
@@ -84,9 +91,13 @@ That is useful for exercising pagination and filters and harmless locally — bu
 python manage.py check_console_otp            # --strict exits non-zero if any account is unenrolled
 ```
 
-Enroll a device at `/admin/otp_totp/totpdevice/add/`, scan the QR code with any
-authenticator app, then confirm it. **Once an account has a confirmed device, its
-password alone stops working** — there is no opt-out path.
+The stock `/admin/otp_totp/totpdevice/add/` form is a low-level device editor,
+not a verified enrolment wizard. A newly saved device can become confirmed before
+the user proves a code, and this repository has no self-service recovery-code
+flow. Do not direct a beginner through that form. Keep `CONSOLE_REQUIRE_OTP` off
+unless an authorized operator has tested provisioning and recovery with a second
+administrator. **Once an account has a confirmed device, its password alone stops
+working while that device exists.**
 
 | Setting | Default | Notes |
 |---|---|---|
@@ -95,9 +106,10 @@ password alone stops working** — there is no opt-out path.
 | `CONSOLE_LOGIN_TRUSTED_PROXY_DEPTH` | `0` | `0` reads `REMOTE_ADDR` and ignores `X-Forwarded-For`. **Set to `1` behind Caddy**, or per-IP limiting is measuring the proxy |
 | `CONSOLE_REQUIRE_OTP` | off | Requires 2FA of *every* account, enrolled or not |
 
-> **Enrol before enabling `CONSOLE_REQUIRE_OTP`.** It refuses any account without a
-> confirmed device — including the superuser needed to enroll others. Run
-> `check_console_otp` first; it lists exactly who would be locked out.
+> **Audit before enabling `CONSOLE_REQUIRE_OTP`.** It refuses any account without a
+> confirmed device, including the superuser needed to recover others. Run
+> `check_console_otp` first; it reports exactly who would be locked out. Production
+> rollout remains an operator task until a scan-and-confirm and recovery workflow exists.
 
 > **Rate-limit counters live in `CACHES["default"]`,** which is unconfigured and
 > therefore per-process. Under multiple Gunicorn workers the effective limit is
@@ -133,23 +145,39 @@ bash scripts/smoke-services.sh
 
 ```bash
 cd mobile
-npm install
+npm ci
 cp .env.example .env                 # EXPO_PUBLIC_API_URL → host API
-npm start                            # Expo Go / emulator; see mobile/README.md
+npm run android                      # first build/install: Android development client
+# Later JavaScript-only sessions:
+npm start                            # Expo development-client bundler
 ```
 
 Android emulator alias for the host machine: `http://10.0.2.2:8080/api/mobile/v1`.
+The first iOS build is `npm run ios` on macOS with Xcode 26.4+; Apple-side execution has not been
+verified from this Linux workspace. Expo Go is not the supported client.
+
+Two different purchase checks are intentional:
+
+- **Guest:** checkout reaches public Order Tracking at **Paid**. A guest order has no customer, so
+  it does not create an in-app notification or appear in a later account automatically.
+- **Signed in:** checkout reaches **Paid**, Home's bell opens Notifications with **Order
+  confirmed**, and the matching order is visible to staff in `/merchant/`.
 
 ## QA gate (run before every PR)
 
 ```bash
-python -m compileall -q apps config jobs tests manage.py
+python -m compileall -q apps config contracts jobs services tests manage.py
 ruff check .
 ruff format --check .
 python manage.py check
 python manage.py makemigrations --check --dry-run
 pytest                               # needs Docker MySQL — concurrency tests use real InnoDB locks
 ```
+
+Mobile QA, from `mobile/`, is `npm ci`, `npm run dependencies:check`, `npm run doctor`,
+`npm run typecheck`, `npm run lint`, `npm run export:android`, and `npm run export:ios`. A clean
+native Android gate additionally runs `npm run prebuild:android` followed by
+`./android/gradlew -p android --no-daemon :app:assembleDebug` under JDK 17/API 36.
 
 **Never write `except A, B:`** — use `except (A, B):`. Guarded by `tests/test_source_compiles.py` and the pre-commit `compile-python` hook.
 
@@ -159,7 +187,7 @@ pytest                               # needs Docker MySQL — concurrency tests 
 |---|---|
 | `MYSQL_*` | Database (see `.env.example`) |
 | `DJANGO_SECRET_KEY` | Required |
-| `PAYMENT_PROVIDER` | `simulated` (default dev) or PayMongo |
+| `PAYMENT_PROVIDER` | `simulated` or `paymongo`; explicit values win, otherwise dev infers from the PayMongo key |
 | `PAYMONGO_SECRET_KEY` / `PAYMONGO_WEBHOOK_SECRET` | Live payments |
 | `GOOGLE_MAPS_API_KEY` | FR-13 Places autocomplete on web checkout |
 | `COURIER_WEBHOOK_SECRET` | Inbound courier webhooks (fail-closed if unset) |

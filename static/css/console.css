@@ -518,6 +518,8 @@ html, body {
 }
 
 .dense-table tbody td {
+  background: var(--c-surface);
+  color: var(--c-ink);
   padding: var(--sp-sm) var(--sp-md);
   border-bottom: 1px dashed var(--c-border);
   font-family: var(--font-mono);
@@ -529,7 +531,7 @@ html, body {
   border-bottom: none;
 }
 
-.dense-table tbody tr:hover {
+.dense-table tbody tr:hover td {
   background: var(--c-elevated);
 }
 
@@ -539,6 +541,11 @@ html, body {
 }
 
 .td-muted {
+  color: var(--c-muted);
+}
+
+.dense-table tbody td.td-muted,
+.dense-table tbody td .td-muted {
   color: var(--c-muted);
 }
 
@@ -866,7 +873,9 @@ input[type="submit"].default, .button.default,
   background: var(--c-surface);
 }
 
+#result_list tbody th,
 #result_list tbody td {
+  background: var(--c-surface) !important;
   padding: var(--sp-sm) var(--sp-md);
   border-bottom: 1px dashed var(--c-border);
   font-family: var(--font-mono);
@@ -875,18 +884,27 @@ input[type="submit"].default, .button.default,
   vertical-align: middle;
 }
 
+#result_list tbody tr:hover th,
 #result_list tbody tr:hover td {
-  background: var(--c-elevated);
+  background: var(--c-elevated) !important;
 }
 
+#result_list tbody tr.selected th,
+#result_list tbody tr.selected td {
+  background: #2A3318 !important;
+}
+
+#result_list tbody tr:last-child th,
 #result_list tbody tr:last-child td {
   border-bottom: none;
 }
 
+#result_list tbody th a,
 #result_list tbody td a {
   color: var(--c-ink);
   font-weight: 500;
 }
+#result_list tbody th a:hover,
 #result_list tbody td a:hover {
   color: var(--c-volt);
 }
@@ -1008,7 +1026,7 @@ textarea:focus-visible, select:focus-visible {
    ============================================================================= */
 
 #changelist-filter {
-  background: var(--c-surface);
+  background: var(--c-surface) !important;
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   padding: var(--sp-lg);
@@ -1167,7 +1185,7 @@ fieldset .description {
   color: var(--c-muted);
   padding: var(--sp-md) var(--sp-lg);
   border-top: 1px solid var(--c-border);
-  background: var(--c-surface);
+  background: var(--c-surface) !important;
 }
 
 .paginator a {

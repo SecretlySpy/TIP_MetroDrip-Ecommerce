@@ -1,8 +1,6 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable react-hooks/exhaustive-deps */
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -34,20 +32,23 @@ export default function OrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<'offline' | 'failed' | null>(null);
 
-  const load = () =>
-    orders
-      .history()
-      .then((page) => {
-        setItems(page.results);
-        setLoadError(null);
-      })
-      .catch((err: unknown) => {
-        setLoadError(err instanceof OfflineError ? 'offline' : 'failed');
-      });
+  const load = useCallback(
+    () =>
+      orders
+        .history()
+        .then((page) => {
+          setItems(page.results);
+          setLoadError(null);
+        })
+        .catch((err: unknown) => {
+          setLoadError(err instanceof OfflineError ? 'offline' : 'failed');
+        }),
+    [],
+  );
 
   useEffect(() => {
     if (focused && customer) load();
-  }, [focused, customer]);
+  }, [focused, customer, load]);
 
   if (!customer) {
     return (
@@ -135,4 +136,3 @@ export default function OrdersScreen() {
     </SafeAreaView>
   );
 }
-

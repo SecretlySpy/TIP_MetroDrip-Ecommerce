@@ -363,7 +363,7 @@ export default function CheckoutScreen() {
               </Mono>
             ) : (
               <Mono size={10} color={colors.muted} style={{ textAlign: 'center' }}>
-                Secured by PayMongo · card details never stored
+                Handled by the configured server provider · card details never stored by MetroDrip
               </Mono>
             )}
           </View>

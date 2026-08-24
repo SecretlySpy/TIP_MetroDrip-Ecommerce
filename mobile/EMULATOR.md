@@ -1,173 +1,183 @@
-# Running the MetroDrip app in Antigravity IDE
+# Running the MetroDrip development client
 
-Antigravity is VS Code-based, so it uses this repo's `.vscode/` tasks and
-extension recommendations directly. This guide gets an Android emulator running
-the app against your local Django API.
+Antigravity is VS Code-based, so it uses the repository's `.vscode/tasks.json`
+directly. This guide runs the Expo 57 development client against the local
+Django API on the dedicated **`MetroDrip_Pixel_API36`** emulator.
 
----
+Verified scope on 2026-08-24: Linux host, real API 36 Android AVD, local Django
+API, simulated checkout, and clean-APK render smoke tests on API 24 and API 36.
+The APK declares compile/minimum/target SDK 36/24/36; a CNG config plugin supplies
+`desugar_jdk_libs` 2.0.3 for Java time APIs on API 24–25. The Windows installer/task path is syntax- and
+contract-checked but has not been executed on Windows in this delivery. Native
+iOS execution remains unverified until run on qualifying macOS hardware.
 
-## 1. One-time setup
+## 1. One-time host setup
 
-From the repo root, in a PowerShell terminal:
+Requirements:
+
+| Requirement | Contract | Check |
+|---|---|---|
+| Node.js | 22.13+ | `node --version` |
+| Java | JDK 17 | `java -version` |
+| Android SDK | platform 36, Build Tools 36.0.0, platform-tools, emulator | `sdkmanager --list_installed` |
+| AVD | `MetroDrip_Pixel_API36`, Google APIs x86_64, 10 GB data | `emulator -list-avds` |
+| Host | Hardware virtualisation and about 15 GB free | OS-specific check |
+
+### Windows automated path
+
+From the repository root in PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\setup-android-emulator.ps1
 ```
 
-The script is idempotent — re-run it safely if a step fails. It:
+The idempotent script installs the required SDK packages under
+`%LOCALAPPDATA%\Android\Sdk`, sets `ANDROID_HOME`/`ANDROID_SDK_ROOT`, accepts
+licenses, creates the exact AVD, and repairs its target/tag metadata. It refuses
+a Java version other than 17. Restart Antigravity after the first run so it
+inherits the new environment variables.
 
-1. Installs the Android command-line tools to `%LOCALAPPDATA%\Android\Sdk`
-2. Sets `ANDROID_HOME` / `ANDROID_SDK_ROOT` and extends your user `Path`
-3. Accepts the SDK licences
-4. Installs `platform-tools`, `emulator`, `platforms;android-35`, and the
-   `google_apis;x86_64` system image
-5. Creates the **`MetroDrip_Pixel_API35`** AVD and tunes it to 2 GB RAM /
-   6 GB data / hardware keyboard
+### Linux and macOS Android path
 
-> **Why API 35 and not 34.** Expo Go 2.31.2 — the client for SDK 51, which
-> this app targets — crashes on boot on the `android-34;google_apis` image
-> with `Failed to create NativeModule 'UIManager'` and
-> `host.exp.exponent.MainApplication cannot be cast to
-> com.facebook.react.ReactApplication`. The identical APK and JS bundle run
-> fine on API 35. Verified on this machine; don't "simplify" the script back
-> to 34.
+Use Android Studio's SDK Manager to install Android SDK Platform 36, Build Tools
+36.0.0, Platform Tools, Emulator, and the API 36 Google APIs x86_64 image. In
+Device Manager create a Pixel 7-class device named exactly
+`MetroDrip_Pixel_API36`, give it a 10 GB data partition, and enable hardware
+keyboard input.
 
-**Restart Antigravity afterwards** so it inherits `ANDROID_HOME`.
+### Install project dependencies
 
-### Prerequisites
+From `mobile/`:
 
-| Requirement | Why | Check |
-|---|---|---|
-| JDK 17+ | `sdkmanager` and `avdmanager` are Java tools | `java -version` |
-| ~10 GB free disk | SDK + system image + AVD data | — |
-| Virtualisation enabled in BIOS | x86_64 emulator needs WHPX/HAXM | `systeminfo` → Hyper-V requirements |
+```bash
+npm ci
+cp .env.example .env          # PowerShell: Copy-Item .env.example .env
+```
 
-> If your CPU cannot virtualise, use a physical device instead: enable USB
-> debugging, plug it in, and run `npm run android`. Everything else is identical.
-
----
+Native projects are generated from `app.json` through Expo Continuous Native
+Generation. `android/` and `ios/` are ignored outputs; do not put durable edits
+inside them.
 
 ## 2. Daily run
 
-The fastest path is the bundled task:
+The one-click Android path is:
 
 **Terminal → Run Task… → `MetroDrip: Full mobile stack`**
 
-That runs, in order: Docker (MySQL + Redis) → Django on `0.0.0.0:8080` →
-emulator → Expo. Or do it by hand in three terminals:
+It waits for healthy MySQL/Redis, starts Django with simulated payments, polls
+the database-backed readiness endpoint, starts only the named AVD on
+`emulator-5554`, waits for `sys.boot_completed=1` and the boot animation to
+stop, then builds/installs MetroDrip on that verified AVD.
+
+The same flow by hand uses four terminals:
+
+```bash
+# 1. Repository root: data services
+docker compose up -d db redis --wait
+
+# 2. Repository root: device-reachable API
+PAYMENT_PROVIDER=simulated .venv/bin/python manage.py runserver 0.0.0.0:8080
+
+# 3. Repository root: exact named emulator and bounded readiness check
+.venv/bin/python scripts/launch-android-emulator.py \
+  --avd MetroDrip_Pixel_API36 --port 5554 --timeout 240
+
+# 4. mobile/: first native build and installation
+npm run android -- --device MetroDrip_Pixel_API36
+```
+
+PowerShell uses:
 
 ```powershell
-# 1. API — must bind 0.0.0.0, not 127.0.0.1, or the emulator cannot reach it
 $env:PAYMENT_PROVIDER="simulated"
-.venv\Scripts\python.exe manage.py runserver 0.0.0.0:8080
-
-# 2. Emulator
-emulator -avd MetroDrip_Pixel_API35
-
-# 3. App
-cd mobile
-npm run android
+.\.venv\Scripts\python.exe manage.py runserver 0.0.0.0:8080
+.\.venv\Scripts\python.exe scripts\launch-android-emulator.py `
+  --avd MetroDrip_Pixel_API36 --port 5554 --timeout 240
+Set-Location mobile
+npm run android -- --device MetroDrip_Pixel_API36
 ```
 
-### Why `0.0.0.0` and `10.0.2.2`
+After the native development client is installed, JavaScript-only sessions use
+`npm start`. It runs `expo start --dev-client`; Expo Go is not part of this
+workflow. Re-run `npm run android` after changing Expo plugins, native settings,
+or native dependencies.
 
-The emulator is a virtual machine with its own loopback. `127.0.0.1` inside it
-means *the emulator*, not your PC. Android's emulator maps **`10.0.2.2`** to the
-host's loopback, which is why `mobile/.env.example` ships:
+## 3. API address and local-network behavior
 
-```
-EXPO_PUBLIC_API_URL=http://10.0.2.2:8080/api/mobile/v1
-```
-
-A server bound to `127.0.0.1` will refuse that connection, so bind `0.0.0.0`.
+The emulator is a virtual machine. Its `127.0.0.1` is not the host, while
+Android maps **`10.0.2.2`** to the host loopback. Django must bind
+`0.0.0.0:8080`.
 
 | Target | `EXPO_PUBLIC_API_URL` |
 |---|---|
 | Android emulator | `http://10.0.2.2:8080/api/mobile/v1` |
-| iOS simulator (macOS) | `http://localhost:8080/api/mobile/v1` |
-| Physical device (same Wi-Fi) | `http://<your-LAN-IP>:8080/api/mobile/v1` |
+| iOS simulator on macOS | `http://localhost:8080/api/mobile/v1` |
+| Physical device on the same Wi-Fi | `http://<host-LAN-IP>:8080/api/mobile/v1` |
 
-For a physical device, `ALLOWED_HOSTS` normally needs no edit: `config/settings/dev.py` allows
-`10.0.2.2`, `localhost`, `127.0.0.1`, and — while `DEBUG` is on — this machine's LAN addresses,
-resolved at start-up. That lookup is wrapped in `try/except OSError`, so if it fails on your network
-the device is refused with a `400` naming the host, and adding your IP there fixes it.
+For physical devices, `config/settings/dev.py` adds the host's LAN addresses to
+`ALLOWED_HOSTS` when it can resolve them. If Django returns a 400 naming the
+host, add only that development address. iOS also displays the local-network
+permission text configured in `app.json`; deny means the local API cannot be
+reached until the permission is restored in Settings.
 
----
+## 4. Verify the integrated flows
 
-## 3. Verifying it works
+First confirm infrastructure:
 
-Once the app loads you should be able to complete a full purchase, because the
-dev server runs the **simulated** payment provider:
+```bash
+docker compose ps
+curl http://127.0.0.1:8080/healthz/ready/
+adb -s emulator-5554 shell getprop sys.boot_completed
+adb -s emulator-5554 emu avd name
+```
 
-1. Splash → *Continue as guest* (or create an account)
-2. Home → tap a product → pick size / colour / fit → **Add to Cart**
-3. Cart → **Checkout** → fill the form → pick a zone → **Pay**
-4. The app lands on Order Tracking with the timeline at *Paid*
-5. Sign in and check **Orders** — the notification centre shows
-   "Order confirmed"
+Expect healthy MySQL/Redis, `{"status": "ok"}`, boot value `1`, and AVD name
+`MetroDrip_Pixel_API36`.
 
-If step 3 fails with a network error, the API binding is wrong — see above.
+Then check both ownership paths:
 
----
+1. **Guest:** Continue as guest → product → select size/colour/fit → Cart →
+   Checkout → Pay. Public Order Tracking must reach **Paid**. No notification
+   or account order is expected because the order has no customer.
+2. **Signed in:** sign in before checkout and repeat the purchase. Tracking must
+   reach **Paid**; Home → bell → Notifications must show **Order confirmed**;
+   the same order number must appear in `/merchant/` → Orders.
 
-## 4. Troubleshooting
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| `emulator: command not found` | `Path` not reloaded | Restart Antigravity / the terminal |
-| Emulator hangs on the boot logo | Virtualisation off | Enable it in BIOS; or use a physical device |
-| App shows the offline banner | API not reachable | Bind `0.0.0.0:8080`; confirm `10.0.2.2` in `.env` |
-| `HTTP 400 missing_client_version` | Request bypassed the API client | All calls must go through `src/api/client.ts` |
-| Metro cache weirdness after edits | Stale bundler cache | `npx expo start -c` |
-| `adb devices` empty | Emulator not booted yet | Wait for the home screen, then re-run |
-| Expo Go dies instantly; logcat shows `Failed to create NativeModule 'UIManager'` | Running an API 34 image, or `react-native-reanimated/plugin` missing from `babel.config.js` | Use the API 35 AVD; keep the Reanimated plugin **last** in the Babel plugin list |
-| "Expo Go isn't responding" (ANR) | Two emulators competing for CPU | Run one at a time: `adb -s emulator-XXXX emu kill` |
-| Expo opens the *wrong* emulator | Expo CLI takes the first `adb` device and ignores `ANDROID_SERIAL` | Boot only the MetroDrip AVD, or install Expo Go manually and deep-link: `adb -s <serial> shell am start -a android.intent.action.VIEW -d 'exp://10.0.2.2:8090' host.exp.exponent` |
-| `adb devices` shows `offline` forever; qemu is running and the log stops after "Windows Hypervisor Platform accelerator is operational" | `config.ini` has empty `target` / `tag.ids` — the emulator cannot resolve its own system image, and fails silently rather than erroring | Re-run `scripts/setup-android-emulator.ps1` (it now writes those keys explicitly), or set `target=android-35`, `tag.id=google_apis`, `tag.ids=google_apis` by hand and boot with `-wipe-data` |
-| Emulator dies the moment the launching shell exits | The emulator is a child of that shell's process group | Launch it detached — the IDE task does this; from a script use `cmd /c start "" /MIN <batch that runs emulator.exe>` |
-| *Every* AVD stalls at `offline` — the emulator log stops after "Windows Hypervisor Platform accelerator is operational" and the guest kernel never prints anything — including AVDs that booted minutes earlier | **Unresolved on this machine.** See the note below | See below |
-
-### Unresolved: guest kernel never starts (2026-08-02)
-
-On this host (Windows 10 19045, WHPX, emulator 37.1.11.0) every AVD stopped
-booting partway through a session, after having worked. The emulator process
-starts, reports the hypervisor is operational, and then the guest produces no
-console output at all; `adb` shows the device permanently `offline`.
-
-Ruled out by testing, so **don't spend time on these**:
-
-- Not the AVD — a brand-new correctly-configured AVD and a previously-working
-  third-party AVD both fail identically.
-- Not the API level — API 34 and API 35 fail the same way.
-- Not a wedged hypervisor — a full host reboot did **not** fix it.
-- Not Docker/WSL contention — fully stopping Docker Desktop and running
-  `wsl --shutdown` changed nothing.
-- Not stale `*.lock` artifacts left by force-killed emulators — removing
-  `hardware-qemu.ini.lock` and `multiinstance.lock` changed nothing.
-- Not `-wipe-data`, snapshots, or the GPU mode (`auto`, `off`,
-  `swiftshader_indirect` all behave identically).
-- Not the emulator binary — unchanged at 37.1.11.0 throughout.
-
-Still untried, in rough order of promise: launching the AVD from Android
-Studio's Device Manager (it sets up an environment the bare CLI does not),
-reinstalling the `emulator` SDK package, checking whether a Windows update or
-endpoint-security product began blocking WHPX, and `emulator -avd <name>
--verbose -show-kernel` on a machine where you can watch the window directly.
-
-The app itself is known good: it was verified rendering M01 on an API 35
-emulator during the same session, so treat this as host infrastructure rather
-than an application defect.
-
----
+Simulated in-app delivery proves the application's notification lifecycle. It
+does not prove Android system push; that additionally requires a real EAS
+project ID, push credentials, `PUSH_PROVIDER=expo`, and a physical/internal
+build environment.
 
 ## 5. What the IDE tasks do
 
 | Task | Purpose |
 |---|---|
-| `MetroDrip: MySQL + Redis (docker)` | Brings up the data services |
-| `MetroDrip: Django API (0.0.0.0:8080)` | Emulator-reachable API, simulated payments |
-| `MetroDrip: Start Android emulator` | Boots the AVD |
-| `MetroDrip: Expo on Android` | Metro bundler + installs the app |
-| `MetroDrip: Full mobile stack` | All of the above, in order |
-| `MetroDrip: Backend QA` | ruff + pytest |
-| `MetroDrip: Mobile typecheck` | `tsc --noEmit` |
+| `MetroDrip: MySQL + Redis (docker)` | Starts both services with Compose `--wait` and a bounded timeout |
+| `MetroDrip: Django API (0.0.0.0:8080)` | Runs the device-reachable API with explicit simulated payments |
+| `MetroDrip: Wait for Django API` | Polls `/healthz/ready/` until the database-backed check returns 200 |
+| `MetroDrip: Start and verify Android emulator` | Starts the exact API 36 AVD on port 5554 and waits for full boot |
+| `MetroDrip: Expo on Android` | Builds/installs only on the verified named AVD |
+| `MetroDrip: Full mobile stack` | Executes the complete dependency graph |
+| `MetroDrip: Backend QA` | Runs Ruff and pytest |
+| `MetroDrip: Mobile typecheck` | Runs strict TypeScript checking |
+
+## 6. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `emulator: command not found` | SDK path was not inherited | Restart the terminal/editor; verify `ANDROID_HOME` |
+| Setup script rejects Java | JDK is not version 17 | Select JDK 17 before rerunning the script |
+| AVD is not installed | Name or API image differs | Create/run `MetroDrip_Pixel_API36`; do not silently substitute another AVD |
+| Reserved port has another AVD | `emulator-5554` belongs to a personal device | Stop it yourself; the helper intentionally refuses to kill or reuse it |
+| `adb` stays `offline` | Guest has not completed boot or virtualisation is unhealthy | Wait; then inspect the emulator window/log. Use a physical device if the host cannot virtualise |
+| App shows the offline banner | API binding/address mismatch | Bind Django to `0.0.0.0:8080` and use `10.0.2.2` in the emulator |
+| `HTTP 400 missing_client_version` | Code bypassed `src/api/client.ts` | Route every mobile API call through the shared client |
+| Metro says no development build is installed | Only the bundler was started | Run `npm run android` once, then return to `npm start` |
+| Bundle is stale | Metro cache | Stop Metro and run `npx expo start --dev-client -c` |
+| Doctor reports native/config drift | Generated native output is stale or hand-edited | Recreate the ignored native directory with a clean prebuild |
+| Checkout succeeds but Notifications is empty | Purchase was made as a guest | Sign in before checkout; guest notifications are deliberately skipped |
+| Order is absent from `/admin/` | Orders belong to the merchant console | Verify the matching order number under `/merchant/` |
+
+Do not solve emulator problems by deleting an arbitrary AVD or project data.
+Confirm the exact target first; the helper's refusal messages are designed to
+make the safe recovery path explicit.

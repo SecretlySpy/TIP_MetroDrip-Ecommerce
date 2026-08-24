@@ -1,5 +1,5 @@
 /**
- * Shared design-system primitives used by all 11 screens.
+ * Shared design-system primitives used by all 12 screen components.
  *
  * Every colour resolves through useTheme(); §2.1 rules are enforced here once:
  *  1. volt is a background colour — text on light uses accentText
@@ -256,7 +256,7 @@ export function OfflineBanner({ onRetry }: { onRetry?: () => void }) {
         alignItems: 'center',
       }}
     >
-      <MicroLabel>You're offline — showing saved items</MicroLabel>
+      <MicroLabel>You&apos;re offline — showing saved items</MicroLabel>
       {onRetry ? (
         <Pressable onPress={onRetry} hitSlop={12} accessibilityRole="button" accessibilityLabel="Retry">
           <MicroLabel color={colors.accentText}>Retry</MicroLabel>

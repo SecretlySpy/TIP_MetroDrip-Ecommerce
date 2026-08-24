@@ -1,5 +1,9 @@
 """Development settings — safe defaults so a fresh clone runs with zero secrets."""
 
+import os
+
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa: F403
 
 DEBUG = True
@@ -36,8 +40,34 @@ if DEBUG:
 # Emails print to the runserver console until a real provider is wired in (FR-11).
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
-# Without PayMongo sandbox keys the demo checkout uses the simulated provider;
-# with keys configured, dev uses the real sandbox end-to-end.
-PAYMENT_PROVIDER = "paymongo" if PAYMONGO_SECRET_KEY else "simulated"  # noqa: F405
+# An explicit provider always wins. When no provider is selected, retain the
+# convenient development default: use PayMongo when a sandbox key is present,
+# otherwise use the in-process simulator. Validate this at settings import so a
+# typo or a keyless explicit PayMongo selection cannot fail later at checkout.
+_configured_payment_provider = os.environ.get("PAYMENT_PROVIDER", "").strip()
+_allowed_payment_providers = {"paymongo", "simulated"}
+if _configured_payment_provider not in _allowed_payment_providers | {""}:
+    raise ImproperlyConfigured(
+        "PAYMENT_PROVIDER="
+        f"{_configured_payment_provider} is not recognized; expected one of "
+        f"{sorted(_allowed_payment_providers)}."
+    )
+
+PAYMONGO_SECRET_KEY = PAYMONGO_SECRET_KEY.strip()  # noqa: F405
+_paymongo_secret = PAYMONGO_SECRET_KEY
+_has_paymongo_secret = bool(_paymongo_secret)
+if _configured_payment_provider == "paymongo" and not _has_paymongo_secret:
+    raise ImproperlyConfigured(
+        "PAYMENT_PROVIDER=paymongo requires PAYMONGO_SECRET_KEY in development."
+    )
+
+PAYMENT_PROVIDER = _configured_payment_provider or (  # noqa: F405
+    "paymongo" if _has_paymongo_secret else "simulated"
+)
+if PAYMENT_PROVIDER == "paymongo" and not _paymongo_secret.startswith("sk_test_"):
+    raise ImproperlyConfigured(
+        "Development PayMongo checkout requires a sandbox PAYMONGO_SECRET_KEY "
+        "starting with sk_test_; live and malformed keys are rejected."
+    )
 SHIPPING_PROVIDER = "simulated"
 NOTIFICATION_PROVIDER = "console"

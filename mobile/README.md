@@ -1,6 +1,6 @@
 # MetroDrip Mobile (Epic H)
 
-React Native + Expo (TypeScript) customer app for iOS and Android. Consumes the
+Expo SDK 57 + React Native 0.86 (TypeScript) customer app for iOS and Android. Consumes the
 public mobile API at `/api/mobile/v1/`; the Merchant and Administrator consoles
 stay web-only (D-14).
 
@@ -21,11 +21,30 @@ grep -rnE "(price|subtotal|total|fee)\s*[*+/-]" src/
 
 ## Setup
 
+Requirements: Node.js 22.13+; for Android, JDK 17 plus Android API 36 / Build
+Tools 36.0.0 (the app's runtime minimum is API 24); for iOS, macOS with Xcode
+26.4+ and the iOS 26 SDK.
+
 ```bash
-npm install
+npm ci
 cp .env.example .env        # point EXPO_PUBLIC_API_URL at your backend
-npm start                   # then press i / a, or scan with Expo Go
+npm run android             # first Android build/install
+# macOS only: npm run ios   # first iOS build/install
+
+# Later JavaScript-only sessions, once the development client is installed:
+npm start
 ```
+
+`npm start` runs `expo start --dev-client`. Expo Go is not the supported client.
+Native projects use Continuous Native Generation: `android/` and `ios/` are
+ignored outputs created from `app.json`. Put durable native configuration in
+Expo config or a config plugin, then validate it with a clean prebuild; do not
+hand-edit generated projects (ADR-H-006).
+
+Android compiles/targets API 36 and declares API 24 as its minimum. The versioned
+`withAndroidCoreLibraryDesugaring` config plugin adds `desugar_jdk_libs` 2.0.3
+for Java time APIs on API 24–25. The same clean debug APK has rendered on API 24
+and API 36 emulators; normal development uses the named API 36 AVD below.
 
 > **Running it on an Android emulator in Antigravity IDE?** See
 > [EMULATOR.md](EMULATOR.md) — one script installs the SDK and creates the
@@ -44,22 +63,42 @@ completes without PayMongo keys:
 PAYMENT_PROVIDER=simulated python manage.py runserver 0.0.0.0:8080
 ```
 
-## Internal builds (H-13 — TestFlight / Play)
+Development honors an explicit `PAYMENT_PROVIDER=simulated` or `paymongo`.
+When the variable is blank, it selects PayMongo only when a non-empty
+`PAYMONGO_SECRET_KEY` exists; an invalid value or explicit keyless PayMongo
+selection fails during startup.
 
-Scaffold only until store accounts and real assets exist:
+Verify purchase ownership with two separate flows:
+
+- A guest purchase reaches public Order Tracking at **Paid**. Because it has no
+  customer, it does not create an in-app notification or later appear in an
+  account automatically.
+- A signed-in purchase reaches **Paid**, appears under the Home bell as **Order
+  confirmed**, and has the same order number in `/merchant/` → Orders.
+
+## Internal preview builds and store release
+
+Profiles are scaffolded, but distribution remains blocked until store accounts,
+real assets, URLs, and signing/push credentials exist:
 
 1. `npm i -g eas-cli` and `eas login`
-2. Replace `extra.eas.projectId` and `owner` in `app.json` via `eas init`
-3. Add brand `assets/icon.png`, `splash.png`, `adaptive-icon.png` and wire them in `app.json`
-4. Set `EXPO_PUBLIC_API_URL` in `eas.json` profiles to your staging/production API
-5. Build internal binaries:
+2. Run `eas init` to add the real owner/project ID; no fake IDs are committed
+3. Add approved icon, splash, adaptive icon, and store-listing assets
+4. Configure `EXPO_PUBLIC_API_URL` in the named EAS environment; it is public bundle configuration, never a secret
+5. Build internal preview binaries:
 
 ```bash
-npm run build:android   # Play internal / APK preview
-npm run build:ios       # TestFlight (requires Apple team)
+npm run build:android   # Internally distributed Android APK
+npm run build:ios       # Internally distributed iOS build; requires an Apple team
 ```
 
-Staging must set `PUSH_PROVIDER=expo` for real device pushes.
+Those scripts use the `preview` profile. They do not upload to TestFlight or a
+Google Play testing track. Store-bound artifacts use the `production` profile
+after package ownership, signing, listings, and review metadata are ready.
+
+Staging must set `PUSH_PROVIDER=expo`, configure an EAS project ID, and provide
+push credentials for real device delivery. The in-app notification centre does
+not prove OS-level remote push delivery.
 
 ## Structure
 
@@ -69,7 +108,7 @@ Staging must set `PUSH_PROVIDER=expo` for real device pushes.
 | `src/api/` | Fetch client (secure-store tokens, version header, refresh), typed endpoints |
 | `src/store/` | Auth session (FR-22/23) and the client cart (FR-25) |
 | `src/components/` | Shared primitives + the grid product card |
-| `src/screens/` | M01–M11, one file per Figma frame |
+| `src/screens/` | 11 Figma-mapped screens plus the distinct Orders tab |
 | `src/navigation/` | 5-tab bar (volt active dot) + root stack |
 | `src/hooks/` | Push registration and deep-link routing (FR-27/28) |
 
@@ -88,6 +127,31 @@ Staging must set `PUSH_PROVIDER=expo` for real device pushes.
 | `AccountScreen` | M09 Account | `65:155` |
 | `AuthScreen` | M10 Sign In / Register | `67:2` |
 | `WishlistScreen` | M11 Saved / Wishlist | `67:45` |
+| `OrdersScreen` | Additional Orders tab (no separate supplied frame) | — |
+
+## QA
+
+```bash
+npm ci
+npm run dependencies:check
+npm run doctor
+npm run typecheck
+npm run lint
+npm run export:android
+npm run export:ios
+
+# JDK 17 + Android API 36
+npm run prebuild:android
+./android/gradlew -p android --no-daemon :app:assembleDebug
+```
+
+On Windows use `.\android\gradlew.bat -p android --no-daemon :app:assembleDebug` for the final
+command.
+
+The export commands validate both JavaScript bundles on any host; they are not
+an iOS native compile. A real iOS build and simulator/device walkthrough remain
+macOS-only follow-ups. Clean prebuild deletes and recreates only ignored native
+output, so move no durable work into those directories.
 
 ## Colour rules (violations are bugs)
 

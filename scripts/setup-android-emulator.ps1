@@ -1,21 +1,23 @@
 <#
 .SYNOPSIS
     Install the Android SDK pieces MetroDrip's Expo app needs and create the
-    MetroDrip_Pixel7_API34 emulator.
+    MetroDrip_Pixel_API36 emulator.
 
 .DESCRIPTION
     Idempotent: every step checks for existing state first, so re-running it
-    after a partial failure is safe. Requires a JDK (17+) on PATH.
+    after a partial failure is safe. Requires JDK 17 through JAVA_HOME
+    (preferred) or PATH.
 
     Installs into %LOCALAPPDATA%\Android\Sdk:
       * cmdline-tools;latest   - sdkmanager / avdmanager
       * platform-tools         - adb
       * emulator               - the emulator binary
-      * platforms;android-34   - Android 14 SDK
-      * system-images;android-34;google_apis;x86_64 - the AVD's system image
+      * platforms;android-36   - Android 16 SDK
+      * build-tools;36.0.0     - Android build and packaging tools
+      * system-images;android-36;google_apis;x86_64 - the AVD's system image
 
-    API 34 is the emulator target; the app itself still supports Android 8.0
-    (API 26) and up per NFR-21.
+    API 36 is the emulator and target SDK; the app itself supports Android 7.0
+    (API 24) and up.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\setup-android-emulator.ps1
@@ -23,12 +25,9 @@
 
 [CmdletBinding()]
 param(
-    # API 35. Expo Go 2.31.2 (the SDK 51 client) crashes on the API 34
-    # google_apis image with "Failed to create NativeModule 'UIManager' /
-    # MainApplication cannot be cast to ReactApplication"; the same APK and
-    # the same JS bundle run fine on API 35. Verified on this machine.
-    [string]$AvdName = "MetroDrip_Pixel_API35",
-    [string]$ApiLevel = "35",
+    [string]$AvdName = "MetroDrip_Pixel_API36",
+    [string]$ApiLevel = "36",
+    [string]$BuildToolsVersion = "36.0.0",
     [string]$Device = "pixel_7"
 )
 
@@ -44,18 +43,50 @@ function Write-Step($message) { Write-Host "`n=== $message ===" -ForegroundColor
 
 # --- 0. Prerequisites ---------------------------------------------------------
 Write-Step "Checking prerequisites"
+# Gradle prefers JAVA_HOME over PATH, so validate the same runtime it will use.
+if ($env:JAVA_HOME) {
+    $JavaCommand = Join-Path $env:JAVA_HOME "bin\java.exe"
+    $JavacCommand = Join-Path $env:JAVA_HOME "bin\javac.exe"
+    if (-not (Test-Path $JavaCommand) -or -not (Test-Path $JavacCommand)) {
+        throw "JAVA_HOME must point to a complete JDK containing bin\java.exe and bin\javac.exe."
+    }
+} else {
+    $java = Get-Command java -ErrorAction SilentlyContinue
+    $javac = Get-Command javac -ErrorAction SilentlyContinue
+    if (-not $java -or -not $javac) {
+        throw "JDK 17 is required on PATH (both java and javac), or set JAVA_HOME to it."
+    }
+    $JavaCommand = $java.Source
+    $JavacCommand = $javac.Source
+    if ((Split-Path $JavaCommand -Parent) -ne (Split-Path $JavacCommand -Parent)) {
+        throw "PATH resolves java and javac from different directories. Set JAVA_HOME to one JDK 17 installation."
+    }
+}
 # `java -version` prints to stderr even on success, which $ErrorActionPreference
-# = "Stop" would turn into a terminating error. Probe for the command instead,
-# and read the banner with stderr redirection explicitly relaxed.
-$java = Get-Command java -ErrorAction SilentlyContinue
-if (-not $java) {
-    throw "A JDK is required on PATH (17 or newer). Install one, then re-run."
+# = "Stop" would turn into a terminating error. Read the banner with stderr
+# redirection explicitly relaxed.
+$previousPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$javaVersion = (& $JavaCommand -version 2>&1 | Select-Object -First 1)
+$ErrorActionPreference = $previousPreference
+Write-Host "Java: $javaVersion"
+if ($javaVersion -notmatch 'version\s+"?(\d+)') {
+    throw "Could not determine the JDK version from: $javaVersion"
+}
+if ([int]$Matches[1] -ne 17) {
+    throw "MetroDrip's Android toolchain requires JDK 17; found JDK $($Matches[1])."
 }
 $previousPreference = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-$javaVersion = (& java -version 2>&1 | Select-Object -First 1)
+$javacVersion = (& $JavacCommand -version 2>&1 | Select-Object -First 1)
 $ErrorActionPreference = $previousPreference
-Write-Host "Java: $javaVersion"
+Write-Host "Compiler: $javacVersion"
+if ($javacVersion -notmatch 'javac\s+(\d+)') {
+    throw "Could not determine the compiler version from: $javacVersion"
+}
+if ([int]$Matches[1] -ne 17) {
+    throw "MetroDrip's Android toolchain requires javac 17; found javac $($Matches[1])."
+}
 
 # --- 1. Command-line tools ----------------------------------------------------
 Write-Step "Android command-line tools"
@@ -164,6 +195,7 @@ $packages = [ordered]@{
     "platform-tools"                = "platform-tools\adb.exe"
     "emulator"                      = "emulator\emulator.exe"
     "platforms;android-$ApiLevel"   = "platforms\android-$ApiLevel"
+    "build-tools;$BuildToolsVersion" = "build-tools\$BuildToolsVersion\aapt2.exe"
     $SystemImage                    = "system-images\android-$ApiLevel\google_apis\x86_64"
 }
 foreach ($package in $packages.GetEnumerator()) {
@@ -205,7 +237,7 @@ if ($existing) {
 # do not drop this block.
 #
 # Sizes must carry a unit suffix ("2G", not "2048"); a bare number is
-# misparsed. Values match a known-good API 35 AVD on this machine.
+# misparsed. Values leave enough space for an Expo development build.
 $avdConfig = Join-Path $env:USERPROFILE ".android\avd\$AvdName.avd\config.ini"
 if (Test-Path $avdConfig) {
     $config = Get-Content $avdConfig

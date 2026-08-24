@@ -12,7 +12,7 @@ import {
 } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -137,14 +137,25 @@ function MainTabs() {
 export function AppNavigator() {
   const { colors, scheme } = useTheme();
   const { restoring, customer } = useAuth();
+  const pendingOrderToken = useRef<string | null>(null);
+
+  const flushPendingOrder = useCallback(() => {
+    if (restoring || !navigationRef.isReady() || !pendingOrderToken.current) return;
+    const token = pendingOrderToken.current;
+    pendingOrderToken.current = null;
+    navigationRef.navigate('OrderTracking', { token });
+  }, [restoring]);
 
   // FR-27/FR-28: register this device and deep-link a tapped push to its order.
   const openOrder = useCallback((statusToken: string) => {
-    if (navigationRef.isReady()) {
-      navigationRef.navigate('OrderTracking', { token: statusToken });
-    }
-  }, []);
+    pendingOrderToken.current = statusToken;
+    flushPendingOrder();
+  }, [flushPendingOrder]);
   usePushRegistration(!!customer, openOrder);
+
+  useEffect(() => {
+    flushPendingOrder();
+  }, [flushPendingOrder]);
 
   const navTheme = {
     ...DefaultTheme,
@@ -161,7 +172,7 @@ export function AppNavigator() {
   };
 
   return (
-    <NavigationContainer ref={navigationRef} theme={navTheme}>
+    <NavigationContainer ref={navigationRef} theme={navTheme} onReady={flushPendingOrder}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {restoring ? (
           <Stack.Screen name="Splash" component={SplashScreen} />

@@ -75,7 +75,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setRestoring(false);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function restoreProfile() {

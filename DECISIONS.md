@@ -31,7 +31,10 @@
 - **Status:** Accepted
 - **Decision:** Guest checkout creates no `Customer` row. A guest `Order` has `customer = NULL`; its immutable checkout snapshot in `shipping_address` must include the guest's email, name, phone, and delivery address.
 - **Rationale:** An order is a commercial record, while a customer row represents an actual registered account. Creating passwordless pseudo-accounts would conflate those identities and collide with later registration by the same unique email.
-- **Consequences:** Guest status is determined by `Order.customer_id is None`. A verified order-claim flow may later attach matching-email guest orders to a newly registered customer. Deleting a customer sets existing order ownership to `NULL` and does not delete the orders.
+- **Consequences:** Guest status is determined by `Order.customer_id is None`. Guest orders remain
+  unowned and are accessed only through their signed public status and invoice links; registration
+  never attaches them to an account, and there is no later claim endpoint. Deleting a customer sets
+  existing registered-customer order ownership to `NULL` and does not delete the orders.
 
 ## ADR-A-005 — Unusable passwords
 
@@ -187,9 +190,19 @@
 ## ADR-D-001 — Development-only mock payment completion
 
 - **Status:** Accepted
-- **Decision:** `MOCK_PAYMENTS` (settings flag) short-circuits PayMongo: checkout records a pending mock Payment and the success page — reached only through the signed order token with `?mock=1` — calls the same idempotent `confirm_order_paid()` service the webhook uses. dev.py auto-enables it only when no `PAYMONGO_SECRET_KEY` is configured; prod.py refuses to boot if the environment sets `MOCK_PAYMENTS=1`.
+- **Date amended:** 2026-08-24
+- **Decision:** Development selects the registered `simulated` or `paymongo` provider through
+  `PAYMENT_PROVIDER`. An explicit valid value wins. When the value is unset/blank, development
+  selects PayMongo only when a non-empty `PAYMONGO_SECRET_KEY` exists and otherwise selects the
+  simulator. Invalid values and explicit keyless PayMongo fail during settings import. Deployed
+  settings pin PayMongo and refuse simulated payments. The simulated confirmation path remains
+  server-gated as specified by ADR-H-003 and calls the same idempotent `confirm_order_paid()` service
+  as the signature-verified webhook.
 - **Rationale:** The demo must complete end-to-end (pay → stock decrement → email) without provider credentials, while Hard Invariant 3 (webhook = payment truth) stays intact everywhere deployed.
-- **Consequences:** All confirmation side effects (payment flip, reservation commit, sale movement, Paid transition, notifications) live in `confirm_order_paid()`; the webhook and the mock path are thin callers, so their behavior can never diverge.
+- **Consequences:** An operator with sandbox credentials can still force a simulated walkthrough,
+  while a typo cannot survive until checkout. All confirmation side effects (payment flip,
+  reservation commit, sale movement, Paid transition, notifications) live in
+  `confirm_order_paid()`; the webhook and simulator remain thin callers.
 
 ## ADR-D-002 — Checkout transaction shape
 
@@ -318,6 +331,36 @@
 - **Decision:** The JWT pair lives exclusively in `expo-secure-store` (Keychain / Keystore). Biometric unlock (FR-23) is an opt-in gate applied on cold start *after* an initial password sign-in; it never replaces the password as the credential.
 - **Rationale:** NFR-19. Biometrics authorize access to an already-established session — treating them as a credential would mean the device, not the server, decides who you are.
 - **Consequences:** With the preference on, a stored session starts locked and the splash screen prompts. Failing or cancelling leaves the app usable as a guest. Logout blacklists the refresh token server-side and clears the enclave.
+
+## ADR-H-006 — Expo 57 and Continuous Native Generation
+
+- **Status:** Accepted
+- **Date:** 2026-08-24
+- **Context:** The client was on an out-of-support mobile stack with duplicated native projects,
+  stale Android targets, and application configuration split between generated files and
+  `app.json`. Expo Doctor could not prove that changes to the config would reach a build. The 2026
+  Android and Apple submission toolchains also moved beyond the checked-in targets.
+- **Decision:** Upgrade to Expo 57.0.16, React Native 0.86.2, React 19.2.3, TypeScript 6.0.3, and
+  React Navigation 7 under Node 22.13+. Use `expo-dev-client`, not Expo Go. Treat `app.json` and Expo
+  config plugins as the durable native source of truth; ignore generated `android/` and `ios/`
+  directories and recreate them with clean prebuild. Android compiles/targets API 36 with Build
+  Tools 36.0.0 and minimum API 24 under JDK 17. A versioned config plugin enables Android
+  core-library desugaring with `desugar_jdk_libs` 2.0.3 so Java time APIs remain compatible with
+  API 24–25. iOS config declares minimum 16.4, local-network and Face ID usage,
+  non-exempt-encryption status, and bundle identifier `ph.metrodrip.app`.
+- **Alternatives considered:** Keeping the native directories would preserve direct native editing
+  but retain two sources of truth and require manual upgrades. Expo Go would shorten onboarding but
+  cannot guarantee this app's native module set or SDK lifecycle. Both were rejected.
+- **Consequences:** Durable native work must be represented in Expo config or a config plugin;
+  hand-edits inside generated projects are disposable. CI checks Expo dependency alignment,
+  Doctor, typecheck, flat-config lint, Android/iOS exports, clean Android prebuild, and an API 36
+  debug assembly. Local first install uses `npm run android`/`npm run ios`; later JavaScript-only
+  sessions use `npm start` (`expo start --dev-client`). EAS owner/project ID, final API URLs, brand
+  assets, signing/store accounts, and remote-push credentials remain external launch inputs.
+- **Verification / review trigger:** Linux/Android passed the complete mobile gate; one clean debug
+  APK (`compileSdk`/`minSdk`/`targetSdk` 36/24/36) rendered on real API 24 and API 36 emulators.
+  Native iOS remains unverified until the macOS/iOS checklist in
+  `docs/images/README.md` passes; review this ADR on the next Expo SDK or store-target change.
 
 ## ADR-E-001 — Courier webhook is signature-verified and fails closed
 
@@ -685,7 +728,12 @@ An existing test then caught a real bug in the change: **Django's `{# #}` is sin
 
 ### Dynamic Type — containers grow, no cap
 
-RN scales `fontSize` but leaves a literal `lineHeight` untouched, so every preset pairing the two collapsed its line box as text grew — worst was the hero at `fontSize: 38 / lineHeight: 38`, putting 76dp glyphs in a 38dp box at 200%. Line heights are now ratios multiplied by `PixelRatio.getFontScale()`, and 12 interactive rows moved from `height` to `minHeight`. **No global `maxFontSizeMultiplier`** — the OS setting is honoured in full; the prop is now forwardable per call site for the rare box that genuinely cannot grow.
+React Native scales both `fontSize` and `lineHeight` through the native text renderer. Line-height
+presets therefore store an unscaled ratio and rely on the platform to scale both values exactly once;
+manually multiplying by `PixelRatio.getFontScale()` would double-scale only the line box. Twelve
+interactive rows moved from `height` to `minHeight`. **No global `maxFontSizeMultiplier`** — the OS
+setting is honoured in full; the prop remains forwardable per call site for a box that genuinely
+cannot grow.
 
 ### Behavioural bugs fixed behind the presentation gaps
 
@@ -695,21 +743,32 @@ RN scales `fontSize` but leaves a literal `lineHeight` untouched, so every prese
 
 ### Not done, stated plainly
 
-**200% Dynamic Type is verified.** The scaling behavior works properly without clipping issues on the Android emulator.
+**A complete 200% Dynamic Type pass across all twelve screens is not recorded.** The implementation
+now avoids double scaling, but the full Android manual acceptance run remains required before making
+a no-clipping claim.
 
 Pre-existing dead CSS (`.account-grid`, `.announce-bar`) is recorded in the guard's allowlist rather than deleted — removing another author's unapplied layout is a separate call.
 
 #### Amendment — the "no simulator" premise was wrong
 
-**Correction:** the paragraph above is accurate about what was verified, but wrong about why. There *is* an Android emulator in this environment — AVD `MoneyMap_VSCode_API_35` (API 35), with Expo Go 2.31.2 already installed and matching SDK 51. It was never looked for.
+**Historical correction:** the earlier text conflated an implementation correction with executed
+200% verification. A legacy Android AVD and matching legacy client did exist in the environment; it
+had not been looked for. That toolchain has since been superseded by the Expo 57 development-client/API
+36 CNG contract in ADR-H-006.
 
 The app has since been run on it and driven through a complete purchase: Home → Shop → variant selection → cart → checkout → **order `MD-2026-00001`, status `paid`**. The server-side invariants were then read back out of the database rather than assumed — `StockHold` `committed`, `OutboxMessage` `stock.commit` `sent`, and append-only `StockMovement` rows of `-2` and `-3` with reason `sale` against order 1, matching cart quantities exactly.
 
-**What this does and does not change.** It does not make the 200% claim verified — font scaling was not exercised in that run, so the original statement stands as written and the item stays open. What it changes is that the check is now *cheap and available*, not blocked: `adb shell settings put system font_scale 2.0`, relaunch, screenshot the eleven screens, look at them. That is the immediate next step, and this ADR should be amended again with the result — including if it fails.
+**What this does and does not change.** That legacy purchase run did not exercise 200% font scaling.
+The reproducible check is `adb shell settings put system font_scale 2.0`, relaunch, and inspect all
+twelve screen components. Current mobile acceptance uses the named API 36 AVD from ADR-H-006.
 
 **The general lesson is the one worth keeping:** "I cannot verify this here" is a claim about the environment, and it needs checking with the same rigour as a claim about the code. This one was asserted rather than tested, and it was false.
 
-Running the app also surfaced a defect that 560 passing tests did not: checkout returned 500 with `Table 'metrodrip.inventory_idempotencyrecord' doesn't exist`. Not a code fault — `makemigrations --check` reports no drift — but the three migrations from this work stream (`inventory.0003`, `orders.0002_stockhold`, `orders.0003_outboxmessage`) had never been applied to the dev database. The test suite builds its own schema and so cannot see this class of gap.
+Running the legacy app also surfaced a defect that the then-passing test suite did not: checkout
+returned 500 with `Table 'metrodrip.inventory_idempotencyrecord' doesn't exist`. Not a code fault —
+`makemigrations --check` reported no drift — but three migrations from that work stream had never
+been applied to the development database. The test suite builds its own schema and therefore cannot
+detect an operator's stale local schema.
 
 ## ADR-P5-004 — P2 completion: measure consume_order_holds latency in staging
 

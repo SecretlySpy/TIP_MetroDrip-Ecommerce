@@ -1,4 +1,4 @@
-/** Typed wrappers for every /api/mobile/v1/ route the 11 screens use. */
+/** Typed wrappers for every /api/mobile/v1/ route the 12 screen components use. */
 
 import { request } from './client';
 import type {

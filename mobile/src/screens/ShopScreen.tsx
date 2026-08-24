@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable react-hooks/exhaustive-deps */
 /**
  * M03 · Shop & Search (Tab) — Figma node 63:155.
  *
@@ -107,6 +105,7 @@ export default function ShopScreen() {
   );
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Starts an asynchronous catalog refresh.
     load(true);
     if (customer) {
       account
@@ -297,4 +296,3 @@ export default function ShopScreen() {
     </SafeAreaView>
   );
 }
-

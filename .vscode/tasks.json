@@ -4,7 +4,7 @@
     {
       "label": "MetroDrip: MySQL + Redis (docker)",
       "type": "shell",
-      "command": "docker compose up -d db redis",
+      "command": "docker compose up -d --wait --wait-timeout 120 db redis",
       "problemMatcher": [],
       "presentation": { "reveal": "silent", "panel": "shared" }
     },
@@ -20,47 +20,59 @@
       "options": { "env": { "PAYMENT_PROVIDER": "simulated" } },
       "isBackground": true,
       "problemMatcher": {
-        "pattern": [{ "regexp": ".", "file": 1, "location": 2, "message": 3 }],
+        "pattern": [{ "regexp": "^(?!)$" }],
         "background": {
           "activeOnStart": true,
-          "beginsPattern": "Performing system checks",
-          "endsPattern": "Quit the server with"
+          "beginsPattern": "Performing system checks|Watching for file changes",
+          "endsPattern": "Starting development server at|Quit the server with"
         }
       },
       "presentation": { "reveal": "always", "panel": "dedicated" }
     },
     {
-      "label": "MetroDrip: Start Android emulator",
-      "detail": "Boots the MetroDrip_Pixel_API35 AVD created by scripts/setup-android-emulator.ps1.",
+      "label": "MetroDrip: Wait for Django API",
+      "detail": "Polls the database-backed readiness endpoint before the mobile build starts.",
       "type": "shell",
       "windows": {
-        "command": "& \"$env:LOCALAPPDATA\\Android\\Sdk\\emulator\\emulator.exe\" -avd MetroDrip_Pixel_API35 -netdelay none -netspeed full"
+        "command": ".venv\\Scripts\\python.exe scripts\\wait-for-http.py http://127.0.0.1:8080/healthz/ready/ --timeout 90"
       },
-      "command": "$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API35 -netdelay none -netspeed full",
-      "isBackground": true,
+      "command": ".venv/bin/python scripts/wait-for-http.py http://127.0.0.1:8080/healthz/ready/ --timeout 90",
+      "dependsOn": "MetroDrip: Django API (0.0.0.0:8080)",
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+    {
+      "label": "MetroDrip: Start and verify Android emulator",
+      "detail": "Starts only MetroDrip_Pixel_API36 on emulator-5554 and waits for Android to finish booting.",
+      "type": "shell",
+      "windows": {
+        "command": ".venv\\Scripts\\python.exe scripts\\launch-android-emulator.py --avd MetroDrip_Pixel_API36 --port 5554 --timeout 240"
+      },
+      "command": ".venv/bin/python scripts/launch-android-emulator.py --avd MetroDrip_Pixel_API36 --port 5554 --timeout 240",
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated" }
     },
     {
       "label": "MetroDrip: Expo on Android",
-      "detail": "Starts Metro and installs the app on the running emulator.",
+      "detail": "Starts Metro and installs the app only on the verified MetroDrip emulator.",
       "type": "shell",
-      "command": "npm run android",
-      "options": { "cwd": "${workspaceFolder}/mobile" },
-      "dependsOn": ["MetroDrip: Django API (0.0.0.0:8080)"],
-      "isBackground": true,
+      "command": "npm run android -- --device MetroDrip_Pixel_API36",
+      "options": {
+        "cwd": "${workspaceFolder}/mobile",
+        "env": { "ANDROID_SERIAL": "emulator-5554" }
+      },
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "MetroDrip: Wait for Django API",
+        "MetroDrip: Start and verify Android emulator"
+      ],
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated" }
     },
     {
       "label": "MetroDrip: Full mobile stack",
-      "detail": "One click: database, API, emulator, and the app.",
-      "dependsOrder": "sequence",
-      "dependsOn": [
-        "MetroDrip: MySQL + Redis (docker)",
-        "MetroDrip: Start Android emulator",
-        "MetroDrip: Expo on Android"
-      ],
+      "detail": "One click: healthy data services, ready API, named emulator, and the app.",
+      "dependsOn": ["MetroDrip: Expo on Android"],
       "problemMatcher": []
     },
     {

@@ -1,4 +1,7 @@
 <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
 <!--
   GitHub Pages site for TIP_MetroDrip-Ecommerce — local setup and testing guide.
 
@@ -19,27 +22,20 @@
   rather than the .md files next to them, because Pages would serve those as raw
   text instead of rendered Markdown.
 
-  OS-specific commands are switched by the radio group at the top of .osroot using
-  pure CSS sibling selectors, so the guide needs no JavaScript to be usable. A
-  second, independent group in the same place switches the mobile sections
-  between Android, iOS, and a physical device. The only script on the page adds
-  copy-to-clipboard buttons as a progressive enhancement; with JS disabled the
-  code blocks still read and select normally.
+  OS-specific commands and mobile targets are switched with semantic radio
+  fieldsets and CSS :has(). Unsupported browsers receive a readable, stacked
+  fallback. JavaScript adds copy buttons to command-only blocks, labels the
+  scrollable table regions, and closes the compact mobile contents disclosure
+  after a choice; the guide remains usable without it.
 
-  Steps 1-11 cover the Django storefront; Steps 12-13 cover the Expo/React Native
-  app in mobile/. The mobile diagrams are inline SVG rather than screenshots
-  because a captured screen needs a booted emulator or simulator; docs/images/
-  README.md carries the numbered capture list for adding real ones later.
-
-  Screenshot placeholders point at docs/images/. See docs/images/README.md for the
-  capture list and naming convention.
+  Steps 1-10 cover the Django storefront; Steps 11-12 cover the Expo/React Native
+  app in mobile/; Step 13 shuts the stack down safely. Screenshots supplement —
+  and never replace — the four inline SVG diagrams and troubleshooting flowchart.
 -->
-<html lang="en">
-<head>
-  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MetroDrip — Local Setup &amp; Testing Guide</title>
   <meta name="description" content="Step-by-step guide for setting up and testing the MetroDrip e-commerce system locally. Written for beginners, covering Windows, macOS, and Linux.">
+  <link rel="icon" href="docs/images/favicon.svg" type="image/svg+xml">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -82,7 +78,9 @@
     html {
       font-size: 16px;
       scroll-behavior: smooth;
-      scroll-padding-top: 5rem;
+      /* The desktop table of contents wraps to three rows near 768px. Reserve
+         enough space that fragment navigation never hides a section heading. */
+      scroll-padding-top: 12rem;
       -webkit-text-size-adjust: 100%;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
@@ -102,6 +100,22 @@
     }
 
     a { color: inherit; }
+
+    .skip-link {
+      position: fixed;
+      top: var(--space-sm);
+      left: var(--space-sm);
+      z-index: 100;
+      padding: 0.75rem 1rem;
+      color: #FFFFFF;
+      background: var(--color-ink);
+      border: 2px solid #FFFFFF;
+      border-radius: var(--radius-sm);
+      transform: translateY(-160%);
+      transition: transform 150ms ease;
+    }
+
+    .skip-link:focus { transform: translateY(0); }
 
     p { margin-bottom: var(--space-md); }
     p:last-child { margin-bottom: 0; }
@@ -129,7 +143,7 @@
 
     .eyebrow {
       font-family: var(--font-mono);
-      font-size: 0.75rem;
+      font-size: 0.8125rem;
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: var(--color-volt);
@@ -163,6 +177,8 @@
       color: #D6D6D2;
     }
 
+    .verification-scope { font-size: 0.9375rem; }
+
     .stack {
       display: flex;
       flex-wrap: wrap;
@@ -173,13 +189,18 @@
 
     .stack li {
       font-family: var(--font-mono);
-      font-size: 0.75rem;
+      font-size: 0.8125rem;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       padding: 0.3rem 0.7rem;
       border: 1px solid #3A3A3A;
       border-radius: var(--radius-pill);
       color: #D6D6D2;
+    }
+
+    .masthead code:not(pre code) {
+      color: #141414;
+      background: #DFF56F;
     }
 
     /* --- Sticky section nav --- */
@@ -195,7 +216,7 @@
     /* Wraps rather than scrolls. A horizontal scrollbar hides links behind a
        gesture people do not think to try in a page that scrolls vertically, and
        on a trackpad the bar is invisible until you touch it. */
-    .tocbar nav {
+    .desktop-toc {
       display: flex;
       flex-wrap: wrap;
       column-gap: var(--space-md);
@@ -207,47 +228,78 @@
 
     .tocbar a {
       font-family: var(--font-mono);
-      font-size: 0.6875rem;
+      font-size: 0.8125rem;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       white-space: nowrap;
       text-decoration: none;
       color: var(--color-muted);
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
       padding: var(--space-xs) 0;
       border-bottom: 2px solid transparent;
     }
 
     .tocbar a:hover { color: var(--color-ink); border-bottom-color: var(--color-volt); }
 
-    /* Narrow screens wrap the fifteen links onto five or six rows. Pinned, that
-       is roughly a third of a phone viewport permanently spent on navigation,
-       so below this width the bar scrolls away with the content instead. */
+    .mobile-toc { display: none; }
+
+    /* Narrow screens would wrap the links into five or six rows, so replace
+       that wall with one native disclosure while keeping a compact sticky row. */
     @media (max-width: 767px) {
       .tocbar {
-        position: static;
+        position: sticky;
         backdrop-filter: none;
-        background: var(--color-base);
+        background: rgba(244, 244, 242, 0.98);
       }
 
-      /* Wrapped tightly, "OVERVIEW 1 · INSTALL 2 · CODE" reads as one run-on
-         string: the gap between links ends up narrower than the interpunct
-         inside them. Chips make each link's extent unambiguous without needing
-         the wide desktop gap. */
-      .tocbar nav {
-        column-gap: var(--space-xs);
-        row-gap: var(--space-xs);
-        padding: var(--space-sm) var(--space-lg) var(--space-md);
+      .desktop-toc { display: none; }
+
+      .mobile-toc {
+        display: block;
+        max-width: var(--container-max);
+        margin: 0 auto;
+        padding: var(--space-xs) var(--space-lg);
       }
 
-      .tocbar a {
-        padding: 0.3rem 0.55rem;
-        border-radius: var(--radius-pill);
-        background: var(--color-surface-raised);
-        border: 1px solid var(--color-border);
-        border-bottom-width: 1px;
+      .mobile-toc summary {
+        display: flex;
+        align-items: center;
+        min-height: 44px;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        cursor: pointer;
+        list-style: none;
       }
 
-      html { scroll-padding-top: 1rem; }
+      .mobile-toc summary::-webkit-details-marker { display: none; }
+
+      .mobile-toc summary::after {
+        content: "+";
+        margin-left: auto;
+        font-size: 1.25rem;
+      }
+
+      .mobile-toc[open] summary::after { content: "−"; }
+
+      .mobile-toc nav {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        max-height: min(65vh, 32rem);
+        overflow-y: auto;
+        padding-bottom: var(--space-sm);
+      }
+
+      .mobile-toc a {
+        padding: 0.65rem var(--space-sm);
+        border-bottom: 1px solid var(--color-border);
+      }
+
+      html { scroll-padding-top: 4rem; }
     }
 
     /* --- Sections --- */
@@ -306,7 +358,7 @@
     .note__label {
       display: block;
       font-family: var(--font-mono);
-      font-size: 0.6875rem;
+      font-size: 0.8125rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--color-muted);
@@ -341,7 +393,9 @@
       top: var(--space-sm);
       right: var(--space-sm);
       font-family: var(--font-mono);
-      font-size: 0.625rem;
+      min-width: 44px;
+      min-height: 44px;
+      font-size: 0.75rem;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: #B8B8B0;
@@ -366,7 +420,26 @@
     }
 
     /* --- Tables --- */
-    .tablewrap { overflow-x: auto; margin: var(--space-md) 0; }
+    .tablewrap {
+      position: relative;
+      overflow-x: auto;
+      margin: var(--space-md) 0;
+      border-radius: var(--radius-md);
+    }
+
+    .tablewrap::before {
+      content: "Swipe horizontally to see the full table →";
+      display: none;
+      position: sticky;
+      left: 0;
+      padding: 0.45rem 0.65rem;
+      color: var(--color-ink);
+      background: #E4F49E;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+    }
+
+    .tablewrap.is-scrollable::before { display: block; }
 
     table {
       width: 100%;
@@ -387,7 +460,7 @@
 
     th {
       font-family: var(--font-mono);
-      font-size: 0.6875rem;
+      font-size: 0.8125rem;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       background: #EDEDE9;
@@ -400,17 +473,7 @@
     ul.checks, ol.steps { margin: var(--space-md) 0 var(--space-md) var(--space-lg); }
     ul.checks li, ol.steps li { margin-bottom: var(--space-sm); }
 
-    /* --- OS switcher (pure CSS) --- */
-    .osroot > input[type="radio"] {
-      position: absolute;
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    /* Deliberately not sticky. Its old `top: 2.6rem` hard-coded the height of a
-       single-line tocbar; now that the tocbar wraps, no fixed offset can be
-       correct at every width, and two stacked sticky bars ate the viewport on a
-       phone regardless. The OS is chosen once, so scrolling back is cheap. */
+    /* --- Semantic OS and mobile-platform switchers --- */
     .ostabs, .plattabs {
       z-index: 15;
       display: flex;
@@ -420,21 +483,29 @@
       padding: var(--space-md) 0;
       margin-bottom: var(--space-md);
       border-bottom: 1px solid var(--color-border);
+      border-left: 0;
+      border-right: 0;
+      border-top: 0;
     }
 
-    .ostabs span, .plattabs span {
+    .ostabs legend, .plattabs legend {
       font-family: var(--font-mono);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
+      font-weight: 600;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--color-muted);
-      align-self: center;
-      margin-right: var(--space-sm);
+      width: 100%;
+      margin-bottom: var(--space-sm);
     }
 
     .ostabs label, .plattabs label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-height: 44px;
       font-family: var(--font-mono);
-      font-size: 0.75rem;
+      font-size: 0.8125rem;
       padding: 0.4rem 0.9rem;
       border: 1px solid var(--color-border);
       border-radius: var(--radius-pill);
@@ -446,72 +517,64 @@
 
     .ostabs label:hover, .plattabs label:hover { border-color: var(--color-ink); }
 
-    .only-win, .only-mac, .only-linux { display: none; }
+    @supports selector(.osroot:has(#os-win:checked)) {
+      .only-win, .only-mac, .only-linux,
+      .only-win-i, .only-mac-i, .only-linux-i,
+      .plat-android, .plat-ios, .plat-device,
+      .plat-android-i, .plat-ios-i, .plat-device-i { display: none; }
 
-    #os-win:checked   ~ * .only-win,
-    #os-mac:checked   ~ * .only-mac,
-    #os-linux:checked ~ * .only-linux { display: block; }
+      .osroot:has(#os-win:checked) .only-win,
+      .osroot:has(#os-mac:checked) .only-mac,
+      .osroot:has(#os-linux:checked) .only-linux,
+      .osroot:has(#plat-android:checked) .plat-android,
+      .osroot:has(#plat-ios:checked) .plat-ios,
+      .osroot:has(#plat-device:checked) .plat-device { display: block; }
 
-    /* Inline variants, for OS-specific words inside a sentence. These must not
-       use the block classes above: a display:block override mid-paragraph would
-       break the line, and an inline `style` attribute would defeat the
-       display:none default and reveal all three at once. */
-    .only-win-i, .only-mac-i, .only-linux-i { display: none; }
+      .osroot:has(#os-win:checked) .only-win-i,
+      .osroot:has(#os-mac:checked) .only-mac-i,
+      .osroot:has(#os-linux:checked) .only-linux-i,
+      .osroot:has(#plat-android:checked) .plat-android-i,
+      .osroot:has(#plat-ios:checked) .plat-ios-i,
+      .osroot:has(#plat-device:checked) .plat-device-i { display: inline; }
 
-    #os-win:checked   ~ * .only-win-i,
-    #os-mac:checked   ~ * .only-mac-i,
-    #os-linux:checked ~ * .only-linux-i { display: inline; }
-
-    #os-win:checked   ~ .ostabs label[for="os-win"],
-    #os-mac:checked   ~ .ostabs label[for="os-mac"],
-    #os-linux:checked ~ .ostabs label[for="os-linux"] {
-      background: var(--color-ink);
-      color: var(--color-base);
-      border-color: var(--color-ink);
+      .ostabs label:has(input:checked),
+      .plattabs label:has(input:checked) {
+        background: var(--color-ink);
+        color: var(--color-base);
+        border-color: var(--color-ink);
+      }
     }
 
-    /* Keyboard focus for the visually hidden radios lands on the label. */
-    .osroot > input[type="radio"]:focus-visible ~ .ostabs label { outline: 2px dashed var(--color-muted); outline-offset: 2px; }
-
-    /* --- Target-platform switcher (pure CSS), for the two mobile sections ---
-       Its radios sit beside the OS radios as direct children of .osroot because
-       every rule below relies on the `~ *` sibling-descendant combinator: the
-       tab strip and the switched blocks live inside a later <section>, which is
-       a following sibling of the input, not a child of it. Nesting the inputs
-       inside the mobile section instead would put the OS blocks out of reach.
-       The two groups are independent — an Android reader on Windows and an iOS
-       reader on macOS both get a coherent page. */
-    .plat-android, .plat-ios, .plat-device { display: none; }
-
-    #plat-android:checked ~ * .plat-android,
-    #plat-ios:checked     ~ * .plat-ios,
-    #plat-device:checked  ~ * .plat-device { display: block; }
-
-    .plat-android-i, .plat-ios-i, .plat-device-i { display: none; }
-
-    #plat-android:checked ~ * .plat-android-i,
-    #plat-ios:checked     ~ * .plat-ios-i,
-    #plat-device:checked  ~ * .plat-device-i { display: inline; }
-
-    #plat-android:checked ~ * .plattabs label[for="plat-android"],
-    #plat-ios:checked     ~ * .plattabs label[for="plat-ios"],
-    #plat-device:checked  ~ * .plattabs label[for="plat-device"] {
-      background: var(--color-ink);
-      color: var(--color-base);
-      border-color: var(--color-ink);
+    @supports not selector(.osroot:has(#os-win:checked)) {
+      .only-win::before, .only-mac::before, .only-linux::before,
+      .plat-android::before, .plat-ios::before, .plat-device::before {
+        display: block;
+        margin: var(--space-md) 0 var(--space-sm);
+        font-family: var(--font-mono);
+        font-weight: 600;
+      }
+      .only-win::before { content: "Windows"; }
+      .only-mac::before { content: "macOS"; }
+      .only-linux::before { content: "Linux"; }
+      .plat-android::before { content: "Android emulator"; }
+      .plat-ios::before { content: "iOS simulator"; }
+      .plat-device::before { content: "Physical device"; }
+      .only-win-i::after { content: " (Windows); "; }
+      .only-mac-i::after { content: " (macOS); "; }
+      .only-linux-i::after { content: " (Linux)"; }
+      .plat-android-i::after { content: " (Android); "; }
+      .plat-ios-i::after { content: " (iOS); "; }
+      .plat-device-i::after { content: " (physical device)"; }
     }
 
-    .osroot > input[type="radio"]:focus-visible ~ * .plattabs label { outline: 2px dashed var(--color-muted); outline-offset: 2px; }
-
-    /* The tab strip repeats inside each mobile section, so it needs its own
-       top margin where .ostabs relied on being first in the flow. */
+    /* The mobile target fieldset appears where platform-specific setup begins. */
     .plattabs { margin-top: var(--space-lg); border-bottom: 1px solid var(--color-border); }
 
-    /* --- Figure / screenshot placeholders --- */
+    /* --- Figures and screenshots --- */
     figure {
       margin: var(--space-lg) 0;
       background: var(--color-surface-raised);
-      border: 2px dashed var(--color-border);
+      border: 1px solid var(--color-border);
       border-radius: var(--radius-md);
       padding: var(--space-lg);
     }
@@ -523,6 +586,55 @@
       border-radius: var(--radius-sm);
       border: 1px solid var(--color-border);
     }
+
+    /* Captured evidence is visually distinct from diagrams and any future
+       capture placeholder, without relying on colour alone: it also contains
+       the full-size action and a written success signal in its caption. */
+    figure:has(> .image-link) {
+      border-left: 4px solid #187A4C;
+    }
+
+    .image-link {
+      position: relative;
+      display: block;
+      border-radius: var(--radius-sm);
+    }
+
+    .figure-enlarge {
+      position: static;
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      margin-top: var(--space-sm);
+      padding: 0.45rem 0.7rem;
+      color: #FFFFFF;
+      background: rgba(20, 20, 20, 0.92);
+      border: 1px solid #FFFFFF;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+    }
+
+    .mobile-gallery {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 360px));
+      gap: var(--space-md);
+      justify-content: center;
+      margin: var(--space-lg) 0;
+    }
+
+    .mobile-gallery figure { margin: 0; }
+
+    .portrait-figure { max-width: 360px; margin-left: auto; margin-right: auto; }
+
+    .screenshot-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-md);
+      margin: var(--space-lg) 0;
+    }
+
+    .screenshot-grid figure { margin: 0; }
 
     /* Placeholder styling is retained for any figure that does not yet have a
        captured image. See docs/images/README.md for the capture conventions. */
@@ -561,7 +673,7 @@
 
     figcaption {
       margin-top: var(--space-md);
-      font-size: 0.8125rem;
+      font-size: 0.9375rem;
       color: var(--color-muted);
       line-height: 1.55;
     }
@@ -578,7 +690,22 @@
       overflow-x: auto;
     }
 
+    .diagram::before {
+      content: "Diagram — swipe horizontally on a small screen →";
+      display: none;
+      margin-bottom: var(--space-sm);
+      color: var(--color-muted);
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+    }
+
     .diagram svg { display: block; width: 100%; min-width: 520px; height: auto; }
+
+    .diagram svg text[font-size="10"],
+    .diagram svg text[font-size="11"] { font-size: 12px; }
+
+    .diagram svg text[fill="#75756E"],
+    .diagram svg text[fill="#9A9A92"] { fill: #55554F; }
 
     /* --- Doc cards --- */
     .docs {
@@ -603,7 +730,7 @@
     .doc__label {
       display: block;
       font-family: var(--font-mono);
-      font-size: 0.6875rem;
+      font-size: 0.8125rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--color-muted);
@@ -624,14 +751,48 @@
     footer a { color: var(--color-ink); text-decoration-color: var(--color-border); text-underline-offset: 3px; }
     footer a:hover { text-decoration-color: var(--color-ink); }
 
-    :focus-visible { outline: 3px solid var(--color-volt); outline-offset: 2px; }
+    :focus-visible {
+      outline: 3px solid #FFFFFF;
+      box-shadow: 0 0 0 6px #141414;
+      outline-offset: 2px;
+    }
+
+    .back-to-top {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      margin-top: var(--space-lg);
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      text-underline-offset: 3px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+    }
 
     @media (max-width: 640px) {
       .section-head { flex-direction: column; gap: var(--space-xs); }
+      .container { padding-left: var(--space-md); padding-right: var(--space-md); }
+      figure { padding: var(--space-md); }
+      .mobile-gallery { grid-template-columns: minmax(0, 360px); }
+      .screenshot-grid { grid-template-columns: minmax(0, 1fr); }
+      .tablewrap::before, .diagram::before { display: block; }
+      .diagram { padding: var(--space-md); }
+      .diagram svg { min-width: 720px; }
     }
   </style>
 </head>
-<body>
+<body id="guide-top">
+
+  <a class="skip-link" href="#guide-content">Skip to setup steps</a>
 
   <header class="masthead">
     <div class="container">
@@ -652,23 +813,23 @@
         <li>HTMX</li>
         <li>Alpine.js</li>
         <li>Docker</li>
-        <li>Expo SDK 51</li>
-        <li>React Native 0.74</li>
+        <li>Expo SDK 57</li>
+        <li>React Native 0.86.2</li>
       </ul>
-      <p class="tagline" style="font-size:0.875rem;">
-        <b>Last verified 24 August 2026</b> on Linux, by running every command in Steps 1&ndash;10 and the
-        JavaScript half of Steps 11&ndash;12: database and Redis healthy, 576 tests passing, both consoles
-        answering, the mobile API returning a live catalogue, and Metro bundling the app.
-        Building onto a device or emulator (<code>npm run android</code>, <code>npm run ios</code>,
-        <code>eas build</code>) could not be executed on that machine and is marked where it appears.
+      <p class="tagline verification-scope">
+        <b>Guide refreshed 24 August 2026.</b> The Linux and Android instructions are backed by the captured
+        results beside each step, plus clean APK smoke tests on Android API&nbsp;24 and API&nbsp;36. Windows and
+        macOS commands are maintained as equivalent setup paths;
+        iOS compilation and App Store submission remain unverified because they require qualifying Apple
+        hardware and credentials. No guide claim should be treated as proof of a store release.
       </p>
     </div>
   </header>
 
   <div class="barcode" role="presentation"></div>
 
-  <div class="tocbar">
-    <nav aria-label="Guide sections">
+  <div class="tocbar" id="guide-navigation">
+    <nav class="desktop-toc" aria-label="Guide sections">
       <a href="#overview">Overview</a>
       <a href="#install">1 · Install</a>
       <a href="#clone">2 · Code</a>
@@ -688,27 +849,38 @@
       <a href="#cheatsheet">Cheat sheet</a>
       <a href="#docs">Docs</a>
     </nav>
+    <details class="mobile-toc">
+      <summary>Jump to section</summary>
+      <nav aria-label="Guide sections on mobile">
+        <a href="#overview">Overview</a>
+        <a href="#install">1 · Install</a>
+        <a href="#clone">2 · Code</a>
+        <a href="#venv">3 · Python</a>
+        <a href="#config">4 · Config</a>
+        <a href="#database">5 · Database</a>
+        <a href="#migrate">6 · Data</a>
+        <a href="#run">7 · Run</a>
+        <a href="#admin">8 · Accounts</a>
+        <a href="#verify">9 · Verify</a>
+        <a href="#tests">10 · Tests</a>
+        <a href="#mobile-setup">11 · Mobile setup</a>
+        <a href="#mobile-run">12 · Run the app</a>
+        <a href="#stop">13 · Stop</a>
+        <a href="#trouble">Troubleshooting</a>
+        <a href="#cheatsheet">Cheat sheet</a>
+        <a href="#docs">Docs</a>
+      </nav>
+    </details>
   </div>
 
-  <main class="container osroot">
+  <main class="container osroot" id="guide-content">
 
-    <input type="radio" id="os-win" name="os" checked>
-    <input type="radio" id="os-mac" name="os">
-    <input type="radio" id="os-linux" name="os">
-
-    <!-- Target platform for the mobile sections (Steps 12-13). Android is the
-         default because it is the only target reachable from all three host
-         operating systems. -->
-    <input type="radio" id="plat-android" name="plat" checked>
-    <input type="radio" id="plat-ios" name="plat">
-    <input type="radio" id="plat-device" name="plat">
-
-    <div class="ostabs">
-      <span>Your OS:</span>
-      <label for="os-win">Windows</label>
-      <label for="os-mac">macOS</label>
-      <label for="os-linux">Linux</label>
-    </div>
+    <fieldset class="ostabs">
+      <legend>Your operating system</legend>
+      <label><input type="radio" id="os-win" name="os" checked> Windows</label>
+      <label><input type="radio" id="os-mac" name="os"> macOS</label>
+      <label><input type="radio" id="os-linux" name="os"> Linux</label>
+    </fieldset>
 
     <!-- ============================== OVERVIEW ============================== -->
     <section id="overview">
@@ -728,19 +900,21 @@
 
       <p>
         Your browser talks to Django, and Django talks to MySQL. Steps 11&ndash;12 then add a third piece — the
-        <strong>MetroDrip phone app</strong>, which talks to that same Django process through the mobile API
-        instead of serving HTML. Nothing in the app half changes the web half, so you can stop after Step 10
-        and still have a complete working storefront.
+        <strong>MetroDrip phone app</strong>, which talks to the same Django application through the mobile API
+        instead of serving HTML. The guide starts a second local Django process on port 8080 for that API while
+        the storefront process remains on port 8000. Nothing in the app half changes the web half, so you can
+        stop after Step 10 and still have a complete working storefront.
       </p>
 
-      <div class="diagram">
+      <figure class="diagram" aria-label="MetroDrip local architecture diagram" tabindex="0">
         <svg viewBox="0 0 720 340" role="img" aria-labelledby="archtitle archdesc">
           <title id="archtitle">MetroDrip local development architecture</title>
           <desc id="archdesc">
             Your browser sends requests to the Django development server on port 8000, running on your host
             machine. Django reads and writes data over port 3306 to a MySQL 8.4 database running in a Docker
             container. Below that, the Expo mobile app running on an emulator, simulator, or phone reaches
-            the same Django process on port 8080 through the mobile API at slash api slash mobile slash v1.
+            the same Django application through a second development-server process on port 8080 and the mobile
+            API at slash api slash mobile slash v1.
             Two further pieces are optional and drawn with dashed outlines: a scheduler process that connects
             to the same database, and a Redis container that ships in Docker Compose but that Django does not
             use until you point its cache setting at it.
@@ -762,10 +936,10 @@
 
           <!-- Django -->
           <rect x="255" y="55" width="200" height="110" rx="8" fill="#C8F031" stroke="#141414" stroke-width="2"/>
-          <text x="355" y="88" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">Django dev server</text>
+          <text x="355" y="88" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">Django application</text>
           <text x="355" y="110" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">manage.py runserver</text>
-          <text x="355" y="130" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">:8000 web · :8080 app</text>
-          <text x="355" y="150" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#3E4A16">runs on your machine</text>
+          <text x="355" y="130" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">:8000 web · :8080 mobile API</text>
+          <text x="355" y="150" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#3E4A16">one local process per port</text>
 
           <!-- MySQL -->
           <rect x="545" y="55" width="163" height="110" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
@@ -777,7 +951,7 @@
           <!-- Mobile app -->
           <rect x="12" y="215" width="150" height="95" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
           <text x="87" y="243" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">MetroDrip app</text>
-          <text x="87" y="264" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">Expo SDK 51</text>
+          <text x="87" y="264" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">Expo SDK 57</text>
           <text x="87" y="282" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">emulator · simulator</text>
           <text x="87" y="298" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">· phone</text>
 
@@ -806,7 +980,7 @@
           <path d="M 457 238 L 495 238 L 495 190 L 626 190 L 626 172" fill="none" stroke="#B8B8B0" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrowmuted)"/>
           <text x="355" y="292" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#9A9A92">dashed outline = optional piece</text>
         </svg>
-      </div>
+      </figure>
 
       <div class="note note--volt">
         <span class="note__label">Why Docker for the database?</span>
@@ -823,8 +997,8 @@
         <p>
           <strong>First time on a fresh machine:</strong> 30&ndash;45 minutes for the storefront (Steps 1&ndash;10),
           mostly waiting for downloads.<br>
-          <strong>The app (Steps 11&ndash;12):</strong> around 15 minutes on top if you use Expo Go; budget an hour
-          or more the first time you install the Android SDK or Xcode.<br>
+          <strong>The app (Steps 11&ndash;12):</strong> budget an hour or more for the first native development
+          build, especially if Android Studio or Xcode still needs to download an SDK.<br>
           <strong>Every time after that:</strong> about 30 seconds — see the <a href="#cheatsheet">cheat sheet</a>.
         </p>
       </div>
@@ -849,7 +1023,7 @@
             <tr><td><strong>Python</strong></td><td>3.14</td><td>The language MetroDrip is written in.</td></tr>
             <tr><td><strong>Docker Desktop</strong></td><td>28+</td><td>Runs the MySQL database in a container.</td></tr>
             <tr><td><strong>uv</strong></td><td>any recent</td><td>Creates the Python environment and installs libraries. Much faster than pip.</td></tr>
-            <tr><td><strong>Node.js</strong></td><td>20 or newer</td><td>Only needed for the phone app in <a href="#mobile-setup">Step 11</a>. The storefront needs no Node at all.</td></tr>
+            <tr><td><strong>Node.js</strong></td><td>22.13 or newer</td><td>Only needed for the phone app in <a href="#mobile-setup">Step 11</a>. Expo SDK 57 does not support older Node releases.</td></tr>
           </tbody>
         </table>
       </div>
@@ -870,7 +1044,7 @@
           <li><a href="https://git-scm.com/download/win">Git for Windows</a> — accept the defaults.</li>
           <li><a href="https://www.python.org/downloads/">Python 3.14</a> — <strong>tick “Add python.exe to PATH”</strong> on the first screen. This is the single most common setup mistake.</li>
           <li><a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a> — restart your computer when it asks.</li>
-          <li><a href="https://nodejs.org/">Node.js 20 LTS</a> — for the phone app only; skip it if you are not doing Step 11.</li>
+          <li><a href="https://nodejs.org/en/download">Node.js 22 LTS or newer</a> — for the phone app only; skip it if you are not doing Step 11.</li>
         </ul>
         <p>Then open <strong>PowerShell</strong> and install uv:</p>
         <div class="code"><pre><code>powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"</code></pre></div>
@@ -900,9 +1074,10 @@ sudo usermod -aG docker "$USER"   <span class="c"># then log out and back in</sp
 <span class="c"># uv (it can install Python 3.14 for you in the next step).</span>
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-<span class="c"># Node.js 20+, for the phone app only (Step 11). Distro packages are often</span>
-<span class="c"># older than 20 — check with `node --version` and use nodesource or nvm if so.</span>
-sudo apt install -y nodejs npm</code></pre></div>
+<span class="c"># Node.js 22.13+, for the phone app only (Step 11). Distro packages are often</span>
+<span class="c"># older, so use the NodeSource 22.x repository instead of Ubuntu's default.</span>
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs</code></pre></div>
         <div class="note note--tip">
           <span class="note__label">Tip</span>
           <p>The <code>usermod</code> line lets you run Docker without <code>sudo</code>. You must log out and back in for it to take effect.</p>
@@ -930,6 +1105,10 @@ docker --version
 uv --version</code></pre></div>
       </div>
 
+      <p>If you are continuing to the phone app, verify its tool as well:</p>
+      <div class="code"><pre><code>node --version   <span class="c"># v22.13 or newer</span>
+npm --version</code></pre></div>
+
       <div class="note note--warn">
         <span class="note__label">If a command is “not recognised” or “not found”</span>
         <p>
@@ -940,14 +1119,18 @@ uv --version</code></pre></div>
       </div>
 
       <figure>
-        <img src="docs/images/01-tools-verified.png"
-             alt="Terminal showing four version checks: git version 2.54.0.windows.1, Python 3.14.4, Docker version 28.5.1, and uv 0.11.12."
-             loading="lazy" width="1250" height="530">
+        <a class="image-link" href="docs/images/step-01-tools-verified.png" target="_blank">
+          <img src="docs/images/step-01-tools-verified.png"
+               alt="Sanitized terminal output showing Git, Python, Docker, uv, and Node each returning an installed version."
+               loading="lazy" decoding="async" width="1598" height="918">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
         <figcaption>
-          All four tools answering with a version number. If any line says “not recognised” instead,
+          <b>Expected:</b> every required tool answers with a version number. If any line says “not recognised” instead,
           revisit the install step for that tool and open a fresh terminal.
         </figcaption>
       </figure>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 2. CLONE ============================== -->
@@ -969,6 +1152,16 @@ cd TIP_MetroDrip-Ecommerce</code></pre></div>
         <span class="note__label">How to know you are in the right place</span>
         <p>Run <span class="only-win-i"><code>dir</code></span><span class="only-mac-i"><code>ls</code></span><span class="only-linux-i"><code>ls</code></span> and you should see <code>manage.py</code>, <code>requirements.txt</code>, and folders named <code>apps</code> and <code>config</code>.</p>
       </div>
+      <figure>
+        <a class="image-link" href="docs/images/step-02-code-cloned.png" target="_blank">
+          <img src="docs/images/step-02-code-cloned.png"
+               alt="Sanitized terminal showing the MetroDrip repository cloned, the project directory opened, and its expected top-level files listed."
+               loading="lazy" decoding="async" width="1598" height="918">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
+        <figcaption><b>Expected:</b> the current folder contains <code>manage.py</code>, <code>requirements.txt</code>, <code>apps/</code>, and <code>config/</code>.</figcaption>
+      </figure>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 3. VENV ============================== -->
@@ -996,7 +1189,6 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         <div class="code"><pre><code>uv venv .venv --python 3.14
 uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
-
       <p>This downloads Django, the MySQL driver, and the rest. It takes a minute or two the first time.</p>
 
       <div class="note">
@@ -1021,16 +1213,26 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       <h3>Confirm it worked</h3>
       <div class="only-win">
         <div class="code"><pre><code>.venv/Scripts/python --version
-<span class="o">Python 3.14.4</span></code></pre></div>
+<span class="o">Python 3.14.6</span></code></pre></div>
       </div>
       <div class="only-mac">
         <div class="code"><pre><code>.venv/bin/python --version
-<span class="o">Python 3.14.4</span></code></pre></div>
+<span class="o">Python 3.14.6</span></code></pre></div>
       </div>
       <div class="only-linux">
         <div class="code"><pre><code>.venv/bin/python --version
-<span class="o">Python 3.14.4</span></code></pre></div>
+<span class="o">Python 3.14.6</span></code></pre></div>
       </div>
+      <figure>
+        <a class="image-link" href="docs/images/step-03-python-ready.png" target="_blank">
+          <img src="docs/images/step-03-python-ready.png"
+               alt="Sanitized terminal showing the project virtual environment using Python 3.14, Django importing successfully, and Django's system check finding no issues."
+               loading="lazy" decoding="async" width="1598" height="918">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
+        <figcaption><b>Expected:</b> the Python executable inside <code>.venv</code> reports Python 3.14 without an import or path error.</figcaption>
+      </figure>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 4. CONFIG ============================== -->
@@ -1079,6 +1281,16 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           and never paste real passwords or API keys into a public repository or a group chat.
         </p>
       </div>
+      <figure>
+        <a class="image-link" href="docs/images/step-04-env-created-and-ignored.png" target="_blank">
+          <img src="docs/images/step-04-env-created-and-ignored.png"
+               alt="Sanitized terminal proving that the local .env file exists and is ignored by Git, without displaying any secret values."
+               loading="lazy" decoding="async" width="1598" height="918">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
+        <figcaption><b>Expected:</b> <code>.env</code> exists locally and Git reports it as ignored; the screenshot deliberately reveals no values.</figcaption>
+      </figure>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 5. DATABASE ============================== -->
@@ -1132,16 +1344,19 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <figure>
-        <img src="docs/images/02-mysql-container-healthy.png"
-             alt="Terminal showing docker compose up -d db redis --wait progressing through Starting, Started, Waiting and finishing at Healthy, followed by docker compose ps listing metrodrip-mysql running mysql:8.4 on port 3306."
-             loading="lazy" width="1250" height="438">
+        <a class="image-link" href="docs/images/step-05-data-services-healthy.png" target="_blank">
+          <img src="docs/images/step-05-data-services-healthy.png"
+               alt="Sanitized terminal showing disposable metrodrip-guide MySQL and Redis containers running on loopback-only ports, followed by mysql is alive and PONG readiness checks."
+               loading="lazy" decoding="async" width="1598" height="918">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
         <figcaption>
-          <b>Healthy</b> is the word to look for. The follow-up <code>docker compose ps</code> confirms the
-          container is up and publishing port 3306. This capture predates adding Redis to the command, so it
-          shows only <code>metrodrip-mysql</code>; with <code>db redis</code> you get a second, identical-looking
-          pair of Started/Healthy lines for <code>metrodrip-redis</code>.
+          <b>Expected:</b> your normal Compose services finish at <strong>Healthy</strong>. Documentation QA uses
+          disposable <code>metrodrip-guide-*</code> names and loopback-only ports so it cannot touch an existing
+          developer database; <code>mysqld is alive</code> and <code>PONG</code> are the equivalent direct checks.
         </figcaption>
       </figure>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 6. MIGRATE ============================== -->
@@ -1189,6 +1404,16 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         looks like a seed is a development fixture, and they are not interchangeable:
       </p>
 
+      <div class="note">
+        <span class="note__label">What the canonical seed does not include</span>
+        <p>
+          <code>seed_demo</code> does not create the optional Men/Women category tree and does not attach product
+          photography. Empty image arrays and neutral product placeholders are therefore expected on a clean
+          demo database. Run <code>seed_mock_catalog</code> only when you specifically need the populated category,
+          filter, and pagination examples below.
+        </p>
+      </div>
+
       <div class="tablewrap">
         <table>
           <thead>
@@ -1197,7 +1422,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           <tbody>
             <tr><td><code>manage.py seed_demo</code></td><td>5 curated products</td><td><strong>Canonical.</strong> Demos, stakeholder review, screenshots</td></tr>
             <tr><td><code>manage.py seed_mock_catalog</code></td><td>bulk placeholders</td><td>Category, filter, and pagination testing</td></tr>
-            <tr><td><code>seed_assignment.py</code>, <code>seed_more.py</code>, <code>seed_200.py</code>, <code>seed_collections.py</code></td><td>~150+ placeholder products each</td><td>Local pagination and performance work only</td></tr>
+            <tr><td><code>seed_assignment.py</code>, <code>seed_more.py</code>, <code>seed_200.py</code>, <code>seed_collections.py</code></td><td>Legacy ad-hoc catalogues, from a few products to 200-per-branch targets</td><td>Local compatibility and load work only; their output is not the canonical capture dataset</td></tr>
           </tbody>
         </table>
       </div>
@@ -1206,10 +1431,9 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         <span class="note__label">The padded fixtures stack, and they do not clean up after themselves</span>
         <p>
           Each of those root-level scripts adds to what is already there rather than replacing it, so a
-          long-lived development database drifts a long way from five products. Running the count in
-          <a href="#verify">Step 9</a> on one such database on 24 August 2026 returned
-          <strong>1,003 products and 1,180 variants</strong>. That is fine for exercising pagination and harmless
-          locally, but it is not what a demo should look like. To get back to a demo-shaped catalogue, reset the
+          long-lived development database can drift a long way from five products. That is fine for exercising
+          pagination locally, but it is not what a canonical demo should look like. Count the current rows in
+          <a href="#verify">Step 9</a>. To get back to a demo-shaped catalogue, reset the
           database (<a href="#stop">Step 13</a>) and run <code>migrate</code> and <code>seed_demo</code> alone.
         </p>
       </div>
@@ -1257,6 +1481,16 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           </tbody>
         </table>
       </div>
+      <figure>
+        <a class="image-link" href="docs/images/step-06-demo-seed-complete.png" target="_blank">
+          <img src="docs/images/step-06-demo-seed-complete.png"
+               alt="Sanitized terminal showing database migrations completing, an idempotent demo seed creating no duplicate rows, and five-product canonical totals verified."
+               loading="lazy" decoding="async" width="1598" height="918">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
+        <figcaption><b>Expected:</b> migrations complete without errors and <code>seed_demo</code> reports its result; zero newly created rows is valid on a repeat run.</figcaption>
+      </figure>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 7. RUN ============================== -->
@@ -1293,12 +1527,15 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <figure>
-        <img src="docs/images/03-storefront-homepage.png"
-             alt="MetroDrip storefront homepage showing the navigation bar with Home, Shop and Browse Categories, above the New Arrivals product grid with items including Drip Key Chain at 899 pesos and Canvas Card Wallet at 399 pesos."
-             loading="lazy" width="1600" height="1075">
+        <a class="image-link" href="docs/images/step-07-storefront-home.png" target="_blank">
+          <img src="docs/images/step-07-storefront-home.png"
+               alt="MetroDrip storefront home page running locally with its navigation, dark MetroDrip hero, Urban Style Redefined message, and Shop Now action visible."
+               loading="lazy" decoding="async" width="1600" height="1075">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
         <figcaption>
-          The New Arrivals grid on the homepage, served from your own machine. Product cards show a text
-          placeholder because the seed ships pricing and stock but no photography.
+          <b>Expected:</b> the current homepage loads from your local Django server. A clean
+          <code>seed_demo</code> catalogue has product data but no attached photography.
         </figcaption>
       </figure>
 
@@ -1306,17 +1543,21 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
 
       <p>
         <strong>Browse Categories</strong> in the navigation bar opens a menu of every main category and its
-        <em>Men</em> and <em>Women</em> subcategories, with a live product count beside each one.
+        <em>Men</em> and <em>Women</em> subcategories, with a live product count beside each one. This populated
+        two-level example requires the optional <code>seed_mock_catalog</code> command from Step 6; it is not
+        part of the five-product canonical seed.
       </p>
 
       <figure>
-        <img src="docs/images/04-category-menu.png"
-             alt="The Browse Categories dropdown open on the homepage, showing a grid of main categories such as Accessories, Bottoms, Hoodies and Outerwear. Each has an All link plus Men and Women subcategories with product counts."
-             loading="lazy" width="1600" height="1075">
+        <a class="image-link" href="docs/images/step-07-category-menu.png" target="_blank">
+          <img src="docs/images/step-07-category-menu.png"
+               alt="The optional populated Browse Categories menu showing main categories, Men and Women subcategories, and live product counts."
+               loading="lazy" decoding="async" width="1600" height="1075">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
         <figcaption>
-          The category menu. It is a plain HTML disclosure, so it opens with a click <em>or</em> the keyboard
-          (Tab to it, then Enter) and closes with Escape. Categories added after the last seed run have no
-          Men/Women split until you run <code>seed_mock_catalog</code> again.
+          <b>Optional fixture:</b> this screenshot was taken after <code>seed_mock_catalog</code>. The menu opens
+          with a click or keyboard and closes with Escape; the visible counts come from the current database.
         </figcaption>
       </figure>
 
@@ -1329,6 +1570,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           <code>/shop/?category=hoodies-men</code> and compare the counts.
         </p>
       </div>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 8. ACCOUNTS ============================== -->
@@ -1462,20 +1704,19 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
 
       <p>
         Both consoles support <strong>TOTP two-factor authentication</strong> — the six-digit codes an
-        authenticator app generates — and both rate-limit failed sign-ins. Neither is on by default, so the
-        commands above give you a working console straight away. Read this before you enable either, because
-        one of the two has no undo.
+        authenticator app generates — and both rate-limit failed sign-ins. Rate limiting is active by default;
+        blanket TOTP enforcement is off, so the commands above give you a working console straight away.
       </p>
 
       <div class="note note--warn">
-        <span class="note__label">Enrolling a device is a one-way door for that account</span>
+        <span class="note__label">Do not use the stock device form as a beginner enrolment wizard</span>
         <p>
           Once an account has a <strong>confirmed</strong> TOTP device, <strong>its password alone stops
-          working</strong> — permanently, with no opt-out path and no “remember this browser”. If you enrol your
-          only administrator and then lose the authenticator app, you have locked yourself out of the console.
-          On a throwaway local database that costs you a
-          <code>docker compose down -v</code>; on anything shared it costs somebody their afternoon. Enrol a
-          second administrator first, or keep the recovery path in mind.
+          working while that device exists</strong>; there is no self-service bypass or “remember this browser”.
+          The installed <code>django-otp</code> administrator form is a low-level device editor, not a verified
+          enrolment flow: a newly saved device defaults to confirmed before the form has proved a code. This
+          guide therefore does not direct beginners to enable TOTP. Keep <code>CONSOLE_REQUIRE_OTP</code> off
+          unless an authorized operator has tested provisioning and recovery with a second administrator.
         </p>
       </div>
 
@@ -1493,21 +1734,17 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
 
       <p>It lists every staff account and whether a password alone would still get in:</p>
 
-      <div class="code"><pre><code><span class="o">Active staff accounts: 9</span>
+      <div class="code"><pre><code><span class="o">Active staff accounts: 2</span>
 <span class="o">  With a confirmed TOTP device: 0</span>
-<span class="o">  Without a device (2FA bypassable): 9</span>
+<span class="o">  Without a device (2FA bypassable): 2</span>
 <span class="o">    - admin@metrodrip.test (administrator)</span>
-<span class="o">    - merchant@metrodrip.test (merchant)</span>
-<span class="o">    ...</span>
-
-<span class="o">Enroll a device at /admin/otp_totp/totpdevice/add/ before setting</span>
-<span class="o">CONSOLE_REQUIRE_OTP=1, or these accounts will be refused at login.</span></code></pre></div>
+<span class="o">    - merchant@metrodrip.test (merchant)</span></code></pre></div>
 
       <p>
-        To enrol one, sign into <code>/admin/</code> and open
-        <code>/admin/otp_totp/totpdevice/add/</code>. Pick the account, save, scan the QR code with any
-        authenticator app, then enter a code to confirm the device. The QR is labelled <em>MetroDrip</em>, so
-        that is what staff will see in their app.
+        <code>check_console_otp</code> is a readiness report, not an enrolment command. The low-level device model
+        is available to authorized administrators, but this repository does not yet provide a self-service
+        scan-and-confirm workflow or recovery-code flow. Production TOTP rollout is therefore an operator task,
+        not part of this local beginner setup.
       </p>
 
       <div class="tablewrap">
@@ -1519,7 +1756,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
             <tr><td><code>CONSOLE_LOGIN_MAX_ATTEMPTS_PER_USER</code></td><td><code>5</code></td><td>Failed sign-ins per account per 15-minute window. This is the limit that actually protects an account.</td></tr>
             <tr><td><code>CONSOLE_LOGIN_MAX_ATTEMPTS_PER_IP</code></td><td><code>20</code></td><td>Failed sign-ins per address. Looser on purpose — office staff share one outbound IP.</td></tr>
             <tr><td><code>CONSOLE_LOGIN_TRUSTED_PROXY_DEPTH</code></td><td><code>0</code></td><td><code>0</code> reads the direct connection and ignores <code>X-Forwarded-For</code>. Behind a reverse proxy set it to <code>1</code>, or per-address limiting just measures the proxy.</td></tr>
-            <tr><td><code>CONSOLE_REQUIRE_OTP</code></td><td>off</td><td>Requires a code from <em>every</em> staff account, enrolled or not. Accounts with no device are refused outright.</td></tr>
+            <tr><td><code>CONSOLE_REQUIRE_OTP</code></td><td>off</td><td>Requires a code from <em>every</em> staff account, enrolled or not. Keep it off until provisioning and recovery have been tested.</td></tr>
           </tbody>
         </table>
       </div>
@@ -1530,7 +1767,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           The flag makes no exception for the superuser you would need in order to enrol anybody else, so
           enabling it on a console where nothing is enrolled locks out every account at once.
           <code>check_console_otp --strict</code> exits non-zero when anyone is still unenrolled, which is the
-          form to put in a deploy gate.
+          form to put in a deploy gate after a safe enrolment process exists.
         </p>
       </div>
 
@@ -1545,16 +1782,27 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         </p>
       </div>
 
-      <figure>
-        <img src="docs/images/06-admin-dashboard.png"
-             alt="The MetroDrip Administration dashboard after logging in, listing the Accounts, Authentication and Authorization, Catalog, CMS, Flat pages, and Inventory sections."
-             loading="lazy" width="1600" height="1075">
-        <figcaption>
-          The administrator dashboard after a successful login at <code>/admin/</code>. The login screen is
-          headed <em>Administrator Login</em>. Merchants use a separate console at <code>/merchant/</code>
-          with its own login page.
-        </figcaption>
-      </figure>
+      <div class="screenshot-grid">
+        <figure>
+          <a class="image-link" href="docs/images/step-08-merchant-console.png" target="_blank">
+            <img src="docs/images/step-08-merchant-console.png"
+                 alt="MetroDrip merchant console dashboard showing merchant-scoped catalogue, stock, and order controls."
+                 loading="lazy" decoding="async" width="1600" height="1075">
+            <span class="figure-enlarge">Open full-size</span>
+          </a>
+          <figcaption><b>Merchant:</b> <code>/merchant/</code> exposes catalogue, inventory, and order work without administrator account controls.</figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="docs/images/step-08-admin-console.png" target="_blank">
+            <img src="docs/images/step-08-admin-console.png"
+                 alt="MetroDrip administrator console dashboard showing administrator-only account, role, and configuration controls."
+                 loading="lazy" decoding="async" width="1600" height="1075">
+            <span class="figure-enlarge">Open full-size</span>
+          </a>
+          <figcaption><b>Administrator:</b> <code>/admin/</code> is a separate login surface for accounts, roles, and system configuration.</figcaption>
+        </figure>
+      </div>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 9. VERIFY ============================== -->
@@ -1573,9 +1821,9 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           </thead>
           <tbody>
             <tr><td>Homepage</td><td><code>/</code></td><td>Banner and a grid of products</td></tr>
-            <tr><td>Shop</td><td><code>/shop/</code></td><td>Full catalogue with the category tree and filters</td></tr>
-            <tr><td>Main category</td><td><code>/shop/?category=hoodies</code></td><td>Hoodies plus both its subcategories</td></tr>
-            <tr><td>Subcategory</td><td><code>/shop/?category=hoodies-men</code></td><td>Only Hoodies → Men</td></tr>
+            <tr><td>Shop</td><td><code>/shop/</code></td><td>The current catalogue and its available filters</td></tr>
+            <tr><td>Main category</td><td><code>/shop/?category=hoodies</code></td><td>Hoodies in that branch; populated hierarchy examples require <code>seed_mock_catalog</code></td></tr>
+            <tr><td>Subcategory</td><td><code>/shop/?category=hoodies-men</code></td><td>Only Hoodies → Men after the optional mock-catalogue seed</td></tr>
             <tr><td>Product detail</td><td><code>/shop/&lt;product-slug&gt;/</code></td><td>Sizes, colours, add-to-cart</td></tr>
             <tr><td>Cart</td><td><code>/cart/</code></td><td>Empty cart, or your items</td></tr>
             <tr><td>Contact</td><td><code>/contact/</code></td><td>Contact form</td></tr>
@@ -1620,7 +1868,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       <h3>Confirm the mobile API answers</h3>
 
       <p>
-        The app in <a href="#mobile-setup">Step 11</a> talks to the same Django process through
+        The app in <a href="#mobile-setup">Step 11</a> talks to the same Django application through
         <code>/api/mobile/v1/</code>. You can prove that half works from a terminal, before installing a single
         mobile tool. Every request must carry an <code>X-Client-Version</code> header — the API rejects requests
         without one by contract, so that they can be correlated with released app versions:
@@ -1636,18 +1884,19 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         <div class="code"><pre><code>curl -H 'X-Client-Version: 1.0.0' http://127.0.0.1:8000/api/mobile/v1/catalog/products/</code></pre></div>
       </div>
 
-      <p>A healthy answer is a paginated product list:</p>
+      <p>A healthy answer is a paginated product object. The current count, IDs, names, and next-page URL depend
+      on which optional fixtures you loaded, so check the response shape instead of comparing exact values:</p>
 
-      <div class="code"><pre><code><span class="o">{"count":1003,"next":"http://127.0.0.1:8000/api/mobile/v1/catalog/products/?page=2",</span>
-<span class="o"> "previous":null,"results":[{"id":1003,"name":"…","slug":"…",</span>
-<span class="o"> "category":{"name":"…","slug":"…"},"price":10000,"price_display":"₱100.00",</span>
-<span class="o"> "images":[],"review_avg":null,"review_count":0}, …]}</span></code></pre></div>
+      <div class="code"><pre><code><span class="o">{"count":&lt;current integer&gt;,"next":&lt;URL or null&gt;,"previous":null,</span>
+<span class="o"> "results":[{"id":&lt;integer&gt;,"name":"…","slug":"…",</span>
+<span class="o"> "category":{"name":"…","slug":"…"},"price":&lt;centavos integer&gt;,"price_display":"₱…",</span>
+<span class="o"> "images":[…],"review_avg":&lt;number or null&gt;,"review_count":&lt;integer&gt;}, …]}</span></code></pre></div>
 
       <div class="note note--tip">
         <span class="note__label">Read the two money fields — they explain the whole app design</span>
         <p>
-          <code>price</code> is <code>10000</code>, an integer count of centavos, and
-          <code>price_display</code> is the finished string <code>₱100.00</code>. The server sends both, and the
+          <code>price</code> is an integer count of centavos, and <code>price_display</code> is the finished peso
+          string. The server sends both, and the
           app renders the string it was given. The app never multiplies, adds, or rounds money anywhere — that
           rule is why a total on a phone can never disagree with the total in the database.
         </p>
@@ -1670,47 +1919,66 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <figure>
-        <img src="docs/images/05-shop-category-tree.png"
-             alt="The shop page filtered to Hoodies, Men. The sidebar shows main categories as chips with indented Men and Women chips beneath, the Men chip highlighted, and the results heading reads 6 products."
-             loading="lazy" width="1600" height="1250">
+        <a class="image-link" href="docs/images/step-09-category-filter.png" target="_blank">
+          <img src="docs/images/step-09-category-filter.png"
+               alt="Optional mock catalogue filtered to one subcategory, with the selected category and its matching live result count visible."
+               loading="lazy" decoding="async" width="1600" height="1075">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
         <figcaption>
-          The shop sidebar mirrors the same two levels. The selected chip is highlighted, and the result count
-          matches the number beside it. Changing category keeps your size, colour, price, search, and sort
-          settings — and paging through results keeps them too.
+          <b>Optional fixture:</b> after <code>seed_mock_catalog</code>, the selected category and displayed result
+          count agree. Changing category preserves the active size, colour, price, search, and sort filters.
         </figcaption>
       </figure>
 
       <h3>Try the shopping flow</h3>
       <ol class="steps">
-        <li>Open <strong>Browse Categories</strong> and pick a subcategory, such as Hoodies → Men.</li>
-        <li>Confirm the product count matches the number shown beside that subcategory.</li>
-        <li>Click any product.</li>
-        <li>Choose a size and colour, then add it to your cart.</li>
+        <li><strong>Optional fixture check:</strong> if you ran <code>seed_mock_catalog</code>, open <strong>Browse Categories</strong>, choose a subcategory such as Hoodies → Men, and confirm its displayed product count. Otherwise skip this check.</li>
+        <li>From the canonical five-product storefront, click any product.</li>
+        <li>Choose a size, colour, and fit, then add it to your cart.</li>
         <li>Open <code>/cart/</code> and confirm the item and price are correct.</li>
         <li>Go to checkout and fill in the delivery details.</li>
-        <li>In a second tab, open <code>/admin/</code> and find the new order under <strong>Orders</strong>.</li>
+        <li>Complete the simulated payment and confirm the public order-tracking page says <strong>Paid</strong>.</li>
+        <li>In a second tab, open <code>/merchant/</code> and match the new order number under <strong>Orders</strong>.</li>
       </ol>
 
+      <div class="note">
+        <span class="note__label">Guest and signed-in results are different</span>
+        <p>
+          A guest checkout is verified by its public Paid tracking page and the matching merchant-console order.
+          It does not later appear in a newly created customer account and it creates no in-app customer
+          notification. To verify Notifications in Step 12, sign in <em>before</em> checkout and open the
+          <strong>Notifications</strong> action on Home after payment.
+        </p>
+      </div>
+
       <figure>
-        <img src="docs/images/07-cart.png"
-             alt="MetroDrip cart page with one line item: Hoodies Men Placeholder 06, M / Bone White / oversized, SKU MD-MOCK-HOODIES-M-006, quantity 1, 549 pesos. The order summary panel shows an estimated total of 549 pesos."
-             loading="lazy" width="1600" height="1075">
+        <a class="image-link" href="docs/images/step-09-cart.png" target="_blank">
+          <img src="docs/images/step-09-cart.png"
+               alt="MetroDrip cart containing one selected product variant, quantity controls, and a matching server-formatted estimated total."
+               loading="lazy" decoding="async" width="1600" height="1075">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
         <figcaption>
-          The cart after adding one variant. Note the SKU <code>MD-MOCK-HOODIES-M-006</code> — size, colour,
-          and fit each become part of the variant identity, and stock is tracked per variant rather than per
-          product.
+          <b>Expected:</b> the cart repeats the chosen variant and server-formatted price; stock is tracked per
+          variant rather than per product title.
         </figcaption>
       </figure>
 
       <figure>
-        <img src="docs/images/08-checkout.png"
-             alt="MetroDrip checkout page with a shipping details form on the left and an order summary on the right carrying the Hoodies Men Placeholder 06 line item and a 549 peso total."
-             loading="lazy" width="1600" height="1075">
+        <a class="image-link" href="docs/images/step-09-checkout.png" target="_blank">
+          <img src="docs/images/step-09-checkout.png"
+               alt="MetroDrip checkout showing fictional delivery details and an order summary with the selected product and calculated shipping total."
+               loading="lazy" decoding="async" width="1600" height="1075">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
         <figcaption>
-          Checkout carries the same line item through to the order summary. Shipping stays unpriced until a
-          region is chosen, and card details are handled by PayMongo rather than by MetroDrip.
+          <b>Expected:</b> checkout carries the same item into the order summary. A stock local configuration
+          automatically uses simulated payment; if your environment contains a PayMongo key, explicitly start
+          Django with <code>PAYMENT_PROVIDER=simulated</code> to keep this tutorial off the PayMongo network.
         </figcaption>
       </figure>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 10. TESTS ============================== -->
@@ -1721,7 +1989,8 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <p>
-        The project ships with a full test suite. It runs against the <strong>real MySQL database</strong>, not a
+        The project ships with backend application tests plus structural checks for this guide. The backend
+        application tests run against the <strong>real MySQL database</strong>, not a
         simplified stand-in, because some tests deliberately check what happens when two people buy the last
         item at the same moment — behaviour that only a real database reproduces.
       </p>
@@ -1741,10 +2010,11 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         <div class="code"><pre><code>.venv/bin/pytest</code></pre></div>
       </div>
 
-      <p>A clean run ends with a single summary line — on 24 August 2026 this suite was
-      <code>576 passed</code> in about two and a half minutes:</p>
+      <p>A clean run ends with a single summary line. The exact number of tests, warnings, and elapsed time
+      changes as the project evolves; the durable success signal is that every collected test says
+      <code>passed</code> and the process exits successfully:</p>
 
-      <div class="code"><pre><code><span class="o">576 passed, 174 warnings in 145.54s (0:02:25)</span></code></pre></div>
+      <div class="code"><pre><code><span class="o">… passed, … warnings in …</span></code></pre></div>
 
       <h3>The full quality gate</h3>
       <p>
@@ -1754,7 +2024,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </p>
 
       <div class="only-win">
-        <div class="code"><pre><code>.venv/Scripts/python -m compileall -q apps config jobs tests manage.py  <span class="c"># 1. does it even parse</span>
+        <div class="code"><pre><code>.venv/Scripts/python -m compileall -q apps config contracts jobs services tests manage.py  <span class="c"># 1. does it even parse</span>
 .venv/Scripts/ruff check .                                             <span class="c"># 2. find code problems</span>
 .venv/Scripts/ruff format --check .                                    <span class="c"># 3. confirm formatting</span>
 .venv/Scripts/python manage.py check                                   <span class="c"># 4. Django's own health check</span>
@@ -1762,7 +2032,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
 .venv/Scripts/pytest                                                   <span class="c"># 6. the suite</span></code></pre></div>
       </div>
       <div class="only-mac">
-        <div class="code"><pre><code>.venv/bin/python -m compileall -q apps config jobs tests manage.py  <span class="c"># 1. does it even parse</span>
+        <div class="code"><pre><code>.venv/bin/python -m compileall -q apps config contracts jobs services tests manage.py  <span class="c"># 1. does it even parse</span>
 .venv/bin/ruff check .                                              <span class="c"># 2. find code problems</span>
 .venv/bin/ruff format --check .                                     <span class="c"># 3. confirm formatting</span>
 .venv/bin/python manage.py check                                    <span class="c"># 4. Django's own health check</span>
@@ -1770,7 +2040,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
 .venv/bin/pytest                                                    <span class="c"># 6. the suite</span></code></pre></div>
       </div>
       <div class="only-linux">
-        <div class="code"><pre><code>.venv/bin/python -m compileall -q apps config jobs tests manage.py  <span class="c"># 1. does it even parse</span>
+        <div class="code"><pre><code>.venv/bin/python -m compileall -q apps config contracts jobs services tests manage.py  <span class="c"># 1. does it even parse</span>
 .venv/bin/ruff check .                                              <span class="c"># 2. find code problems</span>
 .venv/bin/ruff format --check .                                     <span class="c"># 3. confirm formatting</span>
 .venv/bin/python manage.py check                                    <span class="c"># 4. Django's own health check</span>
@@ -1804,6 +2074,22 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       <div class="only-linux">
         <div class="code"><pre><code>.venv/bin/python manage.py run_scheduler</code></pre></div>
       </div>
+      <figure>
+        <a class="image-link" href="docs/images/step-10-tests-passed.png" target="_blank">
+          <img src="docs/images/step-10-tests-passed.png"
+               alt="Sanitized terminal showing the MetroDrip backend application test suite completing successfully with all collected application tests passing."
+               loading="lazy" decoding="async" width="1598" height="918">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
+        <figcaption>
+          <b>Captured backend gate:</b> this image runs
+          <code>pytest -q --ignore=tests/test_guide_structure.py</code> because the guide image-existence check
+          cannot pass before this screenshot and Step&nbsp;13's screenshot exist. After all assets are present,
+          plain <code>pytest</code> above runs the complete suite, including the guide checks. Compare the passed
+          status, not a permanently documented count or duration.
+        </figcaption>
+      </figure>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 11. MOBILE SETUP ============================== -->
@@ -1814,9 +2100,11 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <p>
-        <code>mobile/</code> holds the <strong>customer app</strong>: React&nbsp;Native on Expo SDK&nbsp;51,
-        eleven screens, iOS and Android from one TypeScript codebase. It talks to the Django server you already
-        have running, through the <code>/api/mobile/v1/</code> endpoints you can already curl from
+        <code>mobile/</code> holds the <strong>customer app</strong>: React&nbsp;Native&nbsp;0.86.2 and
+        React&nbsp;19.2.3 on <a href="https://docs.expo.dev/versions/latest/">Expo SDK&nbsp;57</a>
+        (<code>expo</code>&nbsp;<code>~57.0.16</code>), with TypeScript&nbsp;<code>~6.0.3</code>. Its twelve screen
+        components target iOS and Android from one codebase. The app talks to the Django server you already have
+        running through the <code>/api/mobile/v1/</code> endpoints you can already curl from
         <a href="#verify">Step 9</a>.
       </p>
 
@@ -1866,19 +2154,16 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         </table>
       </div>
 
-      <h3>Three ways to run it, cheapest first</h3>
+      <h3>Three stages, from daily development to distribution</h3>
 
-      <div class="diagram">
+      <figure class="diagram" aria-label="Mobile host and build-mode diagram" tabindex="0">
         <svg viewBox="0 0 720 430" role="img" aria-labelledby="toolchaintitle toolchaindesc">
           <title id="toolchaintitle">Which mobile targets and run modes your host operating system allows</title>
           <desc id="toolchaindesc">
             A Windows host can target Android only. A macOS host can target both Android and iOS. A Linux host
-            can target Android only. All three then choose between the same three ways of running the app,
-            listed from least to most setup: first, Expo Go or a development client started with npm start,
-            which needs no native build tools; second, a native debug build with npm run android or npm run
-            ios, which needs JDK 17 and the Android SDK, or macOS with Xcode; third, an EAS cloud build with
-            npm run build colon android or build colon ios, which needs an Expo account, a real project ID, and
-            brand assets.
+            can target Android only. All three use a development client: install it first with npm run android
+            or npm run ios, then use npm start for the fast JavaScript editing loop. EAS distribution builds
+            additionally need an Expo project, signing credentials, final API URL, and release assets.
           </desc>
 
           <defs>
@@ -1923,26 +2208,26 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
 
           <!-- Ladder of run modes -->
           <rect x="110" y="206" width="500" height="54" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
-          <text x="126" y="228" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">1 · Expo Go or a dev client</text>
-          <text x="126" y="248" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">npm start — no native build tools needed</text>
+          <text x="126" y="228" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">1 · Install the dev client once</text>
+          <text x="126" y="248" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">npm run android · npm run ios</text>
 
           <rect x="110" y="278" width="500" height="54" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
-          <text x="126" y="300" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">2 · Native debug build</text>
-          <text x="126" y="320" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">npm run android — JDK 17 + SDK · npm run ios — Xcode</text>
+          <text x="126" y="300" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">2 · Daily JavaScript loop</text>
+          <text x="126" y="320" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">npm start — opens the installed dev client</text>
 
           <rect x="110" y="350" width="500" height="54" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
-          <text x="126" y="372" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">3 · EAS cloud build</text>
-          <text x="126" y="392" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">npm run build:android — Expo account + real projectId</text>
+          <text x="126" y="372" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">3 · Signed EAS distribution build</text>
+          <text x="126" y="392" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">external project + credentials + release config</text>
 
           <line x1="360" y1="260" x2="360" y2="272" stroke="#141414" stroke-width="2" marker-end="url(#arrow2)"/>
           <line x1="360" y1="332" x2="360" y2="344" stroke="#141414" stroke-width="2" marker-end="url(#arrow2)"/>
 
-          <text x="60" y="240" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">least</text>
-          <text x="60" y="254" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">setup</text>
-          <text x="60" y="378" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">most</text>
-          <text x="60" y="392" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">setup</text>
+          <text x="60" y="240" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">first</text>
+          <text x="60" y="254" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">install</text>
+          <text x="60" y="378" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">release</text>
+          <text x="60" y="392" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">inputs</text>
         </svg>
-      </div>
+      </figure>
 
       <div class="tablewrap">
         <table>
@@ -1951,76 +2236,68 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           </thead>
           <tbody>
             <tr>
-              <td><strong>Expo Go / dev client</strong></td>
-              <td><code>npm start</code></td>
-              <td>Node 20+ and a device or emulator that already has a client app installed</td>
-              <td>Editing screens. Fastest loop by a wide margin — save a file and it reloads.</td>
-            </tr>
-            <tr>
-              <td><strong>Native debug build</strong></td>
+              <td><strong>First local install</strong></td>
               <td><code>npm run android</code><br><code>npm run ios</code></td>
-              <td>JDK 17 + Android SDK; or macOS + Xcode + CocoaPods</td>
-              <td>Anything touching native code, notifications, biometrics, or the splash screen.</td>
+              <td>Node 22.13+, then JDK 17 + Android API 36; or macOS + Xcode 26.4+</td>
+              <td>Generates the native project and installs MetroDrip's development client.</td>
             </tr>
             <tr>
-              <td><strong>EAS cloud build</strong></td>
-              <td><code>npm run build:android</code><br><code>npm run build:ios</code></td>
-              <td>An Expo account, a real project ID, brand assets, and for iOS an Apple team</td>
-              <td>Handing a testable binary to somebody who is not a developer.</td>
+              <td><strong>Daily development</strong></td>
+              <td><code>npm start</code></td>
+              <td>The development client already installed on the selected target</td>
+              <td>Fast TypeScript and UI edits. Rebuild after changing plugins or native configuration.</td>
+            </tr>
+            <tr>
+              <td><strong>EAS distribution</strong></td>
+              <td><code>eas build --platform …</code></td>
+              <td>EAS CLI, real Expo ownership, signing credentials, final API domain, privacy metadata, and brand assets</td>
+              <td>Producing a signed binary. Those external release inputs are intentionally not in this repository.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <div class="note note--warn">
-        <span class="note__label">This repository is not a plain Expo project, and it changes mode 1</span>
+        <span class="note__label">Use the development client, not Expo Go</span>
         <p>
-          <code>mobile/</code> contains committed <code>android/</code> and <code>ios/</code> native folders, which
-          means a <strong>development build is the intended client</strong>, not the Expo Go app from the stores.
-          Two consequences worth knowing before you start:
+          MetroDrip includes native modules for secure storage, local authentication, notifications, and its
+          native splash. Install its own development client with <code>npm run android</code> or
+          <code>npm run ios</code>. <code>npm start</code> then reconnects that installed client; it is not an
+          instruction to install or open Expo Go.
         </p>
-        <ul class="checks">
-          <li>
-            The app targets <strong>SDK&nbsp;51</strong>, and the Expo Go in the app stores tracks only the newest
-            SDKs. On Android you can sideload the matching older client —
-            <code>mobile/EMULATOR.md</code> pins <strong>Expo Go 2.31.2</strong> for exactly this reason. On iOS
-            you cannot install an old App Store build, so <strong>iOS means mode 2 or mode 3</strong>.
-          </li>
-          <li>
-            Because those native folders exist, an EAS build will <em>not</em> apply the
-            <code>orientation</code>, <code>scheme</code>, <code>userInterfaceStyle</code>,
-            <code>backgroundColor</code>, <code>splash</code>, <code>ios</code>, <code>android</code>, or
-            <code>plugins</code> keys from <code>app.json</code> — the native projects win. Running
-            <code>npx expo-doctor</code> reports this as its one failing check, which is expected here rather
-            than something to fix.
-          </li>
-        </ul>
+        <p>
+          The project uses <a href="https://docs.expo.dev/workflow/continuous-native-generation/"><strong>Continuous Native Generation</strong></a>:
+          <code>app.json</code> is the source of
+          native settings, while <code>android/</code> and <code>ios/</code> are generated locally and ignored by
+          Git. Do not hand-edit a generated native file; change app configuration or a config plugin, then
+          regenerate it.
+        </p>
       </div>
 
       <h3>Install the mobile prerequisites</h3>
 
-      <p>Node.js is the only requirement for mode 1. Check it first:</p>
+      <p>Check the required Node baseline first:</p>
 
-      <div class="code"><pre><code>node --version   <span class="c"># must be v20 or newer</span>
+      <div class="code"><pre><code>node --version   <span class="c"># must be v22.13 or newer</span>
 npm --version</code></pre></div>
 
       <p>Then install the app's JavaScript dependencies and its configuration file:</p>
 
       <div class="only-win">
         <div class="code"><pre><code>cd mobile
-npm install
+npm ci
 Copy-Item .env.example .env
 cd ..</code></pre></div>
       </div>
       <div class="only-mac">
         <div class="code"><pre><code>cd mobile
-npm install
+npm ci
 cp .env.example .env
 cd ..</code></pre></div>
       </div>
       <div class="only-linux">
         <div class="code"><pre><code>cd mobile
-npm install
+npm ci
 cp .env.example .env
 cd ..</code></pre></div>
       </div>
@@ -2035,19 +2312,19 @@ cd ..</code></pre></div>
         </p>
       </div>
 
-      <h3>Native toolchain, if you are going past mode 1</h3>
+      <h3>Install the native toolchain for your target</h3>
 
-      <div class="plattabs">
-        <span>Target:</span>
-        <label for="plat-android">Android</label>
-        <label for="plat-ios">iOS</label>
-        <label for="plat-device">Physical phone</label>
-      </div>
+      <fieldset class="plattabs" id="mobile-target">
+        <legend>Mobile target</legend>
+        <label><input type="radio" id="plat-android" name="plat" value="android" checked> Android emulator</label>
+        <label><input type="radio" id="plat-ios" name="plat" value="ios"> iOS simulator</label>
+        <label><input type="radio" id="plat-device" name="plat" value="device"> Physical phone</label>
+      </fieldset>
 
       <div class="plat-android">
         <p>
-          Android needs a <strong>JDK 17</strong> and the Android SDK. The versions the project actually builds
-          against, from <code>mobile/android/build.gradle</code> and its Gradle wrapper:
+          Android needs a <strong>JDK 17</strong> and the Android SDK. Continuous Native Generation applies these
+          project requirements when it creates the local native project:
         </p>
 
         <div class="tablewrap">
@@ -2056,12 +2333,12 @@ cd ..</code></pre></div>
               <tr><th>Piece</th><th>Version</th><th>Note</th></tr>
             </thead>
             <tbody>
-              <tr><td>JDK</td><td>17</td><td>Newer JDKs are a common source of Gradle failures here.</td></tr>
-              <tr><td>Gradle</td><td>8.8</td><td>Downloaded by the wrapper — you do not install it.</td></tr>
-              <tr><td><code>compileSdk</code> / <code>targetSdk</code></td><td>34</td><td>What the app is built against.</td></tr>
-              <tr><td><code>minSdk</code></td><td>23</td><td>Android 6.0 and up.</td></tr>
-              <tr><td>Emulator system image</td><td><strong>API 35</strong></td><td>Not 34 — see the warning below.</td></tr>
-              <tr><td>NDK</td><td>26.1.10909125</td><td>Only fetched if a dependency needs native compilation.</td></tr>
+              <tr><td>JDK</td><td>17</td><td>The CI and local build baseline.</td></tr>
+              <tr><td><code>compileSdk</code> / <code>targetSdk</code></td><td>36</td><td>Required for current tooling and the <a href="https://developer.android.com/google/play/requirements/target-sdk">2026 Google Play target-API policy</a>.</td></tr>
+              <tr><td><code>minSdk</code></td><td>24</td><td>Android 7.0 minimum; the same clean debug APK was smoke-tested on API&nbsp;24 and API&nbsp;36.</td></tr>
+              <tr><td>Java API compatibility</td><td><code>desugar_jdk_libs</code>&nbsp;2.0.3</td><td>A CNG config plugin enables core-library desugaring so Java time APIs work on API&nbsp;24–25.</td></tr>
+              <tr><td>Emulator system image</td><td><strong>API 36</strong></td><td>The documented and captured development target.</td></tr>
+              <tr><td>AVD</td><td><code>MetroDrip_Pixel_API36</code></td><td>10 GB virtual storage; keep this exact name for scripts and editor tasks.</td></tr>
             </tbody>
           </table>
         </div>
@@ -2075,8 +2352,9 @@ cd ..</code></pre></div>
             It is safe to re-run if a step fails. It installs the command-line tools to
             <code>%LOCALAPPDATA%\Android\Sdk</code>, sets <code>ANDROID_HOME</code> and
             <code>ANDROID_SDK_ROOT</code>, accepts the licences, installs <code>platform-tools</code>,
-            <code>emulator</code>, <code>platforms;android-35</code> and the <code>google_apis;x86_64</code>
-            image, and creates an AVD named <strong><code>MetroDrip_Pixel_API35</code></strong>.
+            <code>emulator</code>, API&nbsp;36 platform and Build Tools&nbsp;36.0.0, and the
+            <code>google_apis;x86_64</code> image. It creates a 10&nbsp;GB AVD named
+            <strong><code>MetroDrip_Pixel_API36</code></strong>.
             <strong>Restart your editor afterwards</strong> so it inherits the new environment variables.
           </p>
           <p>You also need, separately: a JDK 17, and virtualisation enabled in your BIOS for the x86_64 emulator.</p>
@@ -2084,7 +2362,7 @@ cd ..</code></pre></div>
         <div class="only-mac">
           <p>Install a JDK and the SDK, then create an emulator through Android Studio's Device Manager:</p>
           <div class="code"><pre><code>brew install --cask temurin@17
-brew install --cask android-studio   <span class="c"># then: SDK Manager → API 35 image</span></code></pre></div>
+brew install --cask android-studio   <span class="c"># then: SDK Manager → API 36 image + Build Tools 36.0.0</span></code></pre></div>
           <p>
             Add the SDK to your shell profile so <code>expo</code> and <code>adb</code> can find it:
           </p>
@@ -2095,7 +2373,7 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
           <p>Install a JDK and the SDK, then create an emulator through Android Studio's Device Manager:</p>
           <div class="code"><pre><code>sudo apt install -y openjdk-17-jdk
 <span class="c"># Android Studio: download from developer.android.com, or use your distro's</span>
-<span class="c"># package. Then in SDK Manager install the API 35 google_apis image.</span></code></pre></div>
+<span class="c"># package. Then in SDK Manager install API 36 + Build Tools 36.0.0.</span></code></pre></div>
           <div class="code"><pre><code>export ANDROID_HOME="$HOME/Android/Sdk"
 export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></pre></div>
           <p>
@@ -2105,14 +2383,13 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
           </p>
         </div>
 
-        <div class="note note--warn">
-          <span class="note__label">Use an API 35 image, not API 34</span>
+        <div class="note note--tip">
+          <span class="note__label">Keep the AVD name and API aligned with the scripts</span>
           <p>
-            On an <code>android-34;google_apis</code> image the SDK&nbsp;51 Expo Go client crashes on boot with
-            <code>Failed to create NativeModule 'UIManager'</code>. The identical app and bundle run correctly on
-            API 35. This was diagnosed on a real machine and written down in
-            <code>mobile/EMULATOR.md</code>; the setup script installs 35 deliberately, so do not
-            &ldquo;simplify&rdquo; it back.
+            The capture and VS Code tasks target <code>MetroDrip_Pixel_API36</code> by name. If you create a
+            differently named device, start it yourself before running the app. Do not reuse an Expo Go-specific
+            AVD workaround; this project installs its own Expo&nbsp;57 development client on the documented API&nbsp;36
+            target.
           </p>
         </div>
       </div>
@@ -2120,13 +2397,15 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
       <div class="plat-ios">
         <p>
           iOS requires <strong>macOS</strong>. There is no Windows or Linux path — not a limitation of this
-          project.
+          project. This repository targets iOS&nbsp;16.4 or newer; current
+          <a href="https://developer.apple.com/news/upcoming-requirements/">App Store submission requirements</a>
+          call for a qualifying Xcode&nbsp;26.4 toolchain and the iOS&nbsp;26.4 SDK.
         </p>
 
         <ul class="checks">
-          <li><strong>Xcode</strong> from the App Store, opened once so it can finish installing its components.</li>
+          <li><strong>Xcode 26.4 or newer</strong>, opened once so it can finish installing its components.</li>
           <li><strong>Command-line tools</strong>: <code>xcode-select --install</code>.</li>
-          <li><strong>CocoaPods</strong>: <code>brew install cocoapods</code>. The iOS project uses Hermes and targets iOS 13.4 or newer.</li>
+          <li><strong>CocoaPods</strong>: <code>brew install cocoapods</code>.</li>
           <li><strong>A simulator</strong>: Xcode → Settings → Platforms → install an iOS runtime.</li>
         </ul>
 
@@ -2137,21 +2416,20 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
         </p>
 
         <div class="note">
-          <span class="note__label">There is no committed Podfile.lock</span>
+          <span class="note__label">The iOS project is generated locally</span>
           <p>
-            <code>mobile/ios/</code> ships a <code>Podfile</code> but no lock file, so your first
-            <code>pod install</code> resolves fresh versions rather than reproducing somebody else's. If a pod
-            fails to build, that is the first thing to suspect — and the resulting
-            <code>Podfile.lock</code> is worth keeping locally so your own builds stay reproducible.
+            There is no committed <code>mobile/ios/</code> directory or <code>Podfile.lock</code>. Expo generates
+            both from <code>app.json</code> and the lockfile when you run <code>npm run ios</code>. Generated native
+            files are disposable build output; make durable changes through app configuration or a config plugin.
           </p>
         </div>
 
         <div class="note note--warn">
-          <span class="note__label">Expo Go is not an option on iOS here</span>
+          <span class="note__label">Apple execution is not verified by this Linux/Android update</span>
           <p>
-            The app targets SDK&nbsp;51 and the App Store only carries an Expo Go for current SDKs, with no way
-            to install an older one. On iOS, use <code>npm run ios</code> for a local development build, or an
-            EAS <code>development</code>-profile build for a device.
+            The configuration includes local-network and Face ID usage descriptions, but an actual simulator,
+            device build, signing flow, and store upload still need to be run on qualifying Apple hardware.
+            Use <code>npm run ios</code> for the local development client; do not substitute Expo Go.
           </p>
         </div>
       </div>
@@ -2166,11 +2444,12 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
           <li><strong>Android:</strong> enable Developer options, turn on <strong>USB debugging</strong>, plug the
           phone in, accept the trust prompt, and confirm with <code>adb devices</code>. Then
           <code>npm run android</code> installs onto it.</li>
-          <li><strong>iOS:</strong> plug the iPhone into the Mac, trust the computer, and select it as the run
-          destination in Xcode. A free Apple ID can sign a development build for your own device; distributing
-          to anybody else needs a paid team.</li>
+          <li><strong>iOS:</strong> plug the iPhone into the Mac and trust the computer; then enable Developer Mode
+            under Privacy &amp; Security (the phone restarts) and select it as the run destination in Xcode. A free
+            Apple ID can sign a development build for your own device; distributing to anybody else needs a paid
+            team.</li>
           <li><strong>Either:</strong> the phone and your computer must be on the <strong>same Wi-Fi network</strong>,
-          and <code>EXPO_PUBLIC_API_URL</code> must use your computer's LAN IP address — see the next section.</li>
+            and <code>EXPO_PUBLIC_API_URL</code> must use your computer's LAN IP address — see the next section.</li>
         </ul>
 
         <div class="note note--tip">
@@ -2194,7 +2473,7 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
         <code>127.0.0.1:8080</code> is asking the emulator for a server the emulator does not have.
       </p>
 
-      <div class="diagram">
+      <figure class="diagram" aria-label="Mobile development server address diagram" tabindex="0">
         <svg viewBox="0 0 720 360" role="img" aria-labelledby="nettitle netdesc">
           <title id="nettitle">Which address the app must use to reach your development server</title>
           <desc id="netdesc">
@@ -2254,7 +2533,13 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
 
           <text x="390" y="344" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">dashed red = the address that cannot work</text>
         </svg>
-      </div>
+      </figure>
+
+      <p>
+        After copying <code>mobile/.env.example</code> to <code>mobile/.env</code>, open that file and set
+        <code>EXPO_PUBLIC_API_URL</code> to the row for your target below. The copied default is correct only for
+        the Android emulator.
+      </p>
 
       <div class="tablewrap">
         <table>
@@ -2300,6 +2585,35 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
           <code>config/settings/dev.py</code> fixes it.
         </p>
       </div>
+
+      <h3>Verify JavaScript dependencies and the Android target</h3>
+      <div class="code"><pre><code>cd mobile
+npx expo install --check
+npx expo-doctor
+npm run typecheck
+npm run lint</code></pre></div>
+
+      <div class="screenshot-grid">
+        <figure>
+          <a class="image-link" href="docs/images/step-11-mobile-dependencies-ready.png" target="_blank">
+            <img src="docs/images/step-11-mobile-dependencies-ready.png"
+                 alt="Sanitized terminal showing Expo SDK 57 dependencies up to date and Expo Doctor passing all 21 applicable checks."
+                 loading="lazy" decoding="async" width="1598" height="918">
+            <span class="figure-enlarge">Open full-size</span>
+          </a>
+          <figcaption><b>Expected:</b> Expo reports compatible SDK&nbsp;57 dependencies and Doctor passes all applicable checks. The separate typecheck and lint commands above must also exit cleanly.</figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="docs/images/step-11-android-avd-ready.png" target="_blank">
+            <img src="docs/images/step-11-android-avd-ready.png"
+                 alt="Sanitized terminal showing the MetroDrip Pixel API 36 AVD on emulator-5554 with API 36, Android 16, and a 1080 by 2400 framebuffer."
+                 loading="lazy" decoding="async" width="1598" height="918">
+            <span class="figure-enlarge">Open full-size</span>
+          </a>
+          <figcaption><b>Expected:</b> the installed target is API&nbsp;36 and the AVD is named <code>MetroDrip_Pixel_API36</code>.</figcaption>
+        </figure>
+      </div>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 12. MOBILE RUN ============================== -->
@@ -2314,16 +2628,16 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
         for each — they all keep running until you stop them.
       </p>
 
-      <div class="diagram">
+      <figure class="diagram" aria-label="Four-process mobile run-order diagram" tabindex="0">
         <svg viewBox="0 0 720 350" role="img" aria-labelledby="runtitle rundesc">
           <title id="runtitle">The four processes to start, in order, and what each prints when it is ready</title>
           <desc id="rundesc">
             First terminal: docker compose up dash d db redis dash dash wait, which is ready when both containers
             report Healthy. Second terminal: the Django server bound to 0.0.0.0 port 8080 with the simulated
             payment provider, ready when it prints Starting development server. Third: the emulator or simulator,
-            ready when the device shows its home screen. Fourth, inside the mobile folder: npm start or npm run
-            android, ready when Metro prints that it is waiting on a local port. Each step depends on the one
-            before it.
+            ready when the device shows its home screen. Fourth, inside the mobile folder: npm run android for
+            the first native install, or npm start after that development client is installed. It is ready when
+            Metro is waiting on a local port and the MetroDrip app opens. Each step depends on the one before it.
           </desc>
 
           <defs>
@@ -2353,7 +2667,7 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
           <rect x="390" y="190" width="310" height="120" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
           <text x="408" y="216" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">TERMINAL 4</text>
           <text x="408" y="240" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">The app</text>
-          <text x="408" y="264" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">cd mobile &amp;&amp; npm start</text>
+          <text x="408" y="264" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">npm run android · later: npm start</text>
           <text x="408" y="292" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">wait for: Waiting on http://localhost:8081</text>
 
           <line x1="332" y1="80" x2="384" y2="80" stroke="#141414" stroke-width="2" marker-end="url(#arrow4)"/>
@@ -2362,7 +2676,7 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
 
           <text x="358" y="336" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">each step needs the one before it</text>
         </svg>
-      </div>
+      </figure>
 
       <h3>Terminal 1 — the data containers</h3>
       <div class="code"><pre><code>docker compose up -d db redis --wait</code></pre></div>
@@ -2386,33 +2700,33 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
       </div>
 
       <div class="note note--tip">
-        <span class="note__label">You may not need to set it at all</span>
+        <span class="note__label">Explicit means explicit</span>
         <p>
           Development settings already fall back to the simulated provider whenever no PayMongo key is
-          configured, so on a stock <code>.env</code> the variable changes nothing. Setting it explicitly makes
-          the command work the same way on a machine that <em>does</em> have sandbox keys — which is why the
-          project's editor tasks set it too.
+          configured. Setting <code>PAYMENT_PROVIDER=simulated</code> explicitly overrides any local PayMongo key,
+          which makes this tutorial deterministic. An explicit <code>PAYMENT_PROVIDER=paymongo</code> requires
+          <code>PAYMONGO_SECRET_KEY</code>; the server rejects unknown provider names, and production settings
+          continue to reject the simulated provider.
         </p>
       </div>
 
       <h3>Terminal 3 — start the device</h3>
 
-      <div class="plattabs">
-        <span>Target:</span>
-        <label for="plat-android">Android</label>
-        <label for="plat-ios">iOS</label>
-        <label for="plat-device">Physical phone</label>
+      <div class="note">
+        <span class="note__label">Using the target selected in Step 11</span>
+        <p>The commands below follow your <a href="#mobile-target">Mobile target</a> selection. Change it there
+        if you need Android, iOS simulator, or physical-device instructions instead.</p>
       </div>
 
       <div class="plat-android">
         <div class="only-win">
-          <div class="code"><pre><code>&amp; "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd MetroDrip_Pixel_API35</code></pre></div>
+          <div class="code"><pre><code>&amp; "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd MetroDrip_Pixel_API36 -port 5554</code></pre></div>
         </div>
         <div class="only-mac">
-          <div class="code"><pre><code>$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API35</code></pre></div>
+          <div class="code"><pre><code>$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API36 -port 5554</code></pre></div>
         </div>
         <div class="only-linux">
-          <div class="code"><pre><code>$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API35</code></pre></div>
+          <div class="code"><pre><code>$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API36 -port 5554</code></pre></div>
         </div>
         <p>
           Substitute your own AVD name if you created one by hand — <code>emulator -list-avds</code> prints them.
@@ -2426,11 +2740,12 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></
           troubleshooting table below covers that.
         </p>
         <div class="note note--warn">
-          <span class="note__label">Run one emulator at a time</span>
+          <span class="note__label">Verify the reserved emulator before installing</span>
           <p>
-            Expo installs onto the first device <code>adb</code> lists and does not ask. Two running emulators
-            means a coin flip about which one gets the app, and they compete for CPU badly enough to freeze both.
-            Close the others with <code>adb -s emulator-5556 emu kill</code>.
+            MetroDrip's helpers reserve <code>emulator-5554</code> for <code>MetroDrip_Pixel_API36</code> and refuse
+            to kill or reuse a different AVD on that port. Check with
+            <code>adb -s emulator-5554 emu avd name</code>. If it names a personal device, stop that device
+            yourself, then start the named MetroDrip AVD; never kill an unidentified emulator or wipe its data.
           </p>
         </div>
       </div>
@@ -2458,10 +2773,11 @@ npm run ios -- --device "iPhone 15"   <span class="c"># run on one of them</span
 
       <div class="plat-android">
         <div class="code"><pre><code>cd mobile
-npm start            <span class="c"># then press `a` to open Android</span>
+npm run android -- --device MetroDrip_Pixel_API36
+                     <span class="c"># first install, or after native configuration changes</span>
 
-<span class="c"># Or build and install the native debug app directly:</span>
-npm run android</code></pre></div>
+<span class="c"># Later JavaScript-only sessions:</span>
+npm start            <span class="c"># then press `a` to open the installed development client</span></code></pre></div>
       </div>
       <div class="plat-ios">
         <div class="code"><pre><code>cd mobile
@@ -2472,11 +2788,17 @@ npm run ios          <span class="c"># builds, installs, and launches on the sim
         </p>
       </div>
       <div class="plat-device">
+        <p>For an Android phone connected over USB:</p>
         <div class="code"><pre><code>cd mobile
-npm start            <span class="c"># scan the QR code with your development client</span>
-
-<span class="c"># Android, over USB:</span>
 npm run android</code></pre></div>
+        <div class="only-mac">
+          <p>For an iPhone connected to this Mac, use its device name from Xcode:</p>
+          <div class="code"><pre><code>cd mobile
+npm run ios -- --device "Your iPhone"</code></pre></div>
+        </div>
+        <p>For later JavaScript-only sessions, start Metro and reconnect the installed client:</p>
+        <div class="code"><pre><code>cd mobile
+npm start</code></pre></div>
       </div>
 
       <p>Metro — the JavaScript bundler — starts and stays running:</p>
@@ -2510,11 +2832,12 @@ npm run android</code></pre></div>
             <tr><th>Task</th><th>What it does</th></tr>
           </thead>
           <tbody>
-            <tr><td><code>MetroDrip: Full mobile stack</code></td><td>All of the below, in sequence. The one to use.</td></tr>
+            <tr><td><code>MetroDrip: Full mobile stack</code></td><td>Runs the runtime chain below through <code>MetroDrip: Expo on Android</code>. The two QA tasks remain separate.</td></tr>
             <tr><td><code>MetroDrip: MySQL + Redis (docker)</code></td><td>Starts the two containers.</td></tr>
             <tr><td><code>MetroDrip: Django API (0.0.0.0:8080)</code></td><td>The server, bound for the emulator, with simulated payments.</td></tr>
-            <tr><td><code>MetroDrip: Start Android emulator</code></td><td>Boots the <code>MetroDrip_Pixel_API35</code> AVD.</td></tr>
-            <tr><td><code>MetroDrip: Expo on Android</code></td><td>Metro, plus installing the app on the running emulator.</td></tr>
+            <tr><td><code>MetroDrip: Wait for Django API</code></td><td>Polls the database-backed readiness endpoint before launching the app.</td></tr>
+            <tr><td><code>MetroDrip: Start and verify Android emulator</code></td><td>Boots only <code>MetroDrip_Pixel_API36</code> on port 5554 and waits for <code>sys.boot_completed=1</code>.</td></tr>
+            <tr><td><code>MetroDrip: Expo on Android</code></td><td>Builds and installs the development client after the API is ready.</td></tr>
             <tr><td><code>MetroDrip: Backend QA</code></td><td><code>ruff</code> then <code>pytest</code>.</td></tr>
             <tr><td><code>MetroDrip: Mobile typecheck</code></td><td><code>tsc --noEmit</code> inside <code>mobile/</code>.</td></tr>
           </tbody>
@@ -2531,12 +2854,12 @@ npm run android</code></pre></div>
       </p>
 
       <ol class="steps">
-        <li>Splash screen → <strong>Continue as guest</strong>, or create an account.</li>
+        <li>Onboarding screen → sign in as <code>customer@metrodrip.test</code> <strong>before</strong> checkout.</li>
         <li>Home → tap a product → choose size, colour, and fit → <strong>Add to Cart</strong>.</li>
         <li>Cart → <strong>Checkout</strong> → fill the form → pick a delivery zone → <strong>Pay</strong>.</li>
         <li>You land on Order Tracking with the timeline showing <strong>Paid</strong>.</li>
-        <li>Sign in and open <strong>Orders</strong>; the notification centre shows &ldquo;Order confirmed&rdquo;.</li>
-        <li>In your browser, open <code>/admin/</code> and find that same order under <strong>Orders</strong>.</li>
+        <li>Return Home, open the <strong>Notifications</strong> action, and confirm the list contains &ldquo;Order confirmed&rdquo;.</li>
+        <li>In your browser, open <code>/merchant/</code> and match that same order number under <strong>Orders</strong>.</li>
       </ol>
 
       <p>
@@ -2544,6 +2867,82 @@ npm run android</code></pre></div>
         proof that the app, the API, and the database are all the same system rather than three that merely look
         alike.
       </p>
+
+      <div class="note">
+        <span class="note__label">Guest checkout has a smaller proof path</span>
+        <p>
+          A guest can complete payment and use public Paid tracking, and a merchant can still match that order.
+          A guest order does not become part of an account created later and cannot create an in-app customer
+          notification, so do not use guest mode for the notification check above.
+        </p>
+      </div>
+
+      <figure class="portrait-figure">
+        <a class="image-link" href="docs/images/step-12-app-launched.png" target="_blank">
+          <img src="docs/images/step-12-app-launched.png"
+               alt="MetroDrip Android onboarding screen with Create account, Sign in, and Continue as guest actions after the development client launches."
+               loading="lazy" decoding="async" width="1080" height="2400">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
+        <figcaption><b>Expected:</b> the MetroDrip onboarding screen appears after the development client is
+        built, installed, and launched on the selected API&nbsp;36 emulator. The following Home capture is the
+        API-data proof.</figcaption>
+      </figure>
+
+      <div class="mobile-gallery" role="group" aria-label="Signed-in Android purchase flow screenshots">
+        <figure>
+          <a class="image-link" href="docs/images/step-12-mobile-home.png" target="_blank">
+            <img src="docs/images/step-12-mobile-home.png" alt="MetroDrip Android home screen showing the canonical product catalogue and the Notifications action." loading="lazy" decoding="async" width="1080" height="2400">
+            <span class="figure-enlarge">Open full-size</span>
+          </a>
+          <figcaption><b>Home:</b> signed-in catalogue data loads from the local Django API.</figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="docs/images/step-12-mobile-product-detail.png" target="_blank">
+            <img src="docs/images/step-12-mobile-product-detail.png" alt="MetroDrip Android product detail with variant choices and an enabled Add to Cart action." loading="lazy" decoding="async" width="1080" height="2400">
+            <span class="figure-enlarge">Open full-size</span>
+          </a>
+          <figcaption><b>Product:</b> choose an available server-backed variant before adding it.</figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="docs/images/step-12-mobile-cart.png" target="_blank">
+            <img src="docs/images/step-12-mobile-cart.png" alt="MetroDrip Android cart showing the selected variant, quantity, and server-formatted estimated total." loading="lazy" decoding="async" width="1080" height="2400">
+            <span class="figure-enlarge">Open full-size</span>
+          </a>
+          <figcaption><b>Cart:</b> the selected variant and server-formatted estimate agree with the API; this capture still uses the default Luzon delivery estimate.</figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="docs/images/step-12-mobile-checkout.png" target="_blank">
+            <img src="docs/images/step-12-mobile-checkout.png" alt="MetroDrip Android checkout using fictional delivery data and the simulated local payment provider." loading="lazy" decoding="async" width="1080" height="2400">
+            <span class="figure-enlarge">Open full-size</span>
+          </a>
+          <figcaption><b>Checkout:</b> choosing the fictional NCR address makes the server recalculate shipping and the pay total. Simulated payment keeps the capture isolated from a real provider.</figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="docs/images/step-12-mobile-order-tracking.png" target="_blank">
+            <img src="docs/images/step-12-mobile-order-tracking.png" alt="MetroDrip Android order-tracking screen showing the newly created signed-in order as Paid." loading="lazy" decoding="async" width="1080" height="2400">
+            <span class="figure-enlarge">Open full-size</span>
+          </a>
+          <figcaption><b>Tracking:</b> the server-created order reaches Paid under the simulated provider.</figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="docs/images/step-12-mobile-notifications.png" target="_blank">
+            <img src="docs/images/step-12-mobile-notifications.png" alt="MetroDrip Android in-app notification centre opened from Home and showing Order confirmed for the signed-in purchase." loading="lazy" decoding="async" width="1080" height="2400">
+            <span class="figure-enlarge">Open full-size</span>
+          </a>
+          <figcaption><b>Notifications:</b> the signed-in purchase creates the in-app “Order confirmed” item. This proves the app's notification centre, not remote Android system-push delivery, which needs real Expo/EAS project credentials.</figcaption>
+        </figure>
+      </div>
+
+      <figure>
+        <a class="image-link" href="docs/images/step-12-order-in-merchant-console.png" target="_blank">
+          <img src="docs/images/step-12-order-in-merchant-console.png"
+               alt="MetroDrip merchant console showing the same sanitized order number created by the signed-in Android purchase flow."
+               loading="lazy" decoding="async" width="1600" height="1075">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
+        <figcaption><b>Cross-system proof:</b> match this merchant-console order number to the one on the phone; the administrator console is not the order workspace.</figcaption>
+      </figure>
 
       <div class="note note--warn">
         <span class="note__label">If step 3 fails with a network error, it is the address, not the app</span>
@@ -2560,14 +2959,22 @@ npm run android</code></pre></div>
       <p>Run these from <code>mobile/</code> before pushing app changes:</p>
 
       <div class="code"><pre><code>npm run typecheck    <span class="c"># tsc --noEmit; silence means success</span>
-npm run lint         <span class="c"># eslint src</span></code></pre></div>
+npm run lint         <span class="c"># expo lint</span></code></pre></div>
 
       <p>
         There is also a one-line check for the rule that matters most in this codebase — that the app never does
         money arithmetic:
       </p>
 
-      <div class="code"><pre><code>grep -rnE "(price|subtotal|total|fee)\s*[*+/-]" src/</code></pre></div>
+      <div class="only-win">
+        <div class="code"><pre><code>Get-ChildItem src -Recurse -File -Include *.ts,*.tsx | Select-String -Pattern '(price|subtotal|total|fee)\s*[*+/-]'</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>grep -rnE "(price|subtotal|total|fee)[[:space:]]*[*+/-]" src/</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>grep -rnE "(price|subtotal|total|fee)[[:space:]]*[*+/-]" src/</code></pre></div>
+      </div>
 
       <p>
         The only acceptable matches are inside comments. A match in real code means a total is being computed on
@@ -2608,19 +3015,19 @@ npm run lint         <span class="c"># eslint src</span></code></pre></div>
               <td>Enable it in BIOS (Windows) or check <code>kvm-ok</code> (Linux). Or use a real phone, which needs neither.</td>
             </tr>
             <tr>
-              <td>Expo Go dies instantly; the log names <code>UIManager</code></td>
-              <td>An API 34 image, or a Babel misconfiguration</td>
-              <td>Use the API 35 AVD, and keep <code>react-native-reanimated/plugin</code> <strong>last</strong> in <code>mobile/babel.config.js</code>.</td>
+              <td>Expo asks for Expo Go or says no development build is installed</td>
+              <td>The MetroDrip development client has not been built for this emulator</td>
+              <td>Run <code>npm run android</code> once. Use <code>npm start</code> only after that native install succeeds.</td>
             </tr>
             <tr>
               <td>Edits do not appear, or the bundle looks stale</td>
               <td>Metro's cache</td>
-              <td><code>npx expo start -c</code> clears it.</td>
+              <td><code>npm start -- --clear</code> clears it while keeping development-client mode.</td>
             </tr>
             <tr>
-              <td>Expo opens the wrong emulator</td>
-              <td>It takes the first <code>adb</code> device and ignores <code>ANDROID_SERIAL</code></td>
-              <td>Boot only one emulator, or kill the others with <code>adb -s &lt;serial&gt; emu kill</code>.</td>
+              <td>The emulator helper refuses the reserved port</td>
+              <td><code>emulator-5554</code> belongs to a different AVD</td>
+              <td>Identify it with <code>adb -s emulator-5554 emu avd name</code>, stop it yourself if safe, then start <code>MetroDrip_Pixel_API36</code>. The helper deliberately will not kill or reuse it.</td>
             </tr>
             <tr>
               <td><code>400 Bad Request</code> naming your host, on a phone</td>
@@ -2628,27 +3035,29 @@ npm run lint         <span class="c"># eslint src</span></code></pre></div>
               <td>Usually automatic; if the start-up lookup failed, add your IP in <code>config/settings/dev.py</code>.</td>
             </tr>
             <tr>
-              <td><code>pod install</code> fails on iOS</td>
-              <td>Pods resolved fresh — there is no committed lock file</td>
-              <td><code>cd mobile/ios &amp;&amp; pod repo update &amp;&amp; pod install</code>, then keep the resulting <code>Podfile.lock</code>.</td>
+              <td>A physical phone is offline while the emulator works</td>
+              <td>The phone has the wrong LAN URL, is on an isolated guest network, or the computer's firewall blocks port 8080</td>
+              <td>Open <code>http://&lt;your-lan-ip&gt;:8080/healthz/ready/</code> in the phone's browser, keep both devices on the same private Wi-Fi, and allow the Python development server through the private-network firewall only.</td>
+            </tr>
+            <tr>
+              <td>iOS reports a local-network permission or connection problem</td>
+              <td>The generated permission was denied, or the API address does not point at the Mac</td>
+              <td>Allow MetroDrip under iOS Local Network settings, confirm <code>NSLocalNetworkUsageDescription</code> exists after prebuild, and use the Mac's LAN address on a phone.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <div class="note note--warn">
-        <span class="note__label">A known dead end — do not spend an afternoon on it</span>
+        <span class="note__label">If an emulator remains offline after a cold boot</span>
         <p>
-          On one Windows machine, every emulator stopped booting mid-session: the process starts, reports the
-          hypervisor is working, and the virtual device then produces no output at all while <code>adb</code>
-          shows it permanently <code>offline</code>. A new AVD, API 34 versus 35, a host reboot, stopping Docker
-          and WSL, clearing lock files, <code>-wipe-data</code>, and every GPU mode were all ruled out by
-          testing. It is written up in <code>mobile/EMULATOR.md</code> with the full list of what was eliminated
-          and what is still worth trying. The app itself was verified rendering on an API 35 emulator during the
-          same session, so this is a host problem, not an app problem. On a machine showing these symptoms, use
-          a physical phone and move on.
+          Confirm hardware virtualisation, close competing emulators, and use Device Manager's Cold Boot once.
+          If <code>adb devices</code> still reports <code>offline</code>, follow <code>mobile/EMULATOR.md</code> and
+          use a physical Android phone rather than repeatedly changing MetroDrip code. An ADB boot failure occurs
+          below the application layer.
         </p>
       </div>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== 13. STOP ============================== -->
@@ -2685,6 +3094,16 @@ npm run lint         <span class="c"># eslint src</span></code></pre></div>
           emulator's data, if that confuses it.
         </p>
       </div>
+      <figure>
+        <a class="image-link" href="docs/images/step-13-safe-stop.png" target="_blank">
+          <img src="docs/images/step-13-safe-stop.png"
+               alt="Sanitized terminal showing MetroDrip development processes stopped and Docker services stopped without deleting their volume."
+               loading="lazy" decoding="async" width="1598" height="918">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
+        <figcaption><b>Expected:</b> development processes are stopped while the named Docker volume remains available for the next session.</figcaption>
+      </figure>
+      <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
     </section>
 
     <!-- ============================== TROUBLESHOOTING ============================== -->
@@ -2752,8 +3171,8 @@ npm run lint         <span class="c"># eslint src</span></code></pre></div>
             </tr>
             <tr>
               <td>Console login rejects a correct password after enrolling 2FA</td>
-              <td>A confirmed TOTP device makes the password alone insufficient — permanently</td>
-              <td>Enter the six-digit code from the authenticator app. If the device is genuinely lost, see <a href="#twofa">Step 8</a> — locally the recovery is <code>docker compose down -v</code>.</td>
+              <td>A confirmed TOTP device makes the password alone insufficient while that device exists</td>
+              <td>Enter the six-digit code. If the device is lost, have a second authorized administrator remove and re-enrol only that device. There is no self-service recovery flow; do not erase every Docker volume solely for this.</td>
             </tr>
             <tr>
               <td><code>Too many failed sign-in attempts</code> on a console</td>
@@ -2797,9 +3216,12 @@ npm run lint         <span class="c"># eslint src</span></code></pre></div>
       </div>
 
       <figure>
-        <img src="docs/images/09-troubleshooting-flowchart.png"
-             alt="Decision flowchart titled 'The page will not load — what to check'. Four questions in sequence: is the runserver terminal still running, is the database container healthy, does /healthz/ready/ return ok, and is the catalogue empty. Each 'no' branches right to a fix command; answering through to the end suggests a hard refresh."
-             loading="lazy" width="1175" height="751">
+        <a class="image-link" href="docs/images/09-troubleshooting-flowchart.png" target="_blank">
+          <img src="docs/images/09-troubleshooting-flowchart.png"
+               alt="Decision flowchart titled 'The page will not load — what to check'. Four questions in sequence: is the runserver terminal still running, is the database container healthy, does /healthz/ready/ return ok, and is the catalogue empty. Each 'no' branches right to a fix command; answering through to the end suggests a hard refresh."
+               loading="lazy" decoding="async" width="1175" height="751">
+          <span class="figure-enlarge">Open full-size</span>
+        </a>
         <figcaption>
           Work down the left column and take the right-hand branch at the first “No”. Four questions cover
           nearly every local failure, because there are only two moving parts — the server process and the
@@ -2861,8 +3283,8 @@ $env:PAYMENT_PROVIDER="simulated"
 .venv\Scripts\python.exe manage.py runserver 0.0.0.0:8080
 
 <span class="c"># 3. Emulator, then the app (separate terminals).</span>
-&amp; "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd MetroDrip_Pixel_API35
-cd mobile; npm start</code></pre></div>
+&amp; "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd MetroDrip_Pixel_API36 -port 5554
+cd mobile; npm start    <span class="c"># use npm run android for the first install</span></code></pre></div>
       </div>
       <div class="only-mac">
         <div class="code"><pre><code><span class="c"># 1. Data containers.</span>
@@ -2872,7 +3294,7 @@ docker compose up -d db redis --wait
 PAYMENT_PROVIDER=simulated .venv/bin/python manage.py runserver 0.0.0.0:8080
 
 <span class="c"># 3. The app (separate terminal). iOS boots its own simulator.</span>
-cd mobile &amp;&amp; npm run ios      <span class="c"># or: npm start, then press i or a</span></code></pre></div>
+cd mobile &amp;&amp; npm start        <span class="c"># use npm run ios for the first install</span></code></pre></div>
       </div>
       <div class="only-linux">
         <div class="code"><pre><code><span class="c"># 1. Data containers.</span>
@@ -2882,8 +3304,8 @@ docker compose up -d db redis --wait
 PAYMENT_PROVIDER=simulated .venv/bin/python manage.py runserver 0.0.0.0:8080
 
 <span class="c"># 3. Emulator, then the app (separate terminals).</span>
-$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API35
-cd mobile &amp;&amp; npm start</code></pre></div>
+$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API36 -port 5554
+cd mobile &amp;&amp; npm start        <span class="c"># use npm run android for the first install</span></code></pre></div>
       </div>
 
       <h3>Full command reference</h3>
@@ -2912,10 +3334,10 @@ cd mobile &amp;&amp; npm start</code></pre></div>
             <tr><td><code>pytest</code></td><td>Run the full test suite</td></tr>
             <tr><td><code>ruff check .</code></td><td>Lint the code</td></tr>
             <tr><td><code>runserver 0.0.0.0:8080</code></td><td>Serve so an emulator or phone can reach it</td></tr>
-            <tr><td><code>npm start</code> — inside <code>mobile/</code></td><td>Start Metro; press <code>a</code> or <code>i</code> to open a device</td></tr>
-            <tr><td><code>npm run android</code> / <code>npm run ios</code></td><td>Build and install the native debug app</td></tr>
+            <tr><td><code>npm start</code> — inside <code>mobile/</code></td><td>Start Metro for the already installed development client</td></tr>
+            <tr><td><code>npm run android</code> / <code>npm run ios</code></td><td>Generate, build, and install the native development client</td></tr>
             <tr><td><code>npm run typecheck</code> / <code>npm run lint</code></td><td>App-side quality checks</td></tr>
-            <tr><td><code>npx expo start -c</code></td><td>Restart the bundler with a cleared cache</td></tr>
+            <tr><td><code>npm start -- --clear</code></td><td>Restart the development-client bundler with a cleared cache</td></tr>
             <tr><td><code>adb devices</code></td><td>List attached Android devices and emulators</td></tr>
           </tbody>
         </table>
@@ -2930,11 +3352,11 @@ cd mobile &amp;&amp; npm start</code></pre></div>
 [ ] docker compose ps shows metrodrip-mysql as healthy
 [ ] manage.py migrate finished without errors
 [ ] manage.py seed_demo finished without errors
-[ ] manage.py seed_mock_catalog finished without errors
+[ ] Optional only: seed_mock_catalog finished if category/pagination fixtures are needed
 [ ] manage.py check reports no issues
 [ ] http://127.0.0.1:8000/ shows the product grid
-[ ] Browse Categories opens and lists Men / Women per category
-[ ] A subcategory link returns the count shown beside it
+[ ] Optional fixture only: Browse Categories lists Men / Women per category
+[ ] Optional fixture only: a subcategory link returns the count shown beside it
 [ ] http://127.0.0.1:8000/healthz/ready/ returns {"status": "ok"}
 [ ] Demo accounts created (customer / merchant / admin) — see Step 8
 [ ] /accounts/login/ works with customer@metrodrip.test
@@ -2943,15 +3365,17 @@ cd mobile &amp;&amp; npm start</code></pre></div>
 [ ] curl -H "X-Client-Version: 1.0.0" .../api/mobile/v1/catalog/products/ returns JSON
 
 Phone app (Steps 11-12) — skip if you only need the website:
-[ ] node --version prints v20 or newer
-[ ] mobile/ npm install finished
+[ ] node --version prints v22.13 or newer
+[ ] mobile/ npm ci finished
 [ ] mobile/.env exists and its URL matches where the app will run
 [ ] Django started with runserver 0.0.0.0:8080
 [ ] emulator or simulator booted (adb devices shows "device")
-[ ] npm start printed "env: load .env" and Metro is waiting
-[ ] the app opens on the splash screen
-[ ] a guest checkout completes and Order Tracking shows Paid
-[ ] that order appears in /admin/ under Orders
+[ ] first install: npm run android or npm run ios completed
+[ ] later loop: npm start printed "env: load .env" and Metro is waiting
+[ ] the app opens on the onboarding screen
+[ ] signed-in checkout reaches Paid tracking
+[ ] Home → Notifications shows “Order confirmed”
+[ ] the matching order appears in /merchant/ under Orders
 [ ] npm run typecheck and npm run lint are clean</code></pre></div>
     </section>
 
@@ -2993,7 +3417,7 @@ Phone app (Steps 11-12) — skip if you only need the website:
         <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/mobile/EMULATOR.md">
           <span class="doc__label">Mobile</span>
           <span class="doc__title">Emulator Runbook</span>
-          <span class="doc__desc">The Android emulator setup script, the API 35 decision, editor tasks, and a long troubleshooting log including one unresolved host failure.</span>
+          <span class="doc__desc">API 36 Android emulator setup, editor tasks, physical-device alternatives, and ordered troubleshooting checks.</span>
         </a>
         <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/deploy/README.md">
           <span class="doc__label">Operations</span>
@@ -3030,6 +3454,9 @@ Phone app (Steps 11-12) — skip if you only need the website:
     // Progressive enhancement only: without JS the code blocks still read and
     // select normally, so the guide loses nothing essential.
     document.querySelectorAll('.code > pre').forEach(function (pre) {
+      // Output examples, URL-only examples, and checklists are evidence to read, not commands to run.
+      if (pre.querySelector('.o, .p') || pre.textContent.indexOf('[ ]') !== -1) return;
+
       var button = document.createElement('button');
       button.className = 'copy';
       button.type = 'button';
@@ -3052,6 +3479,55 @@ Phone app (Steps 11-12) — skip if you only need the website:
 
       pre.parentNode.insertBefore(button, pre);
     });
+
+    var tableWrappers = document.querySelectorAll('.tablewrap');
+    function updateScrollableTables() {
+      tableWrappers.forEach(function (wrapper, index) {
+        var scrollable = wrapper.scrollWidth > wrapper.clientWidth + 1;
+        wrapper.classList.toggle('is-scrollable', scrollable);
+        if (scrollable) {
+          wrapper.tabIndex = 0;
+          wrapper.setAttribute('role', 'region');
+          wrapper.setAttribute('aria-label', 'Scrollable guide table ' + (index + 1));
+        } else {
+          wrapper.removeAttribute('tabindex');
+          wrapper.removeAttribute('role');
+          wrapper.removeAttribute('aria-label');
+        }
+      });
+    }
+    updateScrollableTables();
+    window.addEventListener('resize', updateScrollableTables);
+    function alignInitialHash() {
+      if (!window.location.hash) return;
+      var target;
+      try { target = document.getElementById(decodeURIComponent(window.location.hash.slice(1))); }
+      catch (_error) { return; }
+      if (!target) return;
+      var previousBehavior = document.documentElement.style.scrollBehavior;
+      document.documentElement.style.scrollBehavior = 'auto';
+      target.scrollIntoView();
+      document.documentElement.style.scrollBehavior = previousBehavior;
+    }
+    if (document.fonts) {
+      document.fonts.ready.then(function () {
+        updateScrollableTables();
+        alignInitialHash();
+      });
+    } else {
+      window.addEventListener('load', alignInitialHash);
+    }
+
+    document.querySelectorAll('.image-link[target="_blank"]').forEach(function (link) {
+      link.rel = 'noopener';
+    });
+
+    var mobileToc = document.querySelector('.mobile-toc');
+    if (mobileToc) {
+      mobileToc.querySelectorAll('a').forEach(function (link) {
+        link.addEventListener('click', function () { mobileToc.open = false; });
+      });
+    }
   </script>
 
 </body>

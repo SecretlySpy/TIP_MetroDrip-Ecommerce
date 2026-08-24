@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable react-hooks/exhaustive-deps */
 /**
  * M07 · Order Tracking — Figma node 65:2.
  *
@@ -89,6 +87,7 @@ export default function OrderTrackingScreen() {
   }, [route.params.token]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Starts an asynchronous tracking refresh.
     load(true);
     const interval = setInterval(() => load(false), 30_000);
     return () => clearInterval(interval);
@@ -264,4 +263,3 @@ export default function OrderTrackingScreen() {
     </SafeAreaView>
   );
 }
-

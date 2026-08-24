@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Checkout{% endblock %}
-{% block meta_description %}Secure MetroDrip checkout — cards, GCash, and Maya via PayMongo.{% endblock %}
+{% block meta_description %}{% if payment_provider == "simulated" %}MetroDrip local development checkout with no real charge.{% else %}Secure MetroDrip checkout — cards, GCash, and Maya via PayMongo.{% endif %}{% endblock %}
 
 {% block content %}
 <div class="container" x-data="checkout()" x-init="init()">
@@ -63,8 +63,12 @@
             <template x-if="errorMessage">
               <p class="form-error" x-text="errorMessage" role="alert"></p>
             </template>
-            <p class="text-mono text-muted mt-sm" style="font-size: 0.7rem;">
-              Payment is handled securely by PayMongo (cards, GCash, Maya). Card details never touch our servers.
+            <p class="text-mono text-muted mt-sm" data-payment-provider="{{ payment_provider }}" style="font-size: 0.7rem;">
+              {% if payment_provider == "simulated" %}
+                Local development uses a no-charge payment simulator. No real payment details are requested.
+              {% else %}
+                Payment is handled securely by PayMongo (cards, GCash, Maya). Card details never touch our servers.
+              {% endif %}
             </p>
           </div>
         </form>

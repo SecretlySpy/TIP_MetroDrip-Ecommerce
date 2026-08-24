@@ -7,20 +7,28 @@
     "scheme": "metrodrip",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#FFFFFF",
-    "splash": {
-      "backgroundColor": "#141414"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ph.metrodrip.app",
       "buildNumber": "1",
+      "deploymentTarget": "16.4",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Unlock MetroDrip with Face ID."
+        "NSFaceIDUsageDescription": "Unlock MetroDrip with Face ID.",
+        "NSLocalNetworkUsageDescription": "MetroDrip connects to your development server on the local network.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": true
+        }
       }
     },
     "android": {
       "package": "ph.metrodrip.app",
       "versionCode": 1,
+      "softwareKeyboardLayoutMode": "resize",
+      "predictiveBackGestureEnabled": true,
       "adaptiveIcon": {
         "backgroundColor": "#141414"
       }
@@ -29,17 +37,41 @@
       "expo-secure-store",
       "expo-local-authentication",
       [
+        "expo-dev-client",
+        {
+          "toolsButton": false,
+          "skipOnboarding": true
+        }
+      ],
+      [
         "expo-notifications",
         {
           "defaultChannel": "default"
         }
-      ]
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "00000000-0000-0000-0000-000000000000"
-      }
-    },
-    "owner": "metrodrip"
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "minSdkVersion": 24,
+            "buildToolsVersion": "36.0.0"
+          }
+        }
+      ],
+      "./plugins/withAndroidCoreLibraryDesugaring",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#141414",
+          "image": "./assets/splash-logo.png",
+          "imageWidth": 100,
+          "resizeMode": "contain"
+        }
+      ],
+      "expo-status-bar"
+    ]
   }
 }

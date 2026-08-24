@@ -255,8 +255,8 @@ export default function AuthScreen() {
           />
 
           <Text style={{ fontFamily: fonts.body, fontSize: 12, color: colors.muted }}>
-            Bought as a guest before? Register with the same email and your past orders come with
-            you.
+            Guest orders stay available through their public tracking link. Sign in to keep future
+            orders in your account.
           </Text>
           <View style={{ height: space.s24 }} />
         </ScrollView>

@@ -1,122 +1,184 @@
-# Guide images
+# Guide image manifest and provenance
 
-Screenshots and diagrams used by the GitHub Pages setup guide (`/index.html` at
-the repository root). All nine are captured; none are placeholders.
+These assets support the beginner-facing GitHub Pages guide in root
+`index.html`. Screenshots are additional evidence; they do not replace any
+diagram.
 
-**Not everything visual in the guide lives here.** Four diagrams are inline
-`<svg>` inside `index.html` rather than files in this directory: the local
-architecture overview, the host-OS/toolchain decision tree, the app-to-API
-address map, and the four-terminal run order. They are hand-authored, they carry
-`role="img"` with `<title>` and `<desc>`, and they are text at any zoom level —
-so they are edited in the HTML, not re-captured. `09-troubleshooting-flowchart.png`
-predates that approach and stays a PNG.
+Five pre-existing diagrams must remain:
 
-## Inventory
+- four accessible inline SVGs in `index.html`: local architecture,
+  host/toolchain decision, app-to-API address map, and four-process run order;
+- `09-troubleshooting-flowchart.png`.
 
-| File | Type | Source | Shows |
-|---|---|---|---|
-| `01-tools-verified.png` | Rendered terminal | Real output from a Windows dev machine | `git`, `python`, `docker`, and `uv` each answering with a version. |
-| `02-mysql-container-healthy.png` | Rendered terminal | Real output | `docker compose up -d db --wait` finishing at `Healthy`, then `docker compose ps`. |
-| `03-storefront-homepage.png` | Screenshot | Live dev server | The New Arrivals grid, with Browse Categories in the navbar. |
-| `04-category-menu.png` | Screenshot | Live dev server | The category dropdown open: main categories, All links, Men/Women counts. |
-| `05-shop-category-tree.png` | Screenshot | Live dev server | Shop filtered to Hoodies → Men; sidebar tree with the active chip highlighted. |
-| `06-admin-dashboard.png` | Screenshot | Live dev server, real login | MetroDrip Administration dashboard listing every app. |
-| `07-cart.png` | Screenshot | Live dev server | Cart holding one real variant added through the UI. |
-| `08-checkout.png` | Screenshot | Live dev server | Checkout form with the order summary carrying that line item. |
-| `09-troubleshooting-flowchart.png` | Diagram | Hand-authored SVG, rendered to PNG | Four-question decision tree for "the page will not load". |
+The legacy `01-` through `08-` PNGs are retained for history but are no longer
+the guide's current evidence. Do not delete or retouch them. The current guide
+uses the step-based manifest below plus the troubleshooting diagram.
 
-The application screenshots were captured by driving the running dev server with
-Playwright — opening the category menu, filtering the shop, selecting a real
-variant, adding it to the cart, and logging into the admin. Nothing is mocked or
-composited, so a UI change makes them stale. Re-capture rather than retouch.
+## Current step-based manifest
 
-The two terminal images are the machine's real command output typeset as a
-terminal, so the text stays legible at the guide's column width instead of being
-a blurry crop of a console window.
+| Step | File | Visible success signal | Capture class |
+|---:|---|---|---|
+| 1 | `step-01-tools-verified.png` | Required Git, Python, uv, Docker/Compose, Node, npm, and Java versions | Linux terminal |
+| 2 | `step-02-code-cloned.png` | Repository entered and expected top-level files visible | Linux terminal |
+| 3 | `step-03-python-ready.png` | Python 3.14 virtual environment and dependencies ready | Linux terminal |
+| 4 | `step-04-env-created-and-ignored.png` | `.env` exists and Git ignores it; no values shown | Linux terminal |
+| 5 | `step-05-data-services-healthy.png` | MySQL and Redis both healthy | Linux terminal |
+| 6 | `step-06-demo-seed-complete.png` | Migrations and canonical five-product seed complete | Linux terminal |
+| 7 | `step-07-storefront-home.png` | Live seeded storefront home | Browser |
+| 7 | `step-07-category-menu.png` | Category navigation after the optional mock seed | Browser |
+| 8 | `step-08-merchant-console.png` | Scoped merchant console dashboard | Browser |
+| 8 | `step-08-admin-console.png` | Separate scoped administrator console | Browser |
+| 9 | `step-09-category-filter.png` | Optional mock-catalog category filter | Browser |
+| 9 | `step-09-cart.png` | Real selected variant in the cart | Browser |
+| 9 | `step-09-checkout.png` | Checkout carrying the same server-priced line | Browser |
+| 10 | `step-10-tests-passed.png` | Current QA commands completing successfully | Linux terminal |
+| 11 | `step-11-mobile-dependencies-ready.png` | Expo dependency check and Doctor (21/21) complete; typecheck and lint are verified separately | Linux terminal |
+| 11 | `step-11-android-avd-ready.png` | Named API 36 AVD/toolchain ready on its reserved serial | Linux terminal/tooling |
+| 12 | `step-12-app-launched.png` | MetroDrip development client launched, not Expo Go | Android device capture |
+| 12 | `step-12-mobile-home.png` | Signed-in mobile Home | Android device capture |
+| 12 | `step-12-mobile-product-detail.png` | Product with size/colour/fit selected | Android device capture |
+| 12 | `step-12-mobile-cart.png` | Matching selected variant in mobile cart | Android device capture |
+| 12 | `step-12-mobile-checkout.png` | Zone and server-formatted total at checkout | Android device capture |
+| 12 | `step-12-mobile-order-tracking.png` | Signed-in simulated purchase at Paid | Android device capture |
+| 12 | `step-12-mobile-notifications.png` | Home bell → Notifications showing Order confirmed | Android device capture |
+| 12 | `step-12-order-in-merchant-console.png` | Matching order number in `/merchant/` → Orders | Browser |
+| 13 | `step-13-safe-stop.png` | Processes stopped while the persistent DB volume remains | Linux terminal |
 
-## Not yet captured: the mobile app
+Every numbered guide step must have at least one referenced image. The guide QA
+gate must fail if a referenced local asset is absent, if declared dimensions do
+not match the PNG, or if a screenshot lacks unique alt text, lazy loading, async
+decoding, a caption, and a full-resolution link.
 
-Steps 11-12 of the guide cover the Expo app and currently illustrate it with
-inline SVG only, because capturing a phone screen needs a booted Android
-emulator or an iOS simulator, and the guide's own author could not run either at
-the time (see the unresolved host failure documented at the end of
-`mobile/EMULATOR.md`). These are the shots to add when somebody has a working
-device, in guide order, following the conventions below:
+## 2026-08-24 capture provenance
 
-| File | Shows | Where it goes |
-|---|---|---|
-| `10-mobile-home.png` | M02 Home with the hero and product grid, on an emulator or simulator | Step 12, after "Terminal 4 — the app itself" |
-| `11-mobile-product-detail.png` | M04 Product Detail with size / colour / fit selected and Add to Cart visible | Step 12, in the purchase walkthrough |
-| `12-mobile-checkout.png` | M06 Checkout with a delivery zone chosen and the server-formatted total | Step 12, in the purchase walkthrough |
-| `13-mobile-order-tracking.png` | M07 Order Tracking with the timeline at *Paid* | Step 12, closing the walkthrough |
+- **Host:** Linux. Windows, macOS, and native iOS were not claimed as executed.
+- **Data:** disposable MySQL/Redis capture services and database
+  `metrodrip_guide_capture`; simulated payment/push providers; fictional `.test`
+  identities; no production or personal data.
+- **Order of data creation:** canonical customer flows ran after `seed_demo` and
+  before `seed_mock_catalog`. Only category/filter shots use the optional mock
+  fixture. `seed_demo` supplies no image attachments or Men/Women children.
+- **Browser:** the real Django server driven at a 1280×860 light,
+  reduced-motion viewport, captured at 1.25 scale to **1600×1075**.
+- **Terminal/tooling:** real sanitized command output on a consistent
+  **1598×918** canvas (the final capture-tool adjustment from the nominal
+  1600×900 target). Paths are repository-relative; secrets and `.env` values
+  are never rendered.
+- **Android:** real `MetroDrip_Pixel_API36` AVD and local API, captured from ADB
+  at the device framebuffer's **1080×2400** resolution. The device image is
+  cropped to the screen, not the emulator toolbar or desktop.
+- **Checkout evidence:** the NCR checkout frame uses a separate fictional
+  signed-in capture account so its complete short `.test` email remains legible.
+  The Paid tracking, in-app Order confirmed notification, and merchant-console
+  frames remain the correlated `MD-2026-00001` proof. Neither flow claims
+  OS-level remote push delivery.
+- **Safe-stop evidence:** the capture services use disposable tmpfs storage, so
+  Step 13 demonstrates volume retention with a separate disposable named volume.
+  It does not stop or inspect the developer's normal project containers.
+- **Processing:** PNG metadata removed and images losslessly optimized. Never
+  blur a secret after capture; prevent the secret from entering the frame.
 
-Two rules specific to these:
+If final capture tooling produces a different intrinsic dimension, update both
+the manifest and the HTML `width`/`height` attributes in the same change. Do not
+stretch an image to fit the nominal sizes above.
 
-- **Crop to the device screen**, not the emulator window. The emulator's chrome,
-  toolbar, and your desktop wallpaper add nothing and date the image.
-- **A phone screenshot is tall**, so it does not want the 1600 px width the
-  desktop shots use. Capture at the device's native resolution and let the
-  guide's CSS size it; two side by side in one figure reads better than one
-  enormous portrait image.
+## Exact unverified follow-up captures
 
-Until they exist, do **not** add `<img>` tags pointing at these names — a broken
-image in a setup guide reads as a broken setup guide. Add the file and the markup
-in the same change.
+These slots are intentionally absent and unreferenced. Capture them only on the
+named platform, then add the image and platform-specific guide markup together.
+Never copy a Linux/Android image and label it as another platform.
 
-## Staleness
+### Windows 10/11 + Android
 
-These have already gone stale once. Adding the category navigation changed the
-navbar in every storefront shot, and rebranding the admin changed its header —
-so `03`–`08` all had to be recaptured. **Any change to the navbar, the admin
-header, or the shop sidebar invalidates most of this directory.** Check the
-screenshots whenever you touch shared chrome.
+Planned review-only slots:
 
-One image is knowingly behind its caption: `02-mysql-container-healthy.png` shows
-`docker compose up -d db --wait`, while the guide now starts Redis alongside MySQL
-(`db redis`). The figure's caption says so explicitly rather than pretending
-otherwise, because the useful part of the image — what `Healthy` looks like — did
-not change. Re-capture it the next time somebody has a clean Docker state.
+`followup-windows-step-01-tools.png`,
+`followup-windows-step-03-python-ready.png`,
+`followup-windows-step-04-env-ignored.png`,
+`followup-windows-step-05-services-healthy.png`,
+`followup-windows-step-10-tests-passed.png`,
+`followup-windows-step-11-api36-avd-ready.png`, and
+`followup-windows-step-13-safe-stop.png`.
 
-Numbering follows guide order, not capture order. Inserting a step means
-renumbering the files after it and updating the `src` attributes in
-`index.html`.
+Checklist:
 
-## Conventions
+1. Use a clean Windows 10/11 x64 account with Docker Desktop, Node 22.13+, and
+   JDK 17; show versions but no username/home path.
+2. Run `scripts\setup-android-emulator.ps1`; verify Platform 36, Build Tools
+   36.0.0, and `MetroDrip_Pixel_API36` with a 10 GB data partition.
+3. Run `MetroDrip: Full mobile stack`; verify Compose health, Django readiness,
+   AVD name, `emulator-5554`, and the MetroDrip development client.
+4. Run the Windows backend and mobile QA commands from the guide. Capture only
+   final success output, not environment values or tokens.
+5. Stop Metro/Django/emulator and use `docker compose down` without `-v`; prove
+   the named volume was retained.
+6. Compare every visible command/result with the Windows tab before publishing;
+   mark Windows verified only after the entire checklist passes.
 
-- **Format**: PNG. Use JPEG only for photographs, which this guide has none of.
-- **Width**: 1600 px maximum. The guide column is under 1000 px, so anything
-  wider is wasted bytes. App screenshots are captured at a 1280 px viewport with
-  a 1.25 device scale factor, which lands exactly on 1600.
-- **Size**: keep each file under roughly 400 KB — the current set totals ~560 KB
-  across nine files. GitHub Pages has no image pipeline, so whatever is
-  committed is what visitors download.
-- **Naming**: `NN-kebab-case-description.png`, numbered in guide order.
-- **Redaction**: blur or crop anything that is not demo data — real names, real
-  email addresses, API keys, and the contents of `.env`. The admin shot shows
-  `admin@metrodrip.test`, a throwaway local account. For mobile shots this also
-  means never capturing a screen that shows a TOTP QR code or a device's
-  notification shade.
-- **Browser chrome**: excluded throughout. The surrounding prose already names
-  the URL, so the address bar only adds noise and personal bookmarks.
+### macOS + iOS simulator
 
-## Re-capturing
+Planned review-only slots:
 
-The images are wired into `index.html` as plain `<img>` elements, so replacing a
-file on disk with the same name is enough — no markup change needed:
+`followup-macos-step-01-tools.png`,
+`followup-macos-step-03-python-ready.png`,
+`followup-macos-step-05-services-healthy.png`,
+`followup-macos-step-10-tests-passed.png`,
+`followup-macos-step-11-xcode-ios26-ready.png`,
+`followup-macos-step-12-ios-simulator-launched.png`, and
+`followup-macos-step-13-safe-stop.png`.
 
-```html
-<figure>
-  <img src="docs/images/03-storefront-homepage.png"
-       alt="…describe what the image shows…"
-       loading="lazy" width="1600" height="1075">
-  <figcaption>…</figcaption>
-</figure>
-```
+Checklist:
 
-Keep the `width`/`height` attributes roughly accurate. They let the browser
-reserve space before the image arrives, which stops the page from jumping around
-as a reader scrolls.
+1. Use macOS capable of Xcode 26.4+ and the iOS 26 SDK; record `xcodebuild
+   -version`, Node 22.13+, Python 3.14, Docker/Compose, and JDK 17.
+2. Run `npm ci`, dependency check, Doctor, typecheck, lint, and both exports.
+3. Set `EXPO_PUBLIC_API_URL=http://localhost:8080/api/mobile/v1`, bind Django to
+   `0.0.0.0:8080`, run `npm run ios`, and confirm the generated project targets
+   iOS 16.4 with bundle ID `ph.metrodrip.app`.
+4. Capture only the simulator screen. Repeat the guest Paid flow and signed-in
+   Paid → Home bell → Order confirmed → merchant-order match.
+5. Exercise dark mode, keyboard/insets, permission denied/granted, offline/retry,
+   and session restore before marking native iOS verified.
+6. Stop services without deleting the DB volume and record the exact Xcode/iOS
+   simulator versions in this file.
 
-Always write a real `alt` description. Several team members will read this guide
-on a phone or with a screen reader, and an image of a terminal is useless to them
-without one. Describe what the image *shows*, not that it is a screenshot.
+### Physical iPhone/local network and remote push
+
+Planned review-only slots:
+
+`followup-ios-device-local-network-permission.png`,
+`followup-ios-device-app-launched.png`,
+`followup-ios-device-order-confirmed.png`, and, only after real remote delivery,
+`followup-ios-device-system-push.png`.
+
+Checklist:
+
+1. Use fictional `.test` account data and a development-signed internal build.
+2. Put phone and host on the same trusted Wi-Fi, set the host LAN API URL, bind
+   Django to `0.0.0.0:8080`, and accept MetroDrip's local-network prompt.
+3. Prove denied permission produces a recoverable offline state, then restore
+   permission in Settings and prove API recovery.
+4. Complete the signed-in purchase and match tracking, in-app notification, and
+   merchant order number.
+5. Capture a system notification only with a real EAS project ID, Apple push
+   credentials, and `PUSH_PROVIDER=expo`; redact device identifiers and do not
+   expose the notification shade's unrelated personal content.
+6. Record signing type, iOS version, network topology, and whether delivery was
+   foreground/background/terminated. In-app simulated delivery alone must not
+   be labelled remote push verification.
+
+## Capture and maintenance rules
+
+- PNG for terminal/application captures; SVG remains SVG for the favicon and
+  inline diagrams.
+- Use kebab-case filenames exactly as listed; numbering follows guide steps.
+- Exclude browser/editor/emulator chrome unless the chrome itself is the setup
+  evidence.
+- Show only fictional accounts. Never capture passwords, bearer tokens, TOTP
+  QR codes, `.env` contents, API keys, signing identities, device IDs, or real
+  names/email addresses.
+- Use descriptive alt text that states the visible result, not “screenshot of”.
+- Any shared navigation, admin chrome, mobile layout, command, tool version, or
+  seed change triggers a staleness review of every affected image.
+- Replace an image by recapturing the real state. Do not composite, retouch, or
+  relabel evidence from another platform.

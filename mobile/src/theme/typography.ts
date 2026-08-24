@@ -1,10 +1,10 @@
 /**
  * Typography roles (§3). Anton = display, Inter = body, IBM Plex Mono = every
- * SKU / price / order number / waybill / uppercase micro-label — a signature
- * element, never substituted.
+ * SKU / price / order number / waybill / uppercase micro-label. Platform
+ * fallbacks preserve those roles only when a bundled font cannot load.
  */
 
-import { PixelRatio } from 'react-native';
+import { Platform } from 'react-native';
 
 export const fonts = {
   display: 'Anton_400Regular',
@@ -15,32 +15,32 @@ export const fonts = {
   mono: 'IBMPlexMono_400Regular',
   monoMedium: 'IBMPlexMono_500Medium',
   monoSemiBold: 'IBMPlexMono_600SemiBold',
-} as const;
+};
+
+const systemFonts = {
+  display: Platform.select({ ios: 'System', android: 'sans-serif-condensed', default: 'System' }),
+  body: Platform.select({ ios: 'System', android: 'sans-serif', default: 'System' }),
+  bodyMedium: Platform.select({ ios: 'System', android: 'sans-serif-medium', default: 'System' }),
+  bodySemiBold: Platform.select({ ios: 'System', android: 'sans-serif-medium', default: 'System' }),
+  bodyBold: Platform.select({ ios: 'System', android: 'sans-serif-medium', default: 'System' }),
+  mono: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+  monoMedium: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+  monoSemiBold: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+};
 
 /**
- * Line height must be scaled by hand (NFR-20).
- *
- * React Native multiplies `fontSize` by the OS text-size setting, but a literal
- * `lineHeight` in a style object is a raw dp value it leaves alone. Every preset
- * below used to pair the two — `fontSize: 38, lineHeight: 42` — so at 200% the
- * glyphs rendered at 76dp inside a 42dp line box: lines overlapped and
- * descenders were cut off. Expressing line height as a *ratio* and multiplying
- * by the same scale keeps the box proportional to the text at any setting.
- *
- * `getFontScale()` is read at module load. That is correct for this app: both
- * platforms restart or recreate the activity when the system text size changes,
- * so the value cannot go stale while a screen is mounted.
+ * React Native applies the OS font scale to both `fontSize` and `lineHeight`.
+ * Keep each line height proportional to its unscaled font size and let the
+ * native text renderer scale both values once. Multiplying by
+ * `PixelRatio.getFontScale()` here would scale line height twice.
  */
-const fontScale = PixelRatio.getFontScale();
-
-/** Scaled line height for a given size and ratio. */
 export const lineHeightFor = (fontSize: number, ratio: number): number =>
-  Math.round(fontSize * ratio * fontScale);
+  Math.round(fontSize * ratio);
 
 /** Reusable text presets matching §3's roles. */
 export const type = {
   // Display faces are set tight (1.1) and body copy looser (1.4), the same
-  // relationship the original fixed values encoded — now scale-aware.
+  // relationship the original fixed values encoded.
   displayHero: {
     fontFamily: fonts.display,
     fontSize: 38,
@@ -68,4 +68,22 @@ export const type = {
   },
   monoBody: { fontFamily: fonts.mono, fontSize: 13 },
   monoPrice: { fontFamily: fonts.monoSemiBold, fontSize: 14 },
-} as const;
+};
+
+/**
+ * Switch every typography role to a platform font if bundled font loading
+ * fails. The app calls this once, before mounting its component tree.
+ */
+export function enableSystemFontFallback(): void {
+  Object.assign(fonts, systemFonts);
+  type.displayHero.fontFamily = fonts.display;
+  type.displayTitle.fontFamily = fonts.display;
+  type.sectionHeading.fontFamily = fonts.display;
+  type.screenTitle.fontFamily = fonts.bodyBold;
+  type.body.fontFamily = fonts.body;
+  type.bodySmall.fontFamily = fonts.body;
+  type.emphasis.fontFamily = fonts.bodySemiBold;
+  type.microLabel.fontFamily = fonts.monoMedium;
+  type.monoBody.fontFamily = fonts.mono;
+  type.monoPrice.fontFamily = fonts.monoSemiBold;
+}

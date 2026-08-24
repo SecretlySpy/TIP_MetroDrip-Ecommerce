@@ -1,5 +1,8 @@
 node_modules/
 .expo/
+# Native projects are generated from app.json by Expo CNG.
+android/
+ios/
 dist/
 web-build/
 *.log
