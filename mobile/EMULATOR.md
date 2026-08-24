@@ -87,8 +87,10 @@ A server bound to `127.0.0.1` will refuse that connection, so bind `0.0.0.0`.
 | iOS simulator (macOS) | `http://localhost:8080/api/mobile/v1` |
 | Physical device (same Wi-Fi) | `http://<your-LAN-IP>:8080/api/mobile/v1` |
 
-For a physical device you must also add your LAN IP to `ALLOWED_HOSTS` in
-`config/settings/dev.py`.
+For a physical device, `ALLOWED_HOSTS` normally needs no edit: `config/settings/dev.py` allows
+`10.0.2.2`, `localhost`, `127.0.0.1`, and — while `DEBUG` is on — this machine's LAN addresses,
+resolved at start-up. That lookup is wrapped in `try/except OSError`, so if it fails on your network
+the device is refused with a `400` naming the host, and adding your IP there fixes it.
 
 ---
 

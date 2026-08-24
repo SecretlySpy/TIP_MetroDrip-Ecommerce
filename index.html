@@ -20,9 +20,16 @@
   text instead of rendered Markdown.
 
   OS-specific commands are switched by the radio group at the top of .osroot using
-  pure CSS sibling selectors, so the guide needs no JavaScript to be usable. The
-  only script on the page adds copy-to-clipboard buttons as a progressive
-  enhancement; with JS disabled the code blocks still read and select normally.
+  pure CSS sibling selectors, so the guide needs no JavaScript to be usable. A
+  second, independent group in the same place switches the mobile sections
+  between Android, iOS, and a physical device. The only script on the page adds
+  copy-to-clipboard buttons as a progressive enhancement; with JS disabled the
+  code blocks still read and select normally.
+
+  Steps 1-11 cover the Django storefront; Steps 12-13 cover the Expo/React Native
+  app in mobile/. The mobile diagrams are inline SVG rather than screenshots
+  because a captured screen needs a booted emulator or simulator; docs/images/
+  README.md carries the numbered capture list for adding real ones later.
 
   Screenshot placeholders point at docs/images/. See docs/images/README.md for the
   capture list and naming convention.
@@ -404,7 +411,7 @@
        single-line tocbar; now that the tocbar wraps, no fixed offset can be
        correct at every width, and two stacked sticky bars ate the viewport on a
        phone regardless. The OS is chosen once, so scrolling back is cheap. */
-    .ostabs {
+    .ostabs, .plattabs {
       z-index: 15;
       display: flex;
       flex-wrap: wrap;
@@ -415,7 +422,7 @@
       border-bottom: 1px solid var(--color-border);
     }
 
-    .ostabs span {
+    .ostabs span, .plattabs span {
       font-family: var(--font-mono);
       font-size: 0.6875rem;
       letter-spacing: 0.06em;
@@ -425,7 +432,7 @@
       margin-right: var(--space-sm);
     }
 
-    .ostabs label {
+    .ostabs label, .plattabs label {
       font-family: var(--font-mono);
       font-size: 0.75rem;
       padding: 0.4rem 0.9rem;
@@ -437,7 +444,7 @@
       user-select: none;
     }
 
-    .ostabs label:hover { border-color: var(--color-ink); }
+    .ostabs label:hover, .plattabs label:hover { border-color: var(--color-ink); }
 
     .only-win, .only-mac, .only-linux { display: none; }
 
@@ -465,6 +472,40 @@
 
     /* Keyboard focus for the visually hidden radios lands on the label. */
     .osroot > input[type="radio"]:focus-visible ~ .ostabs label { outline: 2px dashed var(--color-muted); outline-offset: 2px; }
+
+    /* --- Target-platform switcher (pure CSS), for the two mobile sections ---
+       Its radios sit beside the OS radios as direct children of .osroot because
+       every rule below relies on the `~ *` sibling-descendant combinator: the
+       tab strip and the switched blocks live inside a later <section>, which is
+       a following sibling of the input, not a child of it. Nesting the inputs
+       inside the mobile section instead would put the OS blocks out of reach.
+       The two groups are independent — an Android reader on Windows and an iOS
+       reader on macOS both get a coherent page. */
+    .plat-android, .plat-ios, .plat-device { display: none; }
+
+    #plat-android:checked ~ * .plat-android,
+    #plat-ios:checked     ~ * .plat-ios,
+    #plat-device:checked  ~ * .plat-device { display: block; }
+
+    .plat-android-i, .plat-ios-i, .plat-device-i { display: none; }
+
+    #plat-android:checked ~ * .plat-android-i,
+    #plat-ios:checked     ~ * .plat-ios-i,
+    #plat-device:checked  ~ * .plat-device-i { display: inline; }
+
+    #plat-android:checked ~ * .plattabs label[for="plat-android"],
+    #plat-ios:checked     ~ * .plattabs label[for="plat-ios"],
+    #plat-device:checked  ~ * .plattabs label[for="plat-device"] {
+      background: var(--color-ink);
+      color: var(--color-base);
+      border-color: var(--color-ink);
+    }
+
+    .osroot > input[type="radio"]:focus-visible ~ * .plattabs label { outline: 2px dashed var(--color-muted); outline-offset: 2px; }
+
+    /* The tab strip repeats inside each mobile section, so it needs its own
+       top margin where .ostabs relied on being first in the flow. */
+    .plattabs { margin-top: var(--space-lg); border-bottom: 1px solid var(--color-border); }
 
     /* --- Figure / screenshot placeholders --- */
     figure {
@@ -599,20 +640,27 @@
       <h2>Run the project on your own machine</h2>
       <p class="tagline">
         MetroDrip is a B2C e-commerce and inventory system for a Metro&nbsp;Manila streetwear brand.
-        This guide takes you from a completely fresh computer to a working storefront in your browser.
-        No prior Django or Docker experience is assumed — every command is explained.
+        This guide takes you from a completely fresh computer to a working storefront in your browser,
+        and then to the customer app running on an Android emulator or an iOS simulator.
+        No prior Django, Docker, or React&nbsp;Native experience is assumed — every command is explained.
       </p>
       <ul class="stack">
         <li>Django 5.2</li>
         <li>Python 3.14</li>
         <li>MySQL 8.4</li>
+        <li>Redis 7</li>
         <li>HTMX</li>
         <li>Alpine.js</li>
         <li>Docker</li>
+        <li>Expo SDK 51</li>
+        <li>React Native 0.74</li>
       </ul>
       <p class="tagline" style="font-size:0.875rem;">
-        Last verified against the storefront on 3 August 2026 — including dual consoles, demo
-        logins, category navigation, and the mobile API.
+        <b>Last verified 24 August 2026</b> on Linux, by running every command in Steps 1&ndash;10 and the
+        JavaScript half of Steps 11&ndash;12: database and Redis healthy, 576 tests passing, both consoles
+        answering, the mobile API returning a live catalogue, and Metro bundling the app.
+        Building onto a device or emulator (<code>npm run android</code>, <code>npm run ios</code>,
+        <code>eas build</code>) could not be executed on that machine and is marked where it appears.
       </p>
     </div>
   </header>
@@ -633,7 +681,9 @@
       <a href="#demo-logins">Demo logins</a>
       <a href="#verify">9 · Verify</a>
       <a href="#tests">10 · Tests</a>
-      <a href="#stop">11 · Stop</a>
+      <a href="#mobile-setup">11 · Mobile setup</a>
+      <a href="#mobile-run">12 · Run the app</a>
+      <a href="#stop">13 · Stop</a>
       <a href="#trouble">Troubleshooting</a>
       <a href="#cheatsheet">Cheat sheet</a>
       <a href="#docs">Docs</a>
@@ -645,6 +695,13 @@
     <input type="radio" id="os-win" name="os" checked>
     <input type="radio" id="os-mac" name="os">
     <input type="radio" id="os-linux" name="os">
+
+    <!-- Target platform for the mobile sections (Steps 12-13). Android is the
+         default because it is the only target reachable from all three host
+         operating systems. -->
+    <input type="radio" id="plat-android" name="plat" checked>
+    <input type="radio" id="plat-ios" name="plat">
+    <input type="radio" id="plat-device" name="plat">
 
     <div class="ostabs">
       <span>Your OS:</span>
@@ -661,8 +718,7 @@
       </div>
 
       <p>
-        When you finish this guide you will have <strong>two things running at the same time</strong> on your
-        computer:
+        Steps 1&ndash;10 leave you with <strong>two things running at the same time</strong> on your computer:
       </p>
 
       <ol class="steps">
@@ -671,21 +727,31 @@
       </ol>
 
       <p>
-        Your browser talks to Django, and Django talks to MySQL. That is the whole picture:
+        Your browser talks to Django, and Django talks to MySQL. Steps 11&ndash;12 then add a third piece — the
+        <strong>MetroDrip phone app</strong>, which talks to that same Django process through the mobile API
+        instead of serving HTML. Nothing in the app half changes the web half, so you can stop after Step 10
+        and still have a complete working storefront.
       </p>
 
       <div class="diagram">
-        <svg viewBox="0 0 720 250" role="img" aria-labelledby="archtitle archdesc">
+        <svg viewBox="0 0 720 340" role="img" aria-labelledby="archtitle archdesc">
           <title id="archtitle">MetroDrip local development architecture</title>
           <desc id="archdesc">
             Your browser sends requests to the Django development server on port 8000, running on your host
             machine. Django reads and writes data over port 3306 to a MySQL 8.4 database running in a Docker
-            container. An optional scheduler process also connects to the same database.
+            container. Below that, the Expo mobile app running on an emulator, simulator, or phone reaches
+            the same Django process on port 8080 through the mobile API at slash api slash mobile slash v1.
+            Two further pieces are optional and drawn with dashed outlines: a scheduler process that connects
+            to the same database, and a Redis container that ships in Docker Compose but that Django does not
+            use until you point its cache setting at it.
           </desc>
 
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="#141414"/>
+            </marker>
+            <marker id="arrowmuted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#B8B8B0"/>
             </marker>
           </defs>
 
@@ -698,7 +764,7 @@
           <rect x="255" y="55" width="200" height="110" rx="8" fill="#C8F031" stroke="#141414" stroke-width="2"/>
           <text x="355" y="88" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">Django dev server</text>
           <text x="355" y="110" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">manage.py runserver</text>
-          <text x="355" y="130" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">127.0.0.1:8000</text>
+          <text x="355" y="130" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">:8000 web · :8080 app</text>
           <text x="355" y="150" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#3E4A16">runs on your machine</text>
 
           <!-- MySQL -->
@@ -708,10 +774,23 @@
           <text x="626" y="130" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">port 3306</text>
           <text x="626" y="150" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">Docker container</text>
 
+          <!-- Mobile app -->
+          <rect x="12" y="215" width="150" height="95" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="87" y="243" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">MetroDrip app</text>
+          <text x="87" y="264" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">Expo SDK 51</text>
+          <text x="87" y="282" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">emulator · simulator</text>
+          <text x="87" y="298" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">· phone</text>
+
           <!-- Scheduler (optional) -->
-          <rect x="255" y="192" width="200" height="46" rx="8" fill="#FFFFFF" stroke="#B8B8B0" stroke-width="2" stroke-dasharray="5 4"/>
-          <text x="355" y="211" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#75756E">Scheduler (optional)</text>
-          <text x="355" y="228" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#9A9A92">manage.py run_scheduler</text>
+          <rect x="255" y="215" width="200" height="46" rx="8" fill="#FFFFFF" stroke="#B8B8B0" stroke-width="2" stroke-dasharray="5 4"/>
+          <text x="355" y="234" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#75756E">Scheduler (optional)</text>
+          <text x="355" y="251" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#9A9A92">manage.py run_scheduler</text>
+
+          <!-- Redis (in Compose, unused by Django until CACHES points at it) -->
+          <rect x="545" y="215" width="163" height="60" rx="8" fill="#FFFFFF" stroke="#B8B8B0" stroke-width="2" stroke-dasharray="5 4"/>
+          <text x="626" y="238" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#75756E">Redis 7 (idle)</text>
+          <text x="626" y="256" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#9A9A92">started, not yet used</text>
+          <text x="626" y="270" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#9A9A92">port 6379</text>
 
           <!-- Arrows -->
           <line x1="164" y1="110" x2="248" y2="110" stroke="#141414" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
@@ -720,7 +799,12 @@
           <line x1="457" y1="110" x2="538" y2="110" stroke="#141414" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
           <text x="497" y="100" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">SQL</text>
 
-          <path d="M 455 215 L 626 215 L 626 168" fill="none" stroke="#B8B8B0" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+          <!-- App -> Django, up the left side into the box's underside -->
+          <path d="M 87 209 L 87 190 L 300 190 L 300 172" fill="none" stroke="#141414" stroke-width="2" marker-end="url(#arrow)"/>
+          <text x="196" y="183" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">/api/mobile/v1/</text>
+
+          <path d="M 457 238 L 495 238 L 495 190 L 626 190 L 626 172" fill="none" stroke="#B8B8B0" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrowmuted)"/>
+          <text x="355" y="292" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#9A9A92">dashed outline = optional piece</text>
         </svg>
       </div>
 
@@ -737,7 +821,10 @@
       <div class="note">
         <span class="note__label">Roughly how long this takes</span>
         <p>
-          <strong>First time on a fresh machine:</strong> 30–45 minutes, mostly waiting for downloads.<br>
+          <strong>First time on a fresh machine:</strong> 30&ndash;45 minutes for the storefront (Steps 1&ndash;10),
+          mostly waiting for downloads.<br>
+          <strong>The app (Steps 11&ndash;12):</strong> around 15 minutes on top if you use Expo Go; budget an hour
+          or more the first time you install the Android SDK or Xcode.<br>
           <strong>Every time after that:</strong> about 30 seconds — see the <a href="#cheatsheet">cheat sheet</a>.
         </p>
       </div>
@@ -750,7 +837,7 @@
         <h2 class="section-title">Install the tools</h2>
       </div>
 
-      <p>You need four things. Install them in this order, and <strong>restart your terminal after each one</strong> so it picks up the new commands.</p>
+      <p>You need five things. Install them in this order, and <strong>restart your terminal after each one</strong> so it picks up the new commands.</p>
 
       <div class="tablewrap">
         <table>
@@ -762,8 +849,18 @@
             <tr><td><strong>Python</strong></td><td>3.14</td><td>The language MetroDrip is written in.</td></tr>
             <tr><td><strong>Docker Desktop</strong></td><td>28+</td><td>Runs the MySQL database in a container.</td></tr>
             <tr><td><strong>uv</strong></td><td>any recent</td><td>Creates the Python environment and installs libraries. Much faster than pip.</td></tr>
+            <tr><td><strong>Node.js</strong></td><td>20 or newer</td><td>Only needed for the phone app in <a href="#mobile-setup">Step 11</a>. The storefront needs no Node at all.</td></tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="note note--tip">
+        <span class="note__label">Skip ahead if you only want the storefront</span>
+        <p>
+          Node.js, and later the Android SDK or Xcode, exist purely for the phone app. If you are here to run
+          the website, install the first four tools and stop — <a href="#mobile-setup">Step 11</a> lists the
+          mobile toolchain separately so nobody downloads several gigabytes of SDK by accident.
+        </p>
       </div>
 
       <div class="only-win">
@@ -773,6 +870,7 @@
           <li><a href="https://git-scm.com/download/win">Git for Windows</a> — accept the defaults.</li>
           <li><a href="https://www.python.org/downloads/">Python 3.14</a> — <strong>tick “Add python.exe to PATH”</strong> on the first screen. This is the single most common setup mistake.</li>
           <li><a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a> — restart your computer when it asks.</li>
+          <li><a href="https://nodejs.org/">Node.js 20 LTS</a> — for the phone app only; skip it if you are not doing Step 11.</li>
         </ul>
         <p>Then open <strong>PowerShell</strong> and install uv:</p>
         <div class="code"><pre><code>powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"</code></pre></div>
@@ -784,8 +882,8 @@
         <div class="code"><pre><code><span class="c"># Install Homebrew first if you do not have it.</span>
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-<span class="c"># Then the tools.</span>
-brew install git python@3.14 uv
+<span class="c"># Then the tools. node is only needed for the phone app (Step 11).</span>
+brew install git python@3.14 uv node
 brew install --cask docker</code></pre></div>
         <p>Open the <strong>Docker</strong> app from your Applications folder once, so it can finish setting itself up.</p>
       </div>
@@ -800,7 +898,11 @@ curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker "$USER"   <span class="c"># then log out and back in</span>
 
 <span class="c"># uv (it can install Python 3.14 for you in the next step).</span>
-curl -LsSf https://astral.sh/uv/install.sh | sh</code></pre></div>
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+<span class="c"># Node.js 20+, for the phone app only (Step 11). Distro packages are often</span>
+<span class="c"># older than 20 — check with `node --version` and use nodesource or nvm if so.</span>
+sudo apt install -y nodejs npm</code></pre></div>
         <div class="note note--tip">
           <span class="note__label">Tip</span>
           <p>The <code>usermod</code> line lets you run Docker without <code>sudo</code>. You must log out and back in for it to take effect.</p>
@@ -988,40 +1090,56 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
 
       <p>
         Make sure <strong>Docker Desktop is open and running</strong> first — look for the whale icon.
-        Then start the MySQL container:
+        Then start the two data containers:
       </p>
 
-      <div class="code"><pre><code>docker compose up -d db --wait</code></pre></div>
+      <div class="code"><pre><code>docker compose up -d db redis --wait</code></pre></div>
 
       <p>Reading that command:</p>
       <ul class="checks">
-        <li><code>up</code> — create and start the container</li>
-        <li><code>-d</code> — “detached”, meaning it runs in the background and gives your terminal back</li>
-        <li><code>db</code> — only the database service (the web app runs on your machine, not in Docker)</li>
-        <li><code>--wait</code> — pause until MySQL reports that it is genuinely ready for connections</li>
+        <li><code>up</code> — create and start the containers</li>
+        <li><code>-d</code> — “detached”, meaning they run in the background and give your terminal back</li>
+        <li><code>db redis</code> — the database and the Redis cache. The web app itself runs on your machine, not in Docker</li>
+        <li><code>--wait</code> — pause until both report that they are genuinely ready for connections</li>
       </ul>
 
-      <p>You should see it finish with <code>Healthy</code>:</p>
+      <p>You should see both finish at <code>Healthy</code>:</p>
 
       <div class="code"><pre><code><span class="o">Container metrodrip-mysql  Started</span>
-<span class="o">Container metrodrip-mysql  Waiting</span>
+<span class="o">Container metrodrip-redis  Started</span>
+<span class="o">Container metrodrip-redis  Healthy</span>
 <span class="o">Container metrodrip-mysql  Healthy</span></code></pre></div>
+
+      <div class="note">
+        <span class="note__label">Why start Redis when nothing seems to use it</span>
+        <p>
+          Nothing does yet, and that is deliberate. Django ships with no <code>CACHES</code> setting outside the
+          test suite, so this Redis sits idle on port 6379 until you either point <code>CACHES</code> at it or run
+          the optional <code>services</code> sidecars. It is in this command because <code>docker compose up -d</code>
+          with no arguments starts exactly these two — the sidecars sit behind a
+          <code>--profile services</code> flag — so starting both here matches what the rest of the team runs and
+          keeps the console rate limiter (<a href="#admin">Step 8</a>) one setting away from being shared instead
+          of per-process. Leaving it out changes nothing about the storefront.
+        </p>
+      </div>
 
       <div class="note note--tip">
         <span class="note__label">The first run is the slow one</span>
         <p>
-          Docker has to download the MySQL image (a few hundred MB) and initialise the database. Give it a
-          couple of minutes. Every start after that is nearly instant.
+          Docker has to download the MySQL image (a few hundred MB), the much smaller Redis image, and
+          initialise the database. Give it a couple of minutes. Every start after that is nearly instant.
         </p>
       </div>
 
       <figure>
         <img src="docs/images/02-mysql-container-healthy.png"
-             alt="Terminal showing docker compose up -d db --wait progressing through Starting, Started, Waiting and finishing at Healthy, followed by docker compose ps listing metrodrip-mysql running mysql:8.4 on port 3306."
+             alt="Terminal showing docker compose up -d db redis --wait progressing through Starting, Started, Waiting and finishing at Healthy, followed by docker compose ps listing metrodrip-mysql running mysql:8.4 on port 3306."
              loading="lazy" width="1250" height="438">
         <figcaption>
           <b>Healthy</b> is the word to look for. The follow-up <code>docker compose ps</code> confirms the
-          container is up and publishing port 3306.
+          container is up and publishing port 3306. This capture predates adding Redis to the command, so it
+          shows only <code>metrodrip-mysql</code>; with <code>db redis</code> you get a second, identical-looking
+          pair of Started/Healthy lines for <code>metrodrip-redis</code>.
         </figcaption>
       </figure>
     </section>
@@ -1060,6 +1178,39 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           That is <strong>not</strong> an error. The seed is <em>idempotent</em> — it only reports how many rows it
           <em>newly created</em>. Zero means the data was already there from a previous run, which is exactly
           what should happen. Verify with the check in <a href="#verify">Step 9</a>.
+        </p>
+      </div>
+
+      <h3>Which seed command is the real one</h3>
+
+      <p>
+        <code>seed_demo</code> is the <strong>only canonical catalogue seed</strong>: five curated products with
+        real copy, the ones any demo or screenshot should be built from. Everything else in the repository that
+        looks like a seed is a development fixture, and they are not interchangeable:
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Command or script</th><th>Produces</th><th>Use it for</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>manage.py seed_demo</code></td><td>5 curated products</td><td><strong>Canonical.</strong> Demos, stakeholder review, screenshots</td></tr>
+            <tr><td><code>manage.py seed_mock_catalog</code></td><td>bulk placeholders</td><td>Category, filter, and pagination testing</td></tr>
+            <tr><td><code>seed_assignment.py</code>, <code>seed_more.py</code>, <code>seed_200.py</code>, <code>seed_collections.py</code></td><td>~150+ placeholder products each</td><td>Local pagination and performance work only</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--warn">
+        <span class="note__label">The padded fixtures stack, and they do not clean up after themselves</span>
+        <p>
+          Each of those root-level scripts adds to what is already there rather than replacing it, so a
+          long-lived development database drifts a long way from five products. Running the count in
+          <a href="#verify">Step 9</a> on one such database on 24 August 2026 returned
+          <strong>1,003 products and 1,180 variants</strong>. That is fine for exercising pagination and harmless
+          locally, but it is not what a demo should look like. To get back to a demo-shaped catalogue, reset the
+          database (<a href="#stop">Step 13</a>) and run <code>migrate</code> and <code>seed_demo</code> alone.
         </p>
       </div>
 
@@ -1307,6 +1458,93 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         </div>
       </div>
 
+      <h3 id="twofa">Two-factor authentication and login limits</h3>
+
+      <p>
+        Both consoles support <strong>TOTP two-factor authentication</strong> — the six-digit codes an
+        authenticator app generates — and both rate-limit failed sign-ins. Neither is on by default, so the
+        commands above give you a working console straight away. Read this before you enable either, because
+        one of the two has no undo.
+      </p>
+
+      <div class="note note--warn">
+        <span class="note__label">Enrolling a device is a one-way door for that account</span>
+        <p>
+          Once an account has a <strong>confirmed</strong> TOTP device, <strong>its password alone stops
+          working</strong> — permanently, with no opt-out path and no “remember this browser”. If you enrol your
+          only administrator and then lose the authenticator app, you have locked yourself out of the console.
+          On a throwaway local database that costs you a
+          <code>docker compose down -v</code>; on anything shared it costs somebody their afternoon. Enrol a
+          second administrator first, or keep the recovery path in mind.
+        </p>
+      </div>
+
+      <p>Check where you stand before changing anything:</p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>.venv/Scripts/python manage.py check_console_otp</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>.venv/bin/python manage.py check_console_otp</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>.venv/bin/python manage.py check_console_otp</code></pre></div>
+      </div>
+
+      <p>It lists every staff account and whether a password alone would still get in:</p>
+
+      <div class="code"><pre><code><span class="o">Active staff accounts: 9</span>
+<span class="o">  With a confirmed TOTP device: 0</span>
+<span class="o">  Without a device (2FA bypassable): 9</span>
+<span class="o">    - admin@metrodrip.test (administrator)</span>
+<span class="o">    - merchant@metrodrip.test (merchant)</span>
+<span class="o">    ...</span>
+
+<span class="o">Enroll a device at /admin/otp_totp/totpdevice/add/ before setting</span>
+<span class="o">CONSOLE_REQUIRE_OTP=1, or these accounts will be refused at login.</span></code></pre></div>
+
+      <p>
+        To enrol one, sign into <code>/admin/</code> and open
+        <code>/admin/otp_totp/totpdevice/add/</code>. Pick the account, save, scan the QR code with any
+        authenticator app, then enter a code to confirm the device. The QR is labelled <em>MetroDrip</em>, so
+        that is what staff will see in their app.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Setting</th><th>Default</th><th>What it controls</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>CONSOLE_LOGIN_MAX_ATTEMPTS_PER_USER</code></td><td><code>5</code></td><td>Failed sign-ins per account per 15-minute window. This is the limit that actually protects an account.</td></tr>
+            <tr><td><code>CONSOLE_LOGIN_MAX_ATTEMPTS_PER_IP</code></td><td><code>20</code></td><td>Failed sign-ins per address. Looser on purpose — office staff share one outbound IP.</td></tr>
+            <tr><td><code>CONSOLE_LOGIN_TRUSTED_PROXY_DEPTH</code></td><td><code>0</code></td><td><code>0</code> reads the direct connection and ignores <code>X-Forwarded-For</code>. Behind a reverse proxy set it to <code>1</code>, or per-address limiting just measures the proxy.</td></tr>
+            <tr><td><code>CONSOLE_REQUIRE_OTP</code></td><td>off</td><td>Requires a code from <em>every</em> staff account, enrolled or not. Accounts with no device are refused outright.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--warn">
+        <span class="note__label">Run check_console_otp before turning CONSOLE_REQUIRE_OTP on</span>
+        <p>
+          The flag makes no exception for the superuser you would need in order to enrol anybody else, so
+          enabling it on a console where nothing is enrolled locks out every account at once.
+          <code>check_console_otp --strict</code> exits non-zero when anyone is still unenrolled, which is the
+          form to put in a deploy gate.
+        </p>
+      </div>
+
+      <div class="note">
+        <span class="note__label">Locally, the attempt counters are per process</span>
+        <p>
+          They live in Django's cache, and this project configures no cache outside the test suite — so each
+          server process counts on its own, in memory, and a restart forgets everything. That is convenient
+          while you are testing (restart the server to clear a lockout) and misleading in production, where
+          several worker processes each get their own allowance. Pointing <code>CACHES</code> at the Redis from
+          <a href="#database">Step 5</a> is what makes the numbers mean what they say.
+        </p>
+      </div>
+
       <figure>
         <img src="docs/images/06-admin-dashboard.png"
              alt="The MetroDrip Administration dashboard after logging in, listing the Accounts, Authentication and Authorization, Catalog, CMS, Flat pages, and Inventory sections."
@@ -1346,6 +1584,8 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
             <tr><td>Merchant console</td><td><code>/merchant/</code></td><td>Merchant login — use <code>merchant@metrodrip.test</code></td></tr>
             <tr><td>Administrator console</td><td><code>/admin/</code></td><td>Admin login — use <code>admin@metrodrip.test</code></td></tr>
             <tr><td>Health check</td><td><code>/healthz/ready/</code></td><td><code>{"status": "ok"}</code></td></tr>
+            <tr><td>Liveness</td><td><code>/healthz/live/</code></td><td><code>{"status": "ok"}</code> — answers even if the database is down</td></tr>
+            <tr><td>Mobile API</td><td><code>/api/mobile/v1/catalog/products/</code></td><td>JSON, but <strong>only</strong> with a version header — see below</td></tr>
           </tbody>
         </table>
       </div>
@@ -1371,7 +1611,63 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         <div class="code"><pre><code>.venv/bin/python manage.py shell -c "from apps.catalog.models import Product, ProductVariant; print('products:', Product.objects.count(), '| variants:', ProductVariant.objects.count())"</code></pre></div>
       </div>
 
-      <p>Any count above zero means the catalogue is populated and the storefront has something to show.</p>
+      <p>
+        Any count above zero means the catalogue is populated and the storefront has something to show. Count it
+        rather than assuming a number: five is what a freshly seeded database holds, and a development database
+        that has had the padded fixture scripts run against it holds far more (see <a href="#migrate">Step 6</a>).
+      </p>
+
+      <h3>Confirm the mobile API answers</h3>
+
+      <p>
+        The app in <a href="#mobile-setup">Step 11</a> talks to the same Django process through
+        <code>/api/mobile/v1/</code>. You can prove that half works from a terminal, before installing a single
+        mobile tool. Every request must carry an <code>X-Client-Version</code> header — the API rejects requests
+        without one by contract, so that they can be correlated with released app versions:
+      </p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>curl.exe -H "X-Client-Version: 1.0.0" http://127.0.0.1:8000/api/mobile/v1/catalog/products/</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>curl -H 'X-Client-Version: 1.0.0' http://127.0.0.1:8000/api/mobile/v1/catalog/products/</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>curl -H 'X-Client-Version: 1.0.0' http://127.0.0.1:8000/api/mobile/v1/catalog/products/</code></pre></div>
+      </div>
+
+      <p>A healthy answer is a paginated product list:</p>
+
+      <div class="code"><pre><code><span class="o">{"count":1003,"next":"http://127.0.0.1:8000/api/mobile/v1/catalog/products/?page=2",</span>
+<span class="o"> "previous":null,"results":[{"id":1003,"name":"…","slug":"…",</span>
+<span class="o"> "category":{"name":"…","slug":"…"},"price":10000,"price_display":"₱100.00",</span>
+<span class="o"> "images":[],"review_avg":null,"review_count":0}, …]}</span></code></pre></div>
+
+      <div class="note note--tip">
+        <span class="note__label">Read the two money fields — they explain the whole app design</span>
+        <p>
+          <code>price</code> is <code>10000</code>, an integer count of centavos, and
+          <code>price_display</code> is the finished string <code>₱100.00</code>. The server sends both, and the
+          app renders the string it was given. The app never multiplies, adds, or rounds money anywhere — that
+          rule is why a total on a phone can never disagree with the total in the database.
+        </p>
+      </div>
+
+      <p>Leave the header off and you get a <code>400</code> instead, which is the expected refusal, not a fault:</p>
+
+      <div class="code"><pre><code><span class="o">{"error": {"code": "missing_client_version",</span>
+<span class="o">           "message": "Send the app version in the X-Client-Version header.",</span>
+<span class="o">           "correlation_id": "26e5951f58f94c038cb674e497227dbf"}}</span></code></pre></div>
+
+      <div class="note">
+        <span class="note__label">Two more worth trying</span>
+        <p>
+          <code>/api/mobile/v1/shipping/zones/</code> returns the three delivery zones with their fees
+          (NCR ₱99.00, Luzon ₱159.00, VisMin ₱199.00 as seeded), and
+          <code>/api/mobile/v1/orders/</code> returns <code>401</code> until you send a token — both correct
+          answers, and both a faster check than launching an emulator.
+        </p>
+      </div>
 
       <figure>
         <img src="docs/images/05-shop-category-tree.png"
@@ -1445,27 +1741,52 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         <div class="code"><pre><code>.venv/bin/pytest</code></pre></div>
       </div>
 
-      <h3>Other quality checks</h3>
-      <p>These are the same checks that run automatically on GitHub when you push:</p>
+      <p>A clean run ends with a single summary line — on 24 August 2026 this suite was
+      <code>576 passed</code> in about two and a half minutes:</p>
+
+      <div class="code"><pre><code><span class="o">576 passed, 174 warnings in 145.54s (0:02:25)</span></code></pre></div>
+
+      <h3>The full quality gate</h3>
+      <p>
+        These are the checks the project expects before a pull request, in the order they are cheapest to fix.
+        Each one is also run automatically on GitHub when you push, so running them locally only saves you a
+        round trip:
+      </p>
 
       <div class="only-win">
-        <div class="code"><pre><code>.venv/Scripts/ruff check .            <span class="c"># find code problems</span>
-.venv/Scripts/ruff format --check .   <span class="c"># confirm formatting</span>
-.venv/Scripts/python manage.py check  <span class="c"># Django's own health check</span></code></pre></div>
+        <div class="code"><pre><code>.venv/Scripts/python -m compileall -q apps config jobs tests manage.py  <span class="c"># 1. does it even parse</span>
+.venv/Scripts/ruff check .                                             <span class="c"># 2. find code problems</span>
+.venv/Scripts/ruff format --check .                                    <span class="c"># 3. confirm formatting</span>
+.venv/Scripts/python manage.py check                                   <span class="c"># 4. Django's own health check</span>
+.venv/Scripts/python manage.py makemigrations --check --dry-run         <span class="c"># 5. no un-generated migrations</span>
+.venv/Scripts/pytest                                                   <span class="c"># 6. the suite</span></code></pre></div>
       </div>
       <div class="only-mac">
-        <div class="code"><pre><code>.venv/bin/ruff check .            <span class="c"># find code problems</span>
-.venv/bin/ruff format --check .   <span class="c"># confirm formatting</span>
-.venv/bin/python manage.py check  <span class="c"># Django's own health check</span></code></pre></div>
+        <div class="code"><pre><code>.venv/bin/python -m compileall -q apps config jobs tests manage.py  <span class="c"># 1. does it even parse</span>
+.venv/bin/ruff check .                                              <span class="c"># 2. find code problems</span>
+.venv/bin/ruff format --check .                                     <span class="c"># 3. confirm formatting</span>
+.venv/bin/python manage.py check                                    <span class="c"># 4. Django's own health check</span>
+.venv/bin/python manage.py makemigrations --check --dry-run          <span class="c"># 5. no un-generated migrations</span>
+.venv/bin/pytest                                                    <span class="c"># 6. the suite</span></code></pre></div>
       </div>
       <div class="only-linux">
-        <div class="code"><pre><code>.venv/bin/ruff check .            <span class="c"># find code problems</span>
-.venv/bin/ruff format --check .   <span class="c"># confirm formatting</span>
-.venv/bin/python manage.py check  <span class="c"># Django's own health check</span></code></pre></div>
+        <div class="code"><pre><code>.venv/bin/python -m compileall -q apps config jobs tests manage.py  <span class="c"># 1. does it even parse</span>
+.venv/bin/ruff check .                                              <span class="c"># 2. find code problems</span>
+.venv/bin/ruff format --check .                                     <span class="c"># 3. confirm formatting</span>
+.venv/bin/python manage.py check                                    <span class="c"># 4. Django's own health check</span>
+.venv/bin/python manage.py makemigrations --check --dry-run          <span class="c"># 5. no un-generated migrations</span>
+.venv/bin/pytest                                                    <span class="c"># 6. the suite</span></code></pre></div>
       </div>
 
-      <p>For the React Native mobile client:</p>
-      <div class="code"><pre><code>cd mobile && npm run typecheck && npm run lint  <span class="c"># TypeScript and ESLint compliance</span></code></pre></div>
+      <div class="note note--tip">
+        <span class="note__label">What each of the odd two is for</span>
+        <p>
+          <code>compileall</code> catches a syntax error in a file no test happens to import — cheap insurance
+          that costs a second. <code>makemigrations --check --dry-run</code> fails if somebody changed a model
+          without generating the migration for it; it prints <code>No changes detected</code> and exits zero when
+          all is well. Checks for the phone app live in <a href="#mobile-run">Step 12</a>.
+        </p>
+      </div>
 
       <h3>Optional: the background scheduler</h3>
       <p>
@@ -1485,10 +1806,855 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
     </section>
 
-    <!-- ============================== 11. STOP ============================== -->
-    <section id="stop">
+    <!-- ============================== 11. MOBILE SETUP ============================== -->
+    <section id="mobile-setup">
       <div class="section-head">
         <span class="step-num">Step 11</span>
+        <h2 class="section-title">Set up the phone app</h2>
+      </div>
+
+      <p>
+        <code>mobile/</code> holds the <strong>customer app</strong>: React&nbsp;Native on Expo SDK&nbsp;51,
+        eleven screens, iOS and Android from one TypeScript codebase. It talks to the Django server you already
+        have running, through the <code>/api/mobile/v1/</code> endpoints you can already curl from
+        <a href="#verify">Step 9</a>.
+      </p>
+
+      <div class="note note--volt">
+        <span class="note__label">What the app deliberately does not do</span>
+        <p>
+          It is a <strong>shopper</strong> app only — there is no mobile merchant or administrator console, by
+          design; staff work stays on the web. And it performs <strong>no money arithmetic at all</strong>: prices,
+          subtotals, shipping, and totals arrive from the server as integer centavos <em>plus</em> a finished
+          display string, and the app renders the string. So a wrong total is always a server bug, never a
+          rounding difference on somebody's phone.
+        </p>
+      </div>
+
+      <h3>What you can build, on the machine you have</h3>
+
+      <p>
+        This is the constraint that decides everything else on this page, and it is not a MetroDrip decision:
+        <strong>Apple's build tools only run on macOS</strong>. Android is reachable from anywhere.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Your machine</th><th>Android</th><th>iOS</th><th>What that means in practice</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Windows</strong></td>
+              <td>Yes — emulator or a real phone</td>
+              <td>No</td>
+              <td>Xcode does not exist for Windows. Test iOS on a borrowed Mac or through a cloud build.</td>
+            </tr>
+            <tr>
+              <td><strong>Linux</strong></td>
+              <td>Yes — emulator or a real phone</td>
+              <td>No</td>
+              <td>Same reason. Everything else in this guide works identically.</td>
+            </tr>
+            <tr>
+              <td><strong>macOS</strong></td>
+              <td>Yes</td>
+              <td>Yes — simulator or a real iPhone</td>
+              <td>The only host that covers both targets.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Three ways to run it, cheapest first</h3>
+
+      <div class="diagram">
+        <svg viewBox="0 0 720 430" role="img" aria-labelledby="toolchaintitle toolchaindesc">
+          <title id="toolchaintitle">Which mobile targets and run modes your host operating system allows</title>
+          <desc id="toolchaindesc">
+            A Windows host can target Android only. A macOS host can target both Android and iOS. A Linux host
+            can target Android only. All three then choose between the same three ways of running the app,
+            listed from least to most setup: first, Expo Go or a development client started with npm start,
+            which needs no native build tools; second, a native debug build with npm run android or npm run
+            ios, which needs JDK 17 and the Android SDK, or macOS with Xcode; third, an EAS cloud build with
+            npm run build colon android or build colon ios, which needs an Expo account, a real project ID, and
+            brand assets.
+          </desc>
+
+          <defs>
+            <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#141414"/>
+            </marker>
+          </defs>
+
+          <!-- Hosts -->
+          <rect x="14" y="14" width="210" height="50" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="119" y="44" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">Windows</text>
+
+          <rect x="255" y="14" width="210" height="50" rx="8" fill="#C8F031" stroke="#141414" stroke-width="2"/>
+          <text x="360" y="44" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">macOS</text>
+
+          <rect x="496" y="14" width="210" height="50" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="601" y="44" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">Linux</text>
+
+          <!-- Targets -->
+          <rect x="14" y="104" width="210" height="52" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="1.5"/>
+          <text x="119" y="127" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="12" fill="#141414">Android only</text>
+          <text x="119" y="145" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">emulator or phone</text>
+
+          <rect x="255" y="104" width="210" height="52" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="1.5"/>
+          <text x="360" y="127" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="12" fill="#141414">Android + iOS</text>
+          <text x="360" y="145" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">simulator or device</text>
+
+          <rect x="496" y="104" width="210" height="52" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="1.5"/>
+          <text x="601" y="127" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="12" fill="#141414">Android only</text>
+          <text x="601" y="145" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">emulator or phone</text>
+
+          <line x1="119" y1="64" x2="119" y2="98" stroke="#141414" stroke-width="2" marker-end="url(#arrow2)"/>
+          <line x1="360" y1="64" x2="360" y2="98" stroke="#141414" stroke-width="2" marker-end="url(#arrow2)"/>
+          <line x1="601" y1="64" x2="601" y2="98" stroke="#141414" stroke-width="2" marker-end="url(#arrow2)"/>
+
+          <!-- Junction into the shared ladder -->
+          <line x1="119" y1="156" x2="119" y2="180" stroke="#141414" stroke-width="2"/>
+          <line x1="360" y1="156" x2="360" y2="180" stroke="#141414" stroke-width="2"/>
+          <line x1="601" y1="156" x2="601" y2="180" stroke="#141414" stroke-width="2"/>
+          <line x1="119" y1="180" x2="601" y2="180" stroke="#141414" stroke-width="2"/>
+          <line x1="360" y1="180" x2="360" y2="200" stroke="#141414" stroke-width="2" marker-end="url(#arrow2)"/>
+
+          <!-- Ladder of run modes -->
+          <rect x="110" y="206" width="500" height="54" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="126" y="228" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">1 · Expo Go or a dev client</text>
+          <text x="126" y="248" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">npm start — no native build tools needed</text>
+
+          <rect x="110" y="278" width="500" height="54" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="126" y="300" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">2 · Native debug build</text>
+          <text x="126" y="320" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">npm run android — JDK 17 + SDK · npm run ios — Xcode</text>
+
+          <rect x="110" y="350" width="500" height="54" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="126" y="372" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">3 · EAS cloud build</text>
+          <text x="126" y="392" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">npm run build:android — Expo account + real projectId</text>
+
+          <line x1="360" y1="260" x2="360" y2="272" stroke="#141414" stroke-width="2" marker-end="url(#arrow2)"/>
+          <line x1="360" y1="332" x2="360" y2="344" stroke="#141414" stroke-width="2" marker-end="url(#arrow2)"/>
+
+          <text x="60" y="240" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">least</text>
+          <text x="60" y="254" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">setup</text>
+          <text x="60" y="378" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">most</text>
+          <text x="60" y="392" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">setup</text>
+        </svg>
+      </div>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Mode</th><th>Command</th><th>You need</th><th>Good for</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Expo Go / dev client</strong></td>
+              <td><code>npm start</code></td>
+              <td>Node 20+ and a device or emulator that already has a client app installed</td>
+              <td>Editing screens. Fastest loop by a wide margin — save a file and it reloads.</td>
+            </tr>
+            <tr>
+              <td><strong>Native debug build</strong></td>
+              <td><code>npm run android</code><br><code>npm run ios</code></td>
+              <td>JDK 17 + Android SDK; or macOS + Xcode + CocoaPods</td>
+              <td>Anything touching native code, notifications, biometrics, or the splash screen.</td>
+            </tr>
+            <tr>
+              <td><strong>EAS cloud build</strong></td>
+              <td><code>npm run build:android</code><br><code>npm run build:ios</code></td>
+              <td>An Expo account, a real project ID, brand assets, and for iOS an Apple team</td>
+              <td>Handing a testable binary to somebody who is not a developer.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--warn">
+        <span class="note__label">This repository is not a plain Expo project, and it changes mode 1</span>
+        <p>
+          <code>mobile/</code> contains committed <code>android/</code> and <code>ios/</code> native folders, which
+          means a <strong>development build is the intended client</strong>, not the Expo Go app from the stores.
+          Two consequences worth knowing before you start:
+        </p>
+        <ul class="checks">
+          <li>
+            The app targets <strong>SDK&nbsp;51</strong>, and the Expo Go in the app stores tracks only the newest
+            SDKs. On Android you can sideload the matching older client —
+            <code>mobile/EMULATOR.md</code> pins <strong>Expo Go 2.31.2</strong> for exactly this reason. On iOS
+            you cannot install an old App Store build, so <strong>iOS means mode 2 or mode 3</strong>.
+          </li>
+          <li>
+            Because those native folders exist, an EAS build will <em>not</em> apply the
+            <code>orientation</code>, <code>scheme</code>, <code>userInterfaceStyle</code>,
+            <code>backgroundColor</code>, <code>splash</code>, <code>ios</code>, <code>android</code>, or
+            <code>plugins</code> keys from <code>app.json</code> — the native projects win. Running
+            <code>npx expo-doctor</code> reports this as its one failing check, which is expected here rather
+            than something to fix.
+          </li>
+        </ul>
+      </div>
+
+      <h3>Install the mobile prerequisites</h3>
+
+      <p>Node.js is the only requirement for mode 1. Check it first:</p>
+
+      <div class="code"><pre><code>node --version   <span class="c"># must be v20 or newer</span>
+npm --version</code></pre></div>
+
+      <p>Then install the app's JavaScript dependencies and its configuration file:</p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>cd mobile
+npm install
+Copy-Item .env.example .env
+cd ..</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>cd mobile
+npm install
+cp .env.example .env
+cd ..</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>cd mobile
+npm install
+cp .env.example .env
+cd ..</code></pre></div>
+      </div>
+
+      <div class="note">
+        <span class="note__label">About mobile/.env</span>
+        <p>
+          It holds exactly one setting, <code>EXPO_PUBLIC_API_URL</code>, and no secrets — anything prefixed
+          <code>EXPO_PUBLIC_</code> is <strong>baked into the app bundle</strong> at build time and can be read out
+          of any installed copy. The app is designed to hold no credentials of its own; the value below is only
+          an address.
+        </p>
+      </div>
+
+      <h3>Native toolchain, if you are going past mode 1</h3>
+
+      <div class="plattabs">
+        <span>Target:</span>
+        <label for="plat-android">Android</label>
+        <label for="plat-ios">iOS</label>
+        <label for="plat-device">Physical phone</label>
+      </div>
+
+      <div class="plat-android">
+        <p>
+          Android needs a <strong>JDK 17</strong> and the Android SDK. The versions the project actually builds
+          against, from <code>mobile/android/build.gradle</code> and its Gradle wrapper:
+        </p>
+
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr><th>Piece</th><th>Version</th><th>Note</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>JDK</td><td>17</td><td>Newer JDKs are a common source of Gradle failures here.</td></tr>
+              <tr><td>Gradle</td><td>8.8</td><td>Downloaded by the wrapper — you do not install it.</td></tr>
+              <tr><td><code>compileSdk</code> / <code>targetSdk</code></td><td>34</td><td>What the app is built against.</td></tr>
+              <tr><td><code>minSdk</code></td><td>23</td><td>Android 6.0 and up.</td></tr>
+              <tr><td>Emulator system image</td><td><strong>API 35</strong></td><td>Not 34 — see the warning below.</td></tr>
+              <tr><td>NDK</td><td>26.1.10909125</td><td>Only fetched if a dependency needs native compilation.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="only-win">
+          <p>
+            Windows has a scripted path. From the repository root, in PowerShell:
+          </p>
+          <div class="code"><pre><code>powershell -ExecutionPolicy Bypass -File scripts\setup-android-emulator.ps1</code></pre></div>
+          <p>
+            It is safe to re-run if a step fails. It installs the command-line tools to
+            <code>%LOCALAPPDATA%\Android\Sdk</code>, sets <code>ANDROID_HOME</code> and
+            <code>ANDROID_SDK_ROOT</code>, accepts the licences, installs <code>platform-tools</code>,
+            <code>emulator</code>, <code>platforms;android-35</code> and the <code>google_apis;x86_64</code>
+            image, and creates an AVD named <strong><code>MetroDrip_Pixel_API35</code></strong>.
+            <strong>Restart your editor afterwards</strong> so it inherits the new environment variables.
+          </p>
+          <p>You also need, separately: a JDK 17, and virtualisation enabled in your BIOS for the x86_64 emulator.</p>
+        </div>
+        <div class="only-mac">
+          <p>Install a JDK and the SDK, then create an emulator through Android Studio's Device Manager:</p>
+          <div class="code"><pre><code>brew install --cask temurin@17
+brew install --cask android-studio   <span class="c"># then: SDK Manager → API 35 image</span></code></pre></div>
+          <p>
+            Add the SDK to your shell profile so <code>expo</code> and <code>adb</code> can find it:
+          </p>
+          <div class="code"><pre><code>export ANDROID_HOME="$HOME/Library/Android/sdk"
+export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></pre></div>
+        </div>
+        <div class="only-linux">
+          <p>Install a JDK and the SDK, then create an emulator through Android Studio's Device Manager:</p>
+          <div class="code"><pre><code>sudo apt install -y openjdk-17-jdk
+<span class="c"># Android Studio: download from developer.android.com, or use your distro's</span>
+<span class="c"># package. Then in SDK Manager install the API 35 google_apis image.</span></code></pre></div>
+          <div class="code"><pre><code>export ANDROID_HOME="$HOME/Android/Sdk"
+export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"</code></pre></div>
+          <p>
+            KVM must be available for a usable emulator — check with
+            <code>kvm-ok</code> (from the <code>cpu-checker</code> package) and add yourself to the
+            <code>kvm</code> group if it complains about permissions.
+          </p>
+        </div>
+
+        <div class="note note--warn">
+          <span class="note__label">Use an API 35 image, not API 34</span>
+          <p>
+            On an <code>android-34;google_apis</code> image the SDK&nbsp;51 Expo Go client crashes on boot with
+            <code>Failed to create NativeModule 'UIManager'</code>. The identical app and bundle run correctly on
+            API 35. This was diagnosed on a real machine and written down in
+            <code>mobile/EMULATOR.md</code>; the setup script installs 35 deliberately, so do not
+            &ldquo;simplify&rdquo; it back.
+          </p>
+        </div>
+      </div>
+
+      <div class="plat-ios">
+        <p>
+          iOS requires <strong>macOS</strong>. There is no Windows or Linux path — not a limitation of this
+          project.
+        </p>
+
+        <ul class="checks">
+          <li><strong>Xcode</strong> from the App Store, opened once so it can finish installing its components.</li>
+          <li><strong>Command-line tools</strong>: <code>xcode-select --install</code>.</li>
+          <li><strong>CocoaPods</strong>: <code>brew install cocoapods</code>. The iOS project uses Hermes and targets iOS 13.4 or newer.</li>
+          <li><strong>A simulator</strong>: Xcode → Settings → Platforms → install an iOS runtime.</li>
+        </ul>
+
+        <p>
+          The first <code>npm run ios</code> runs <code>pod install</code> for you and takes a long time —
+          fifteen minutes is normal, and it compiles a large amount of native code. Subsequent runs are much
+          faster.
+        </p>
+
+        <div class="note">
+          <span class="note__label">There is no committed Podfile.lock</span>
+          <p>
+            <code>mobile/ios/</code> ships a <code>Podfile</code> but no lock file, so your first
+            <code>pod install</code> resolves fresh versions rather than reproducing somebody else's. If a pod
+            fails to build, that is the first thing to suspect — and the resulting
+            <code>Podfile.lock</code> is worth keeping locally so your own builds stay reproducible.
+          </p>
+        </div>
+
+        <div class="note note--warn">
+          <span class="note__label">Expo Go is not an option on iOS here</span>
+          <p>
+            The app targets SDK&nbsp;51 and the App Store only carries an Expo Go for current SDKs, with no way
+            to install an older one. On iOS, use <code>npm run ios</code> for a local development build, or an
+            EAS <code>development</code>-profile build for a device.
+          </p>
+        </div>
+      </div>
+
+      <div class="plat-device">
+        <p>
+          A real phone is often the fastest option, and on Windows or Linux it is the only way to see the app on
+          real hardware. It also needs no emulator, no virtualisation, and no system image.
+        </p>
+
+        <ul class="checks">
+          <li><strong>Android:</strong> enable Developer options, turn on <strong>USB debugging</strong>, plug the
+          phone in, accept the trust prompt, and confirm with <code>adb devices</code>. Then
+          <code>npm run android</code> installs onto it.</li>
+          <li><strong>iOS:</strong> plug the iPhone into the Mac, trust the computer, and select it as the run
+          destination in Xcode. A free Apple ID can sign a development build for your own device; distributing
+          to anybody else needs a paid team.</li>
+          <li><strong>Either:</strong> the phone and your computer must be on the <strong>same Wi-Fi network</strong>,
+          and <code>EXPO_PUBLIC_API_URL</code> must use your computer's LAN IP address — see the next section.</li>
+        </ul>
+
+        <div class="note note--tip">
+          <span class="note__label">Finding your LAN IP</span>
+          <p>
+            <span class="only-win-i"><code>ipconfig</code> — look for IPv4 Address under your active adapter.</span>
+            <span class="only-mac-i"><code>ipconfig getifaddr en0</code> for Wi-Fi.</span>
+            <span class="only-linux-i"><code>hostname -I</code>, or <code>ip addr show</code>.</span>
+            It usually looks like <code>192.168.x.x</code> or <code>10.x.x.x</code>. It can change when you
+            reconnect to the network, which is a common cause of the app suddenly going offline.
+          </p>
+        </div>
+      </div>
+
+      <h3>Point the app at your server — the one setting that matters</h3>
+
+      <p>
+        This is where most first attempts fail, and the reason is worth understanding once rather than guessing
+        at three times. An emulator is a <em>separate virtual computer</em>. Inside it,
+        <code>127.0.0.1</code> means the emulator itself — not your machine. So an app asking for
+        <code>127.0.0.1:8080</code> is asking the emulator for a server the emulator does not have.
+      </p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 720 360" role="img" aria-labelledby="nettitle netdesc">
+          <title id="nettitle">Which address the app must use to reach your development server</title>
+          <desc id="netdesc">
+            The Django development server runs on your machine bound to all interfaces on port 8080. An Android
+            emulator reaches it at 10.0.2.2 port 8080, which is the emulator's built-in alias for the host
+            machine. An iOS simulator shares the host network and reaches it at localhost port 8080. A physical
+            phone on the same Wi-Fi reaches it at the machine's LAN IP address, for example 192.168.1.10, port
+            8080. A fourth, failing path is drawn separately: an emulator asking for 127.0.0.1 reaches only
+            itself, where nothing is listening.
+          </desc>
+
+          <defs>
+            <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#141414"/>
+            </marker>
+            <marker id="arrowbad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#C2282D"/>
+            </marker>
+          </defs>
+
+          <!-- Host, centre -->
+          <rect x="290" y="140" width="200" height="100" rx="8" fill="#C8F031" stroke="#141414" stroke-width="2"/>
+          <text x="390" y="172" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">Your machine</text>
+          <text x="390" y="194" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">runserver 0.0.0.0:8080</text>
+          <text x="390" y="216" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#3E4A16">binds every interface</text>
+
+          <!-- Android emulator, top left -->
+          <rect x="20" y="16" width="200" height="66" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="120" y="42" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">Android emulator</text>
+          <text x="120" y="64" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">a separate computer</text>
+          <path d="M 222 49 L 330 49 L 330 134" fill="none" stroke="#141414" stroke-width="2" marker-end="url(#arrow3)"/>
+          <text x="276" y="38" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">10.0.2.2:8080</text>
+          <text x="276" y="68" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">works</text>
+
+          <!-- The failing path, kept well clear of the working ones -->
+          <line x1="120" y1="82" x2="120" y2="106" stroke="#C2282D" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrowbad)"/>
+          <rect x="20" y="112" width="200" height="62" rx="8" fill="#FFFFFF" stroke="#C2282D" stroke-width="2" stroke-dasharray="4 3"/>
+          <text x="120" y="134" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#C2282D">127.0.0.1:8080</text>
+          <text x="120" y="152" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#C2282D">fails — that means</text>
+          <text x="120" y="167" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#C2282D">the emulator itself</text>
+
+          <!-- iOS simulator, bottom left -->
+          <rect x="20" y="250" width="200" height="66" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="120" y="276" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">iOS simulator</text>
+          <text x="120" y="298" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">shares your network</text>
+          <path d="M 222 283 L 330 283 L 330 246" fill="none" stroke="#141414" stroke-width="2" marker-end="url(#arrow3)"/>
+          <text x="276" y="273" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">localhost:8080</text>
+          <text x="276" y="303" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">works</text>
+
+          <!-- Physical phone, right -->
+          <rect x="520" y="155" width="180" height="70" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="610" y="182" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">Phone on Wi-Fi</text>
+          <text x="610" y="204" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">same network only</text>
+          <line x1="514" y1="190" x2="496" y2="190" stroke="#141414" stroke-width="2" marker-end="url(#arrow3)"/>
+          <text x="610" y="248" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">192.168.x.x:8080</text>
+          <text x="610" y="265" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">works</text>
+
+          <text x="390" y="344" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">dashed red = the address that cannot work</text>
+        </svg>
+      </div>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Where the app runs</th><th><code>EXPO_PUBLIC_API_URL</code></th><th>Why</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Android emulator</td>
+              <td><code>http://10.0.2.2:8080/api/mobile/v1</code></td>
+              <td>Android maps <code>10.0.2.2</code> to the host machine's loopback. This is the shipped default.</td>
+            </tr>
+            <tr>
+              <td>iOS simulator</td>
+              <td><code>http://localhost:8080/api/mobile/v1</code></td>
+              <td>The simulator shares the Mac's network stack, so <code>localhost</code> is the Mac.</td>
+            </tr>
+            <tr>
+              <td>Physical phone</td>
+              <td><code>http://192.168.1.10:8080/api/mobile/v1</code></td>
+              <td>Your machine's LAN address — substitute your own. Same Wi-Fi network required.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--warn">
+        <span class="note__label">Bind the server to 0.0.0.0, not 127.0.0.1</span>
+        <p>
+          A server started as plain <code>runserver</code> listens on <code>127.0.0.1</code> only and will refuse
+          every connection from an emulator or a phone, however correct the app's address is. For all mobile work
+          start it as <code>runserver 0.0.0.0:8080</code> — <a href="#mobile-run">Step 12</a> does exactly that.
+        </p>
+      </div>
+
+      <div class="note note--tip">
+        <span class="note__label">You do not need to edit ALLOWED_HOSTS</span>
+        <p>
+          Development settings already accept <code>10.0.2.2</code>, <code>localhost</code>,
+          <code>127.0.0.1</code>, and — while <code>DEBUG</code> is on — this machine's own LAN addresses, looked
+          up at start-up. If your phone is rejected with a <code>400 Bad Request</code> naming the host, that
+          lookup failed on your network, and adding your address to <code>ALLOWED_HOSTS</code> in
+          <code>config/settings/dev.py</code> fixes it.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================== 12. MOBILE RUN ============================== -->
+    <section id="mobile-run">
+      <div class="section-head">
+        <span class="step-num">Step 12</span>
+        <h2 class="section-title">Run the app</h2>
+      </div>
+
+      <p>
+        Four things have to be running, and the order matters: each one needs the one before it. Open a terminal
+        for each — they all keep running until you stop them.
+      </p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 720 350" role="img" aria-labelledby="runtitle rundesc">
+          <title id="runtitle">The four processes to start, in order, and what each prints when it is ready</title>
+          <desc id="rundesc">
+            First terminal: docker compose up dash d db redis dash dash wait, which is ready when both containers
+            report Healthy. Second terminal: the Django server bound to 0.0.0.0 port 8080 with the simulated
+            payment provider, ready when it prints Starting development server. Third: the emulator or simulator,
+            ready when the device shows its home screen. Fourth, inside the mobile folder: npm start or npm run
+            android, ready when Metro prints that it is waiting on a local port. Each step depends on the one
+            before it.
+          </desc>
+
+          <defs>
+            <marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#141414"/>
+            </marker>
+          </defs>
+
+          <rect x="20" y="20" width="310" height="120" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="38" y="46" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">TERMINAL 1</text>
+          <text x="38" y="70" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">Data containers</text>
+          <text x="38" y="94" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">docker compose up -d db redis</text>
+          <text x="38" y="122" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">wait for: both say Healthy</text>
+
+          <rect x="390" y="20" width="310" height="120" rx="8" fill="#C8F031" stroke="#141414" stroke-width="2"/>
+          <text x="408" y="46" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#3E4A16">TERMINAL 2</text>
+          <text x="408" y="70" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">Django API</text>
+          <text x="408" y="94" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">runserver 0.0.0.0:8080</text>
+          <text x="408" y="122" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#3E4A16">wait for: Starting development server</text>
+
+          <rect x="20" y="190" width="310" height="120" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="38" y="216" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">TERMINAL 3</text>
+          <text x="38" y="240" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">Emulator or simulator</text>
+          <text x="38" y="264" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">emulator -avd … / open -a Simulator</text>
+          <text x="38" y="292" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">wait for: the device home screen</text>
+
+          <rect x="390" y="190" width="310" height="120" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
+          <text x="408" y="216" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">TERMINAL 4</text>
+          <text x="408" y="240" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">The app</text>
+          <text x="408" y="264" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">cd mobile &amp;&amp; npm start</text>
+          <text x="408" y="292" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">wait for: Waiting on http://localhost:8081</text>
+
+          <line x1="332" y1="80" x2="384" y2="80" stroke="#141414" stroke-width="2" marker-end="url(#arrow4)"/>
+          <path d="M 545 142 L 545 165 L 175 165 L 175 184" fill="none" stroke="#141414" stroke-width="2" marker-end="url(#arrow4)"/>
+          <line x1="332" y1="250" x2="384" y2="250" stroke="#141414" stroke-width="2" marker-end="url(#arrow4)"/>
+
+          <text x="358" y="336" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">each step needs the one before it</text>
+        </svg>
+      </div>
+
+      <h3>Terminal 1 — the data containers</h3>
+      <div class="code"><pre><code>docker compose up -d db redis --wait</code></pre></div>
+      <p>Already running from <a href="#database">Step 5</a>? Then this returns immediately and you can move on.</p>
+
+      <h3>Terminal 2 — Django, bound so the app can reach it</h3>
+      <p>
+        Note both differences from <a href="#run">Step 7</a>: the address is <code>0.0.0.0:8080</code>, and the
+        payment provider is set explicitly so checkout can complete without PayMongo keys.
+      </p>
+
+      <div class="only-win">
+        <div class="code"><pre><code>$env:PAYMENT_PROVIDER="simulated"
+.venv\Scripts\python.exe manage.py runserver 0.0.0.0:8080</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code>PAYMENT_PROVIDER=simulated .venv/bin/python manage.py runserver 0.0.0.0:8080</code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code>PAYMENT_PROVIDER=simulated .venv/bin/python manage.py runserver 0.0.0.0:8080</code></pre></div>
+      </div>
+
+      <div class="note note--tip">
+        <span class="note__label">You may not need to set it at all</span>
+        <p>
+          Development settings already fall back to the simulated provider whenever no PayMongo key is
+          configured, so on a stock <code>.env</code> the variable changes nothing. Setting it explicitly makes
+          the command work the same way on a machine that <em>does</em> have sandbox keys — which is why the
+          project's editor tasks set it too.
+        </p>
+      </div>
+
+      <h3>Terminal 3 — start the device</h3>
+
+      <div class="plattabs">
+        <span>Target:</span>
+        <label for="plat-android">Android</label>
+        <label for="plat-ios">iOS</label>
+        <label for="plat-device">Physical phone</label>
+      </div>
+
+      <div class="plat-android">
+        <div class="only-win">
+          <div class="code"><pre><code>&amp; "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd MetroDrip_Pixel_API35</code></pre></div>
+        </div>
+        <div class="only-mac">
+          <div class="code"><pre><code>$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API35</code></pre></div>
+        </div>
+        <div class="only-linux">
+          <div class="code"><pre><code>$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API35</code></pre></div>
+        </div>
+        <p>
+          Substitute your own AVD name if you created one by hand — <code>emulator -list-avds</code> prints them.
+          Wait for the Android home screen, then confirm the emulator is actually attached:
+        </p>
+        <div class="code"><pre><code>adb devices
+<span class="o">List of devices attached</span>
+<span class="o">emulator-5554   device</span></code></pre></div>
+        <p>
+          <code>device</code> is what you want. <code>offline</code> means it is still booting — or stuck; the
+          troubleshooting table below covers that.
+        </p>
+        <div class="note note--warn">
+          <span class="note__label">Run one emulator at a time</span>
+          <p>
+            Expo installs onto the first device <code>adb</code> lists and does not ask. Two running emulators
+            means a coin flip about which one gets the app, and they compete for CPU badly enough to freeze both.
+            Close the others with <code>adb -s emulator-5556 emu kill</code>.
+          </p>
+        </div>
+      </div>
+
+      <div class="plat-ios">
+        <div class="code"><pre><code>open -a Simulator</code></pre></div>
+        <p>
+          Or let <code>npm run ios</code> boot one for you — it picks a default device and opens the Simulator
+          itself, so this terminal is optional on iOS. To choose a specific device:
+        </p>
+        <div class="code"><pre><code>xcrun simctl list devices available   <span class="c"># see what you have</span>
+npm run ios -- --device "iPhone 15"   <span class="c"># run on one of them</span></code></pre></div>
+      </div>
+
+      <div class="plat-device">
+        <p>
+          Nothing to start — plug the phone in. Confirm the machine can see it
+          (<code>adb devices</code> on Android; the device list in Xcode on iOS), and make sure
+          <code>mobile/.env</code> uses your LAN IP rather than <code>10.0.2.2</code> or
+          <code>localhost</code>, neither of which means anything to a phone.
+        </p>
+      </div>
+
+      <h3>Terminal 4 — the app itself</h3>
+
+      <div class="plat-android">
+        <div class="code"><pre><code>cd mobile
+npm start            <span class="c"># then press `a` to open Android</span>
+
+<span class="c"># Or build and install the native debug app directly:</span>
+npm run android</code></pre></div>
+      </div>
+      <div class="plat-ios">
+        <div class="code"><pre><code>cd mobile
+npm run ios          <span class="c"># builds, installs, and launches on the simulator</span></code></pre></div>
+        <p>
+          The first run compiles the native project and installs pods — expect fifteen minutes or more. Use
+          <code>npm start</code> afterwards for the fast JavaScript-only loop.
+        </p>
+      </div>
+      <div class="plat-device">
+        <div class="code"><pre><code>cd mobile
+npm start            <span class="c"># scan the QR code with your development client</span>
+
+<span class="c"># Android, over USB:</span>
+npm run android</code></pre></div>
+      </div>
+
+      <p>Metro — the JavaScript bundler — starts and stays running:</p>
+
+      <div class="code"><pre><code><span class="o">Starting project at …/mobile</span>
+<span class="o">env: load .env</span>
+<span class="o">env: export EXPO_PUBLIC_API_URL</span>
+<span class="o">Starting Metro Bundler</span>
+<span class="o">Waiting on http://localhost:8081</span></code></pre></div>
+
+      <div class="note note--tip">
+        <span class="note__label">Check the two env lines</span>
+        <p>
+          <code>env: load .env</code> and <code>env: export EXPO_PUBLIC_API_URL</code> confirm your address
+          actually reached the bundle. If they are missing, <code>mobile/.env</code> does not exist and the app
+          will fall back to the built-in default of <code>http://10.0.2.2:8080/api/mobile/v1</code> — correct for
+          an Android emulator, wrong for everything else.
+        </p>
+      </div>
+
+      <h3>One click, if you use VS Code or Antigravity</h3>
+
+      <p>
+        The repository ships editor tasks that do all four steps in the right order. <strong>Terminal → Run
+        Task…</strong> then:
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Task</th><th>What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>MetroDrip: Full mobile stack</code></td><td>All of the below, in sequence. The one to use.</td></tr>
+            <tr><td><code>MetroDrip: MySQL + Redis (docker)</code></td><td>Starts the two containers.</td></tr>
+            <tr><td><code>MetroDrip: Django API (0.0.0.0:8080)</code></td><td>The server, bound for the emulator, with simulated payments.</td></tr>
+            <tr><td><code>MetroDrip: Start Android emulator</code></td><td>Boots the <code>MetroDrip_Pixel_API35</code> AVD.</td></tr>
+            <tr><td><code>MetroDrip: Expo on Android</code></td><td>Metro, plus installing the app on the running emulator.</td></tr>
+            <tr><td><code>MetroDrip: Backend QA</code></td><td><code>ruff</code> then <code>pytest</code>.</td></tr>
+            <tr><td><code>MetroDrip: Mobile typecheck</code></td><td><code>tsc --noEmit</code> inside <code>mobile/</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>These are Android tasks. On macOS, run the iOS commands by hand — there is no iOS task.</p>
+
+      <h3>Prove it works: buy something</h3>
+
+      <p>
+        Because the server is running the simulated payment provider, a purchase completes end to end without
+        any payment credentials. That makes this the single best check that every layer is connected:
+      </p>
+
+      <ol class="steps">
+        <li>Splash screen → <strong>Continue as guest</strong>, or create an account.</li>
+        <li>Home → tap a product → choose size, colour, and fit → <strong>Add to Cart</strong>.</li>
+        <li>Cart → <strong>Checkout</strong> → fill the form → pick a delivery zone → <strong>Pay</strong>.</li>
+        <li>You land on Order Tracking with the timeline showing <strong>Paid</strong>.</li>
+        <li>Sign in and open <strong>Orders</strong>; the notification centre shows &ldquo;Order confirmed&rdquo;.</li>
+        <li>In your browser, open <code>/admin/</code> and find that same order under <strong>Orders</strong>.</li>
+      </ol>
+
+      <p>
+        That last step is the one worth doing. Seeing the order the phone created appear in the web console is
+        proof that the app, the API, and the database are all the same system rather than three that merely look
+        alike.
+      </p>
+
+      <div class="note note--warn">
+        <span class="note__label">If step 3 fails with a network error, it is the address, not the app</span>
+        <p>
+          A failure at checkout — or an offline banner anywhere — almost always means the app cannot reach
+          Django. Check the server was started with <code>0.0.0.0:8080</code>, and that
+          <code>EXPO_PUBLIC_API_URL</code> matches where the app is running. Those two account for the large
+          majority of first-run failures.
+        </p>
+      </div>
+
+      <h3>Mobile quality checks</h3>
+
+      <p>Run these from <code>mobile/</code> before pushing app changes:</p>
+
+      <div class="code"><pre><code>npm run typecheck    <span class="c"># tsc --noEmit; silence means success</span>
+npm run lint         <span class="c"># eslint src</span></code></pre></div>
+
+      <p>
+        There is also a one-line check for the rule that matters most in this codebase — that the app never does
+        money arithmetic:
+      </p>
+
+      <div class="code"><pre><code>grep -rnE "(price|subtotal|total|fee)\s*[*+/-]" src/</code></pre></div>
+
+      <p>
+        The only acceptable matches are inside comments. A match in real code means a total is being computed on
+        the phone, which is the one thing the app is not allowed to do.
+      </p>
+
+      <h3>Mobile troubleshooting</h3>
+
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>What you see</th><th>Why</th><th>Fix</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>The app shows an offline banner</td>
+              <td>It cannot reach Django</td>
+              <td>Bind the server to <code>0.0.0.0:8080</code>; confirm <code>EXPO_PUBLIC_API_URL</code> matches the table in <a href="#mobile-setup">Step 11</a>.</td>
+            </tr>
+            <tr>
+              <td><code>HTTP 400 missing_client_version</code></td>
+              <td>A request skipped the shared API client</td>
+              <td>Every call must go through <code>src/api/client.ts</code>, which attaches the version header.</td>
+            </tr>
+            <tr>
+              <td><code>emulator: command not found</code></td>
+              <td><code>PATH</code> has not been reloaded</td>
+              <td>Restart the terminal and your editor so they pick up <code>ANDROID_HOME</code>.</td>
+            </tr>
+            <tr>
+              <td><code>adb devices</code> is empty</td>
+              <td>The emulator has not finished booting</td>
+              <td>Wait for the home screen, then run it again.</td>
+            </tr>
+            <tr>
+              <td>Emulator hangs on the boot logo</td>
+              <td>Hardware virtualisation is off</td>
+              <td>Enable it in BIOS (Windows) or check <code>kvm-ok</code> (Linux). Or use a real phone, which needs neither.</td>
+            </tr>
+            <tr>
+              <td>Expo Go dies instantly; the log names <code>UIManager</code></td>
+              <td>An API 34 image, or a Babel misconfiguration</td>
+              <td>Use the API 35 AVD, and keep <code>react-native-reanimated/plugin</code> <strong>last</strong> in <code>mobile/babel.config.js</code>.</td>
+            </tr>
+            <tr>
+              <td>Edits do not appear, or the bundle looks stale</td>
+              <td>Metro's cache</td>
+              <td><code>npx expo start -c</code> clears it.</td>
+            </tr>
+            <tr>
+              <td>Expo opens the wrong emulator</td>
+              <td>It takes the first <code>adb</code> device and ignores <code>ANDROID_SERIAL</code></td>
+              <td>Boot only one emulator, or kill the others with <code>adb -s &lt;serial&gt; emu kill</code>.</td>
+            </tr>
+            <tr>
+              <td><code>400 Bad Request</code> naming your host, on a phone</td>
+              <td>Your LAN address is not in <code>ALLOWED_HOSTS</code></td>
+              <td>Usually automatic; if the start-up lookup failed, add your IP in <code>config/settings/dev.py</code>.</td>
+            </tr>
+            <tr>
+              <td><code>pod install</code> fails on iOS</td>
+              <td>Pods resolved fresh — there is no committed lock file</td>
+              <td><code>cd mobile/ios &amp;&amp; pod repo update &amp;&amp; pod install</code>, then keep the resulting <code>Podfile.lock</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note note--warn">
+        <span class="note__label">A known dead end — do not spend an afternoon on it</span>
+        <p>
+          On one Windows machine, every emulator stopped booting mid-session: the process starts, reports the
+          hypervisor is working, and the virtual device then produces no output at all while <code>adb</code>
+          shows it permanently <code>offline</code>. A new AVD, API 34 versus 35, a host reboot, stopping Docker
+          and WSL, clearing lock files, <code>-wipe-data</code>, and every GPU mode were all ruled out by
+          testing. It is written up in <code>mobile/EMULATOR.md</code> with the full list of what was eliminated
+          and what is still worth trying. The app itself was verified rendering on an API 35 emulator during the
+          same session, so this is a host problem, not an app problem. On a machine showing these symptoms, use
+          a physical phone and move on.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================== 13. STOP ============================== -->
+    <section id="stop">
+      <div class="section-head">
+        <span class="step-num">Step 13</span>
         <h2 class="section-title">Stopping and cleaning up</h2>
       </div>
 
@@ -1499,6 +2665,8 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           </thead>
           <tbody>
             <tr><td>Stop the web server</td><td><code>Ctrl + C</code> in its terminal</td><td>None</td></tr>
+            <tr><td>Stop Metro / the app bundler</td><td><code>Ctrl + C</code> in its terminal</td><td>None</td></tr>
+            <tr><td>Close an Android emulator</td><td>Close its window, or <code>adb -s emulator-5554 emu kill</code></td><td>Kept inside the emulator</td></tr>
             <tr><td>Stop the database, keep data</td><td><code>docker compose stop</code></td><td>Kept</td></tr>
             <tr><td>Remove containers, keep data</td><td><code>docker compose down</code></td><td>Kept</td></tr>
             <tr><td>Delete everything, start fresh</td><td><code>docker compose down -v</code></td><td><strong>Permanently deleted</strong></td></tr>
@@ -1511,7 +2679,10 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         <p>
           The <code>-v</code> flag deletes the storage volume — every product, order, and account in your local
           database goes with it, and there is no undo. It is genuinely useful when you want a clean slate,
-          but only use it deliberately. Afterwards, re-run <a href="#migrate">Step 6</a> to rebuild.
+          but only use it deliberately. Afterwards, re-run <a href="#migrate">Step 6</a> to rebuild. The app
+          keeps its own local state — signed-in session, cart — inside the emulator or on the phone, so clearing
+          the database can leave the app holding references to orders that no longer exist. Sign out, or wipe the
+          emulator's data, if that confuses it.
         </p>
       </div>
     </section>
@@ -1537,7 +2708,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
             <tr>
               <td><code>Can't connect to MySQL server on '127.0.0.1'</code></td>
               <td>The container is stopped or still starting</td>
-              <td><code>docker compose up -d db --wait</code>, then <code>docker compose ps</code> and <code>docker compose logs db</code>.</td>
+              <td><code>docker compose up -d db redis --wait</code>, then <code>docker compose ps</code> and <code>docker compose logs db</code>.</td>
             </tr>
             <tr>
               <td><code>port 3306 already allocated</code></td>
@@ -1580,12 +2751,41 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
               <td>Confirm you are running <code>runserver</code> with <code>DEBUG</code> on, and hard-refresh with <code>Ctrl+Shift+R</code>.</td>
             </tr>
             <tr>
+              <td>Console login rejects a correct password after enrolling 2FA</td>
+              <td>A confirmed TOTP device makes the password alone insufficient — permanently</td>
+              <td>Enter the six-digit code from the authenticator app. If the device is genuinely lost, see <a href="#twofa">Step 8</a> — locally the recovery is <code>docker compose down -v</code>.</td>
+            </tr>
+            <tr>
+              <td><code>Too many failed sign-in attempts</code> on a console</td>
+              <td>Five failures per account inside 15 minutes</td>
+              <td>Wait out the window, or restart the server — the counters are in memory locally, so a restart clears them.</td>
+            </tr>
+            <tr>
+              <td>Every console account is refused, including the superuser</td>
+              <td><code>CONSOLE_REQUIRE_OTP</code> is on and nothing is enrolled</td>
+              <td>Unset it, run <code>manage.py check_console_otp</code>, enrol a device, then turn it back on.</td>
+            </tr>
+            <tr>
+              <td>The catalogue holds hundreds of products, not five</td>
+              <td>The padded fixture scripts have been run and they accumulate</td>
+              <td>Not a fault. For a demo-shaped catalogue, reset the database and run <code>seed_demo</code> alone — see <a href="#migrate">Step 6</a>.</td>
+            </tr>
+            <tr>
               <td>A test or migration seems frozen</td>
               <td>Two processes are competing for the same database rows</td>
               <td>Close any duplicate <code>pytest</code> or <code>run_scheduler</code> processes and run one suite at a time.</td>
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="note note--tip">
+        <span class="note__label">Phone app problems have their own table</span>
+        <p>
+          Emulators, Metro, the offline banner, and <code>pod install</code> are covered separately in
+          <a href="#mobile-run">Step 12</a>, because almost all of them come down to one of two causes: the
+          server is not bound to <code>0.0.0.0</code>, or the app is pointed at the wrong address.
+        </p>
       </div>
 
       <div class="note">
@@ -1619,7 +2819,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
 
       <div class="only-win">
         <div class="code"><pre><code><span class="c"># 1. Start the database (Docker Desktop must be open).</span>
-docker compose up -d db --wait
+docker compose up -d db redis --wait
 
 <span class="c"># 2. Start the web server.</span>
 .venv/Scripts/python manage.py runserver
@@ -1629,7 +2829,7 @@ docker compose up -d db --wait
       </div>
       <div class="only-mac">
         <div class="code"><pre><code><span class="c"># 1. Start the database (Docker must be running).</span>
-docker compose up -d db --wait
+docker compose up -d db redis --wait
 
 <span class="c"># 2. Start the web server.</span>
 .venv/bin/python manage.py runserver
@@ -1639,13 +2839,51 @@ docker compose up -d db --wait
       </div>
       <div class="only-linux">
         <div class="code"><pre><code><span class="c"># 1. Start the database.</span>
-docker compose up -d db --wait
+docker compose up -d db redis --wait
 
 <span class="c"># 2. Start the web server.</span>
 .venv/bin/python manage.py runserver
 
 <span class="c"># 3. Open the storefront.</span>
 <span class="p">http://127.0.0.1:8000/</span></code></pre></div>
+      </div>
+
+      <h3>…and for the phone app</h3>
+
+      <p>Same database, but the server binds differently and the app needs its own terminal:</p>
+
+      <div class="only-win">
+        <div class="code"><pre><code><span class="c"># 1. Data containers.</span>
+docker compose up -d db redis --wait
+
+<span class="c"># 2. Server, reachable from an emulator or phone.</span>
+$env:PAYMENT_PROVIDER="simulated"
+.venv\Scripts\python.exe manage.py runserver 0.0.0.0:8080
+
+<span class="c"># 3. Emulator, then the app (separate terminals).</span>
+&amp; "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd MetroDrip_Pixel_API35
+cd mobile; npm start</code></pre></div>
+      </div>
+      <div class="only-mac">
+        <div class="code"><pre><code><span class="c"># 1. Data containers.</span>
+docker compose up -d db redis --wait
+
+<span class="c"># 2. Server, reachable from a simulator, emulator, or phone.</span>
+PAYMENT_PROVIDER=simulated .venv/bin/python manage.py runserver 0.0.0.0:8080
+
+<span class="c"># 3. The app (separate terminal). iOS boots its own simulator.</span>
+cd mobile &amp;&amp; npm run ios      <span class="c"># or: npm start, then press i or a</span></code></pre></div>
+      </div>
+      <div class="only-linux">
+        <div class="code"><pre><code><span class="c"># 1. Data containers.</span>
+docker compose up -d db redis --wait
+
+<span class="c"># 2. Server, reachable from an emulator or phone.</span>
+PAYMENT_PROVIDER=simulated .venv/bin/python manage.py runserver 0.0.0.0:8080
+
+<span class="c"># 3. Emulator, then the app (separate terminals).</span>
+$ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API35
+cd mobile &amp;&amp; npm start</code></pre></div>
       </div>
 
       <h3>Full command reference</h3>
@@ -1655,7 +2893,7 @@ docker compose up -d db --wait
             <tr><th>Command</th><th>What it does</th></tr>
           </thead>
           <tbody>
-            <tr><td><code>docker compose up -d db --wait</code></td><td>Start MySQL and wait until it is ready</td></tr>
+            <tr><td><code>docker compose up -d db redis --wait</code></td><td>Start MySQL and Redis, waiting until both are ready</td></tr>
             <tr><td><code>docker compose ps</code></td><td>Show whether the container is running and healthy</td></tr>
             <tr><td><code>docker compose logs db</code></td><td>Read the database logs when something is wrong</td></tr>
             <tr><td><code>manage.py migrate</code></td><td>Create or update database tables</td></tr>
@@ -1666,11 +2904,19 @@ docker compose up -d db --wait
             <tr><td><code>manage.py create_console_account</code></td><td>Create merchant or administrator (scoped console)</td></tr>
             <tr><td><code>manage.py sync_console_roles</code></td><td>Attach group permissions to console roles</td></tr>
             <tr><td><code>manage.py createsuperuser</code></td><td>Optional break-glass superuser (both consoles)</td></tr>
+            <tr><td><code>manage.py check_console_otp</code></td><td>Report which staff accounts have no 2FA device</td></tr>
             <tr><td><code>manage.py check</code></td><td>Look for configuration problems</td></tr>
             <tr><td><code>manage.py run_scheduler</code></td><td>Start the background job runner</td></tr>
             <tr><td><code>manage.py shell</code></td><td>Open an interactive Python session with the project loaded</td></tr>
+            <tr><td><code>manage.py makemigrations --check --dry-run</code></td><td>Fail if a model change has no migration</td></tr>
             <tr><td><code>pytest</code></td><td>Run the full test suite</td></tr>
             <tr><td><code>ruff check .</code></td><td>Lint the code</td></tr>
+            <tr><td><code>runserver 0.0.0.0:8080</code></td><td>Serve so an emulator or phone can reach it</td></tr>
+            <tr><td><code>npm start</code> — inside <code>mobile/</code></td><td>Start Metro; press <code>a</code> or <code>i</code> to open a device</td></tr>
+            <tr><td><code>npm run android</code> / <code>npm run ios</code></td><td>Build and install the native debug app</td></tr>
+            <tr><td><code>npm run typecheck</code> / <code>npm run lint</code></td><td>App-side quality checks</td></tr>
+            <tr><td><code>npx expo start -c</code></td><td>Restart the bundler with a cleared cache</td></tr>
+            <tr><td><code>adb devices</code></td><td>List attached Android devices and emulators</td></tr>
           </tbody>
         </table>
       </div>
@@ -1693,7 +2939,20 @@ docker compose up -d db --wait
 [ ] Demo accounts created (customer / merchant / admin) — see Step 8
 [ ] /accounts/login/ works with customer@metrodrip.test
 [ ] /merchant/ works with merchant@metrodrip.test
-[ ] /admin/ works with admin@metrodrip.test</code></pre></div>
+[ ] /admin/ works with admin@metrodrip.test
+[ ] curl -H "X-Client-Version: 1.0.0" .../api/mobile/v1/catalog/products/ returns JSON
+
+Phone app (Steps 11-12) — skip if you only need the website:
+[ ] node --version prints v20 or newer
+[ ] mobile/ npm install finished
+[ ] mobile/.env exists and its URL matches where the app will run
+[ ] Django started with runserver 0.0.0.0:8080
+[ ] emulator or simulator booted (adb devices shows "device")
+[ ] npm start printed "env: load .env" and Metro is waiting
+[ ] the app opens on the splash screen
+[ ] a guest checkout completes and Order Tracking shows Paid
+[ ] that order appears in /admin/ under Orders
+[ ] npm run typecheck and npm run lint are clean</code></pre></div>
     </section>
 
     <!-- ============================== DOCS ============================== -->
@@ -1725,6 +2984,16 @@ docker compose up -d db --wait
           <span class="doc__label">Reference</span>
           <span class="doc__title">Architecture Notes</span>
           <span class="doc__desc">Module-by-module notes: function signatures, data flow, dependencies, and side effects.</span>
+        </a>
+        <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/mobile/README.md">
+          <span class="doc__label">Mobile</span>
+          <span class="doc__title">Mobile App Notes</span>
+          <span class="doc__desc">Screen-by-screen structure, the client-only rule, colour rules, token storage, and the internal build steps.</span>
+        </a>
+        <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/mobile/EMULATOR.md">
+          <span class="doc__label">Mobile</span>
+          <span class="doc__title">Emulator Runbook</span>
+          <span class="doc__desc">The Android emulator setup script, the API 35 decision, editor tasks, and a long troubleshooting log including one unresolved host failure.</span>
         </a>
         <a class="doc" href="https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/blob/main/deploy/README.md">
           <span class="doc__label">Operations</span>
