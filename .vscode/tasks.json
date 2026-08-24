@@ -20,10 +20,24 @@
       "options": { "env": { "PAYMENT_PROVIDER": "simulated" } },
       "isBackground": true,
       "problemMatcher": {
-        "pattern": [{ "regexp": "^(?!)$" }],
+        // runserver emits no diagnostics worth surfacing, so the pattern is a
+        // deliberate never-match (`(?!)` fails at every position). The file /
+        // line / message groups are still required: VS Code validates the
+        // pattern structurally, before it ever tries to match, and rejects one
+        // without them ("It must have at least have a file and a message").
+        // A rejected matcher is dropped, which also drops the background
+        // begins/ends signalling that "Wait for Django API" depends on.
+        "owner": "metrodrip-runserver",
+        "pattern": [{ "regexp": "^(?!)$", "file": 1, "line": 2, "message": 3 }],
         "background": {
           "activeOnStart": true,
-          "beginsPattern": "Performing system checks|Watching for file changes",
+          // Autoreload prints "Watching for file changes" first; a reload that
+          // skips it still prints the system-check line. Startup ends with the
+          // banner. Verified against real output on 2026-08-24 under a pty —
+          // when stdout is piped instead, the child block-buffers the banner
+          // and none of it appears until exit, which is a capture artifact and
+          // not what VS Code's terminal sees.
+          "beginsPattern": "Watching for file changes|Performing system checks",
           "endsPattern": "Starting development server at|Quit the server with"
         }
       },
