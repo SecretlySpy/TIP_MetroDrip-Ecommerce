@@ -116,7 +116,7 @@
 - **Outputs**: Run-specific evidence; `QA_PASSED` is valid only when no executed check has an
   unresolved finding.
 - **Dependencies**: Python 3.14.6, Pytest 8.4.2, Ruff 0.16.1, Django 5.2.16, Node 22.13+, JDK 17,
-  Expo 57.0.16, React Native 0.86.2, Android API 24/36, and real MySQL 8/InnoDB.
+  Expo 57.0.18, React Native 0.86.3, Android API 24/36, and real MySQL 8/InnoDB.
 - **Behavior**:
   - Backend: compile `apps config contracts jobs services tests manage.py`; Ruff check/format;
     dependency, Django, migration, staging, full pytest, Compose, and Docker build checks.
@@ -2244,7 +2244,7 @@
 - **Purpose:** The iOS/Android customer app: eleven Figma-mapped screens plus a distinct Orders tab.
 - **Inputs:** `/api/mobile/v1/`, the OS colour scheme, biometric enrolment, push permission.
 - **Outputs:** Rendered screens, server-validated checkout, deep links back from the payment flow.
-- **Dependencies:** Expo 57.0.16, React Native 0.86.2, React 19.2.3, React Navigation 7,
+- **Dependencies:** Expo 57.0.18, React Native 0.86.3, React 19.2.3, React Navigation 7,
   `expo-dev-client`, `expo-secure-store`, `expo-local-authentication`, and `expo-notifications`.
 - **Behavior:** `src/theme/theme.ts` is the only file containing colour literals (grep-verified).
   Money is never computed on-device. JWTs live only in the OS keychain. `src/api/client.ts`
@@ -2600,7 +2600,7 @@ distribution boundaries (ADR-H-006).
   installed debug application, production bundle exports, or EAS build request.
 - **Errors**: Dependency drift, invalid Expo config, TypeScript/ESLint errors,
   missing Android/iOS toolchain, missing EAS project/signing/environment inputs.
-- **Dependencies**: Expo 57.0.16, React Native 0.86.2, React 19.2.3,
+- **Dependencies**: Expo 57.0.18, React Native 0.86.3, React 19.2.3,
   TypeScript 6.0.3, React Navigation 7, `expo-dev-client`, and Expo modules.
 - **Behavior**: `npm run android`/`ios` are the first native build/install;
   `npm start` explicitly targets the installed development client. Prebuild
@@ -2619,8 +2619,10 @@ distribution boundaries (ADR-H-006).
 - **Accessibility / UX Notes**: Splash hiding is failure-safe when fonts fail;
   fallback fonts keep the app usable. Orders and Notifications are distinct
   destinations with truthful labels.
-- **Verification Status**: The Linux/Android gate passed, and one clean debug APK with
-  compile/minimum/target SDK 36/24/36 rendered on API 24 and API 36 emulators. Native
+- **Verification Status**: The Expo 57.0.18/React Native 0.86.3 Linux gate passed, and a clean
+  debug APK with compile/minimum/target SDK 36/24/36 launched in the development client on the
+  named API 36 emulator. The earlier Expo 57 APK was smoke-tested on API 24 and API 36; the current
+  patch was not re-run on API 24 because that system image is not installed on this low-space host. Native
   Windows/macOS/iOS status is recorded separately;
   an iOS export is not represented as a native iOS compile.
 
@@ -2634,6 +2636,11 @@ bundle → development client → `/api/mobile/v1/`.
   inputs.
 - Any native requirement not expressible in current Expo config needs a versioned
   config plugin; editing ignored generated files is not a durable fix.
+- Expo's current lint preset still bundles `eslint-plugin-react` 7.37.5, which
+  crashes under ESLint 10 despite the preset declaring `eslint >=8.10`. ESLint
+  9.39.5 is therefore retained as the last working line; `expo lint` passes but
+  npm reports that line as unsupported. Re-test ESLint 10 when the Expo preset
+  updates its React plugin/runtime contract.
 
 # Module / File: scripts/wait-for-http.py, scripts/launch-android-emulator.py, scripts/setup-android-emulator.ps1, and .vscode/tasks.json
 
@@ -2698,3 +2705,66 @@ Compose health → Django background task → HTTP readiness → exact AVD boot
   marking that installer path verified.
 - The fixed port intentionally fails if another AVD owns it; the operator must
   identify and stop that emulator rather than letting automation kill it.
+
+# Module / File: templates/admin/login.html, templates/admin/_theme_picker.html, templates/admin/_console_sidebar.html, static/js/console-theme.js, and static/css/console.css
+
+## Purpose
+Provide one responsive, role-aware authentication shell and an explicit,
+persistent light/dark visual system for both MetroDrip web consoles without
+changing their authorization, TOTP, or rate-limit boundaries (ADR-P5-005).
+
+## Public Interfaces
+
+### UI contract: console login and `[data-console-theme]`
+- **Purpose**: Let provisioned Merchant and Administrator staff sign in on a
+  readable phone-to-desktop layout and choose a console color theme before or
+  after authentication.
+- **Inputs**:
+  - `console_label` (`str`): selects role-specific identity and account-provisioning copy.
+  - `site_header` (`str`): accessible login-page heading supplied by the active `AdminSite`.
+  - `ConsoleAuthenticationForm`: email, password, optional TOTP token/device,
+    CSRF token, field/non-field errors, and safe `next` target.
+  - `data-console-theme` (`"light" | "dark"`): requested explicit palette.
+- **Outputs**: Responsive login markup, synchronized `aria-pressed` theme
+  buttons, `html[data-theme]`, `color-scheme`, and a stored explicit browser preference.
+- **Errors**: Authentication failures remain form errors in an assertive live
+  region. Unavailable `localStorage` is caught; the current document still
+  changes theme, but persistence is skipped. Invalid stored values are ignored.
+- **Dependencies**: Django admin base templates, `ConsoleAuthenticationForm`,
+  browser `matchMedia`, `localStorage`, semantic `--c-*` CSS tokens, and the
+  existing role-separated `AdminSite` instances.
+- **Behavior**: The controller reads only `light` or `dark`; otherwise it uses
+  the operating-system preference without storing it. Selecting a button
+  applies and stores the choice, updates all visible selectors, and follows
+  same-origin storage events. Login identifies the active console and states
+  that staff access is provisioned rather than publicly registered. After
+  authentication, the selector remains available in the sidebar.
+- **Side Effects**: May write the non-sensitive string `light` or `dark` to
+  same-origin `localStorage.theme`; it performs no network or account mutation.
+- **Security & Privacy Notes**: Public staff signup was not introduced. CSRF,
+  role checks, rate limiting, password handling, and optional TOTP stay on the
+  existing server form. Login copy never reveals whether a submitted account exists.
+- **Performance / DSA Notes**: Theme synchronization is linear in the number of
+  theme buttons (`O(n)`, currently four at most); no persistent listener is
+  attached per button because click handling is delegated once at `document`.
+- **Accessibility / UX Notes**: Distinct Merchant/Administrator landmarks and
+  headings, labeled theme group, synchronized pressed state, live-region
+  errors, associated OTP help, 44-pixel controls, dual-contrast focus rings,
+  reduced-motion support, and page-level reflow from 320 to 1440 pixels.
+- **Observability Notes**: Browser QA reads `data-theme`, stored preference,
+  pressed states, scroll/clipping metrics, and target dimensions directly from
+  the rendered page.
+- **Verification Status**: Executed on Linux in Django tests, the semantic
+  contrast regression suite, and authenticated headless-Chrome runs for both
+  consoles at 320/390/768/1024/1440 pixels. Lighthouse 13.4.1 measured
+  Accessibility 100 and Best Practices 100 on both login pages. The full
+  evidence and unverified browser/platform gaps are recorded in the completion report.
+
+## Data Flow
+OS preference or stored `theme` → `console-theme.js` validation →
+`html[data-theme]` → semantic CSS tokens → login and authenticated-console
+components; button selection → storage → synchronized storefront/console preference.
+
+## Known Risks / Follow-ups
+- Review the overridden login markup on every Django upgrade.
+- Manual Safari/iOS and Windows high-contrast-mode execution remains a platform follow-up.

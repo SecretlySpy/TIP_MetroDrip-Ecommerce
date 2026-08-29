@@ -268,6 +268,18 @@ The role gets you through the door; the group permissions decide what is in the
 room. Run `sync_console_roles` and reload — do not "fix" it by granting
 superuser, which removes the boundary entirely.
 
+### Console sign-in and colour theme
+
+The Merchant and Administrator sign-in pages share one responsive, accessible
+shell but retain their own role name, route, and purpose. They do not expose a
+staff sign-up link: create staff only through the provisioned-account commands
+above. On the login page, select **Light** or **Dark** in the Theme control.
+After login, the same two-state control appears at the bottom of the sidebar.
+The explicit choice is stored in the browser under the same `theme` preference
+used by the storefront; until a choice is made, the operating-system preference
+is used. Keyboard focus uses a dual-contrast ring, and the complete login flow
+reflows at phone widths without page-level horizontal scrolling.
+
 ### Category hierarchy
 
 Categories support two levels: main categories such as **Hoodies** may have **Men** and **Women**
@@ -522,7 +534,7 @@ Mobile app (section 14), if in scope:
 
 ## 14. Mobile app setup and execution
 
-The customer app lives in `mobile/`: React Native `0.86.2` on Expo SDK `57.0.16`, React `19.2.3`,
+The customer app lives in `mobile/`: React Native `0.86.3` on Expo SDK `57.0.18`, React `19.2.3`,
 TypeScript `6.0.3`, and twelve screen components from one codebase. Eleven correspond to the Figma
 frames; `OrdersScreen` is the fifth tab and is separate from the notification centre. The app
 consumes `/api/mobile/v1/` and carries no credentials of its own. Merchant and Administrator
@@ -576,6 +588,9 @@ Expo configuration or a config plugin, then validate with a clean prebuild. See 
 | Build Tools | 36.0.0 | Installed explicitly in CI and the Windows setup script |
 | `minSdk` | 24 | Android 7.0+; the same clean APK was smoke-tested on API 24 and API 36 |
 | Emulator image | API 36, `google_apis;x86_64` | Named `MetroDrip_Pixel_API36` in repository tasks |
+
+> [!IMPORTANT]
+> **Linux/macOS Build Note:** If the build fails with `AndroidLocationsException: Several environment variables contain different paths`, ensure `ANDROID_PREFS_ROOT` is unset and only `ANDROID_USER_HOME` is used.
 
 The versioned `withAndroidCoreLibraryDesugaring` CNG plugin adds
 `desugar_jdk_libs` 2.0.3 so Java time APIs work on API 24–25; the generated Gradle edit is not made

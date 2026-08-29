@@ -46,6 +46,7 @@ const ALLOWED_UNUSED = new Map([
   ["htmx-swapping", "htmx adds this while swapping"],
   ["sr-only", "accessibility utility; must stay available even when unused"],
   ["skeleton", "applied by the htmx indicator markup at runtime"],
+  ["login", "Django injects this through the admin template bodyclass block"],
   // Pre-existing dead CSS, recorded rather than deleted: both were authored
   // with responsive rules but never applied to any template. Flagged in
   // ADR-P5-003; removing another author's unapplied layout is a separate call.

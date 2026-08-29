@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:8099";
-const WIDTHS = [320, 768, 1024, 1440];
+const WIDTHS = [320, 390, 768, 1024, 1440];
 const PORT = 9222;
 
 // Public storefront routes. Console routes need a session, so they are driven
@@ -36,6 +36,8 @@ const PUBLIC_ROUTES = [
   ["contact", "/contact/"],
   ["login", "/accounts/login/"],
   ["register", "/accounts/register/"],
+  ["admin-login", "/admin/login/"],
+  ["merchant-login", "/merchant/login/"],
   ["developers", "/developers/"],
 ];
 
@@ -233,13 +235,18 @@ async function main() {
   await rpc(socket, "Runtime.enable");
 
   const routes = [...PUBLIC_ROUTES];
+  let failures = 0;
 
   // Console routes need a staff session. Log in through the real form so the
   // measurement reflects what a merchant actually sees.
   const user = process.env.CONSOLE_USER;
   const password = process.env.CONSOLE_PASSWORD;
+  const requestedLoginPath = process.env.CONSOLE_LOGIN_PATH ?? "/merchant/login/";
+  const consoleLoginPath = ["/admin/login/", "/merchant/login/"].includes(requestedLoginPath)
+    ? requestedLoginPath
+    : "/merchant/login/";
   if (user && password) {
-    await navigate(socket, `${BASE}/merchant/login/`);
+    await navigate(socket, `${BASE}${consoleLoginPath}`);
     await rpc(socket, "Runtime.evaluate", {
       awaitPromise: true,
       returnByValue: true,
@@ -253,11 +260,61 @@ async function main() {
       })()`,
     });
     await sleep(1500);
-    routes.push(...CONSOLE_ROUTES);
+    const { result: loginResult } = await rpc(socket, "Runtime.evaluate", {
+      returnByValue: true,
+      expression: `({
+        hasSidebar: Boolean(document.querySelector('.console-sidebar')),
+        path: location.pathname,
+      })`,
+    });
+    const loginPass = loginResult.value.hasSidebar && !loginResult.value.path.endsWith("/login/");
+    if (!loginPass) failures++;
+    console.log(
+      `${loginPass ? "PASS" : "FAIL"}  console session through ${consoleLoginPath} ` +
+      `(landed ${loginResult.value.path})`,
+    );
+    if (loginPass) routes.push(...CONSOLE_ROUTES);
   }
 
   const rows = [];
-  let failures = 0;
+
+  // Two-state console theme contract: both controls apply immediately, persist
+  // across a reload, and keep aria-pressed in sync with the active palette.
+  const themeContractPath = user && password ? consoleLoginPath : "/admin/login/";
+  await navigate(socket, `${BASE}${themeContractPath}`);
+  const themeStateExpression = `(() => ({
+    applied: document.documentElement.dataset.theme,
+    stored: localStorage.getItem('theme'),
+    light: document.querySelector('[data-console-theme="light"]')?.getAttribute('aria-pressed'),
+    dark: document.querySelector('[data-console-theme="dark"]')?.getAttribute('aria-pressed'),
+  }))()`;
+  const { result: lightResult } = await rpc(socket, "Runtime.evaluate", {
+    returnByValue: true,
+    expression: `document.querySelector('[data-console-theme="light"]')?.click(); ${themeStateExpression}`,
+  });
+  await navigate(socket, `${BASE}${themeContractPath}`);
+  const { result: persistedResult } = await rpc(socket, "Runtime.evaluate", {
+    returnByValue: true,
+    expression: themeStateExpression,
+  });
+  const { result: darkResult } = await rpc(socket, "Runtime.evaluate", {
+    returnByValue: true,
+    expression: `document.querySelector('[data-console-theme="dark"]')?.click(); ${themeStateExpression}`,
+  });
+  await rpc(socket, "Runtime.evaluate", { expression: "localStorage.removeItem('theme')" });
+  const theme = {
+    light: lightResult.value,
+    persisted: persistedResult.value,
+    dark: darkResult.value,
+  };
+  const themePass =
+    theme.light.applied === "light" && theme.light.stored === "light" &&
+    theme.light.light === "true" && theme.light.dark === "false" &&
+    theme.persisted.applied === "light" && theme.persisted.stored === "light" &&
+    theme.dark.applied === "dark" && theme.dark.stored === "dark" &&
+    theme.dark.light === "false" && theme.dark.dark === "true";
+  if (!themePass) failures++;
+  console.log(`${themePass ? "PASS" : "FAIL"}  console-theme contract (apply, persist, aria-pressed)`);
 
   for (const [name, path] of routes) {
     for (const width of WIDTHS) {

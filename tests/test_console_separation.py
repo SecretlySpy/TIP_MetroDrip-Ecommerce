@@ -309,6 +309,67 @@ class TestLoginBoundary:
         assert b"Administrator Login" in client.get("/admin/login/").content
         assert b"Merchant Login" in client.get("/merchant/login/").content
 
+    @pytest.mark.parametrize(
+        ("url", "identity", "provisioning_copy"),
+        [
+            (
+                "/admin/login/",
+                b"METRODRIP PLATFORM",
+                b"Administrator access is provisioned internally",
+            ),
+            (
+                "/merchant/login/",
+                b"STORE MANAGEMENT",
+                b"Staff self-registration is disabled",
+            ),
+        ],
+    )
+    def test_console_login_uses_the_responsive_provisioned_account_shell(
+        self, client, url, identity, provisioning_copy
+    ):
+        body = client.get(url).content
+
+        assert b'class="console-auth"' in body
+        assert identity in body
+        assert provisioning_copy in body
+        assert b"Return to storefront" in body
+        assert b'name="username"' in body and b'autocomplete="username"' in body
+        assert b'name="password"' in body and b'autocomplete="current-password"' in body
+        assert b'name="otp_token"' in body and b'autocomplete="one-time-code"' in body
+        assert b'aria-describedby="otp_token_help"' in body
+
+    @pytest.mark.parametrize("url", ["/admin/login/", "/merchant/login/"])
+    def test_console_login_offers_explicit_light_and_dark_modes(self, client, url):
+        body = client.get(url).content
+
+        assert b'data-console-theme="light"' in body
+        assert b'data-console-theme="dark"' in body
+        assert b'role="group" aria-label="Colour theme"' in body
+        assert b"js/console-theme.js" in body
+        assert b"admin/js/theme.js" not in body
+        assert b'name="description" content="Secure staff access to the MetroDrip' in body
+        assert b'href="/static/images/favicon.svg" type="image/svg+xml"' in body
+
+    @pytest.mark.parametrize("url", ["/admin/login/", "/merchant/login/"])
+    def test_console_login_errors_are_announced(self, client, url):
+        response = client.post(url, {"username": "invalid@metrodrip.test", "password": "wrong"})
+
+        assert response.status_code == 200
+        assert b'class="console-auth__errors" role="alert" aria-live="polite"' in response.content
+
+    @pytest.mark.parametrize(
+        ("url", "fixture_name"),
+        [("/admin/", "administrator"), ("/merchant/", "merchant")],
+    )
+    def test_authenticated_consoles_keep_the_theme_picker(self, client, request, url, fixture_name):
+        client.force_login(request.getfixturevalue(fixture_name))
+        body = client.get(url).content
+
+        assert b'data-console-theme="light"' in body
+        assert b'data-console-theme="dark"' in body
+        assert b"js/console-theme.js" in body
+        assert b"admin/js/theme.js" not in body
+
     def test_wrong_console_page_links_to_the_console_the_user_owns(self, client, merchant):
         client.force_login(merchant)
         response = client.get("/admin/login/")

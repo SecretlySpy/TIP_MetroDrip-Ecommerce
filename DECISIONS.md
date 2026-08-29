@@ -340,7 +340,7 @@
   stale Android targets, and application configuration split between generated files and
   `app.json`. Expo Doctor could not prove that changes to the config would reach a build. The 2026
   Android and Apple submission toolchains also moved beyond the checked-in targets.
-- **Decision:** Upgrade to Expo 57.0.16, React Native 0.86.2, React 19.2.3, TypeScript 6.0.3, and
+- **Decision:** Upgrade to Expo 57.0.18, React Native 0.86.3, React 19.2.3, TypeScript 6.0.3, and
   React Navigation 7 under Node 22.13+. Use `expo-dev-client`, not Expo Go. Treat `app.json` and Expo
   config plugins as the durable native source of truth; ignore generated `android/` and `ios/`
   directories and recreate them with clean prebuild. Android compiles/targets API 36 with Build
@@ -348,6 +348,13 @@
   core-library desugaring with `desugar_jdk_libs` 2.0.3 so Java time APIs remain compatible with
   API 24–25. iOS config declares minimum 16.4, local-network and Face ID usage,
   non-exempt-encryption status, and bundle identifier `ph.metrodrip.app`.
+- **Patch alignment (2026-08-29):** The initial Expo 57 baseline was advanced to Expo 57.0.18,
+  React Native 0.86.3, and the module patches reported by `expo install --check`. This is a
+  compatibility patch within the accepted SDK/CNG architecture, not a new platform decision.
+- **Lint compatibility constraint:** `eslint-config-expo` 57.0.2 declares `eslint >=8.10`, but its
+  bundled `eslint-plugin-react` 7.37.5 crashes under ESLint 10.9.1 while loading
+  `react/display-name`. Keep ESLint 9.39.5 until that preset/plugin contract is updated; the
+  unsupported-line npm warning is preferable to a lint command that cannot execute.
 - **Alternatives considered:** Keeping the native directories would preserve direct native editing
   but retain two sources of truth and require manual upgrades. Expo Go would shorten onboarding but
   cannot guarantee this app's native module set or SDK lifecycle. Both were rejected.
@@ -689,7 +696,7 @@
 
 ### Deviation from the brief's design-system table
 
-The brief's 11-token camelCase palette (`onVolt`, `accentText`, `mutedOnDark`) matches **`mobile/src/theme/theme.ts` exactly** but matches neither stylesheet: `console.css` defines 13 `--c-*` tokens and is dark-only with no theme mechanism, `storefront.css` defines 24 `--color-*` tokens. Unifying the prefixes was **not** attempted — it is a rename across two large stylesheets with no behavioural benefit, and the brief scoped this task to presentation defects. Every change here resolves through the tokens that already exist in the file being edited. Zero new colour values were introduced.
+The brief's 11-token camelCase palette (`onVolt`, `accentText`, `mutedOnDark`) matches **`mobile/src/theme/theme.ts` exactly** but matches neither stylesheet: `console.css` defined 13 `--c-*` tokens and ~~was dark-only with no theme mechanism~~ now has an explicit light/dark semantic palette under ADR-P5-005; `storefront.css` defines 24 `--color-*` tokens. Unifying the prefixes was **not** attempted — it is a rename across two large stylesheets with no behavioural benefit, and the brief scoped that audit to presentation defects. Every change in that audit resolved through tokens that already existed in the file being edited; it introduced no new colour values.
 
 ### Verification
 
@@ -710,7 +717,7 @@ The brief's 11-token camelCase palette (`onVolt`, `accentText`, `mutedOnDark`) m
 
 ### The one genuine WCAG failure
 
-`console.css` set the input focus ring to `rgba(212, 255, 63, 0.3)` — volt at 30% alpha, compositing to roughly `#3a4426` on the dark surface, nowhere near the 3:1 SC 1.4.11/2.4.11 require. Being more specific than the global `:focus-visible`, it **suppressed** the compliant indicator, leaving a border-colour change as the only cue. Now full-opacity volt on `:focus-visible`.
+`console.css` set the input focus ring to `rgba(212, 255, 63, 0.3)` — volt at 30% alpha, compositing to roughly `#3a4426` on the dark surface, nowhere near the 3:1 SC 1.4.11/2.4.11 require. Being more specific than the global `:focus-visible`, it **suppressed** the compliant indicator, leaving a border-colour change as the only cue. It was first replaced with full-opacity volt and is now a semantic dual light/dark ring under ADR-P5-005.
 
 ### Measurement beat estimation, repeatedly
 
@@ -843,3 +850,13 @@ A completion plan scanned this repository at commit `958ee53` and listed, as its
 The plan was not careless — it cited real file paths and real ADR numbers. It failed because **this file's own convention made it fail**: superseding decisions are recorded as *new* ADRs, leaving the old entry's status lines intact and still marked "Accepted". A reader following ADR numbers forward finds the correction; a reader searching for a topic finds whichever entry mentions it first.
 
 **The practice this changes:** when an ADR supersedes a specific status claim in an earlier one, strike the claim through *in place* and point at the superseding ADR. The historical record is preserved — struck text is still readable — while the stale claim stops presenting itself as current. Two such corrections were applied retroactively above.
+
+## ADR-P5-005 — Provisioned staff auth shell and explicit console themes
+
+- **Status:** Accepted
+- **Date:** 2026-08-29
+- **Context:** The Merchant and Administrator login pages inherited Django's fixed 28-em card and 100-pixel top margin. At 320 pixels the separately rendered header collided with the form, while desktop branding and inputs were visually generic. Both authenticated consoles were dark-only. Django's stock admin theme controller also stores a third `auto` value under `localStorage.theme`, while the MetroDrip storefront understands only explicit `light` or `dark`; visiting one surface could therefore make the other disagree. Public staff registration remains outside the security model: Merchant and Administrator accounts are created by an authorized operator.
+- **Decision:** Both consoles share one responsive industrial split-panel authentication shell with role-specific identity and provisioned-account guidance. The separate Django header is removed on login only; email, password, TOTP, CSRF, rate-limit, and console-role behavior remains on the existing `ConsoleAuthenticationForm`. A repository-owned two-state controller replaces Django's stock three-state controller for these sites. It follows the operating-system preference until a user selects Light or Dark, then persists only that explicit value and synchronizes every selector's `aria-pressed` state. The selector appears on both login pages and in the authenticated sidebar. Console colors now resolve through semantic dark and light tokens, including distinct readable accent/status text, control borders, overlays, table scroll fades, and a dual-contrast focus ring.
+- **Alternatives considered:** Keeping Django's fixed login template preserved less code but did not meet responsive or identity requirements. Keeping `auto` as a third visible option would reintroduce an incompatible stored value and make the user-approved two-state control ambiguous. Public Merchant/Admin signup was rejected because it changes staff authorization and account approval, not presentation.
+- **Consequences:** The login page is reflow-safe at 320/390/768/1440 pixels and all authored controls remain at least 44 CSS pixels. A stored theme is intentionally shared with the storefront in the same browser. The brand panel stays dark in both modes to preserve console identity; the form and all authenticated workspace surfaces adapt. `templates/admin/login.html` remains an upstream-template override that must be reviewed on a Django upgrade. The new light palette adds maintained color tokens and therefore supersedes ADR-P5-002's historical “dark-only/no new colors” description.
+- **Verification / review trigger:** `tests/test_console_separation.py` covers both identities, provisioned-account copy, field autocomplete/TOTP associations, live-region errors, theme controls, authenticated placement, and removal of Django's conflicting theme script. `tests/test_console_theme_contrast.py` enforces the text and non-text token pairs in both palettes. `scripts/check-responsive.mjs` exercises both login routes and authenticated consoles at 320/390/768/1024/1440 and checks apply/persist/ARIA theme behavior in headless Chrome. Re-run the targeted tests, selector guard, responsive harness, contrast/Lighthouse checks, and manual keyboard/light/dark review whenever Django admin templates or console tokens change.

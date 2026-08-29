@@ -2,7 +2,8 @@
 {% load i18n static %}
 
 {% comment %}
-Overrides Django's admin login only to add the second-factor field (ADR-P3-029).
+Overrides Django's admin login to add the second-factor field (ADR-P3-029) and
+the shared responsive, role-aware authentication shell (ADR-P5-005).
 
 Django's own template renders `username` and `password` by name rather than
 looping the form, so a field added by `ConsoleAuthenticationForm` would never
@@ -12,7 +13,8 @@ else here mirrors the upstream template so the console keeps its usual styling.
 The OTP field is always rendered rather than shown conditionally: the page
 cannot know whether this account is enrolled until credentials are checked, and
 branching on it after a failed attempt would leak which accounts have 2FA.
-Unenrolled users leave it blank and the form ignores it.
+Unenrolled users leave it blank and the form ignores it. Staff signup is not
+offered here because console accounts are provisioned by an authorized operator.
 {% endcomment %}
 
 {% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static "admin/css/login.css" %}">
@@ -20,6 +22,7 @@ Unenrolled users leave it blank and the form ignores it.
 
 {% block bodyclass %}{{ block.super }} login{% endblock %}
 
+{% block header %}{% endblock %}
 {% block usertools %}{% endblock %}
 {% block nav-global %}{% endblock %}
 {% block nav-sidebar %}{% endblock %}
@@ -27,53 +30,109 @@ Unenrolled users leave it blank and the form ignores it.
 {% block nav-breadcrumbs %}{% endblock %}
 
 {% block content %}
-{% if form.errors and not form.non_field_errors %}
-<p class="errornote">
-{% blocktranslate count counter=form.errors.items|length %}Please correct the error below.{% plural %}Please correct the errors below.{% endblocktranslate %}
-</p>
-{% endif %}
-
-{% if form.non_field_errors %}
-{% for error in form.non_field_errors %}
-<p class="errornote">{{ error }}</p>
-{% endfor %}
-{% endif %}
-
-<div id="content-main">
-
-<form action="{{ app_path }}" method="post" id="login-form">{% csrf_token %}
-  <div class="form-row">
-    {{ form.username.errors }}
-    {{ form.username.label_tag }} {{ form.username }}
-  </div>
-  <div class="form-row">
-    {{ form.password.errors }}
-    {{ form.password.label_tag }} {{ form.password }}
-  </div>
-  <div class="form-row">
-    {{ form.otp_token.errors }}
-    {{ form.otp_token.label_tag }} {{ form.otp_token }}
-    <div class="help" id="otp_token_help">
-      {% translate "Leave blank unless a two-factor device is enrolled on your account." %}
+<div class="console-auth" id="content-main">
+  <section class="console-auth__brand" aria-labelledby="console-auth-heading">
+    <div class="console-auth__brand-top">
+      <a href="/" class="console-auth__wordmark" aria-label="MetroDrip storefront">
+        <span>METRO</span><span>DRIP</span>
+      </a>
+      {% include "admin/_theme_picker.html" %}
     </div>
-    <input type="hidden" name="next" value="{{ next }}">
-  </div>
-  {% if form.fields.otp_device.widget.choices %}
-  <div class="form-row">
-    {{ form.otp_device.errors }}
-    {{ form.otp_device.label_tag }} {{ form.otp_device }}
-  </div>
-  {% endif %}
-  {% url 'admin_password_reset' as password_reset_url %}
-  {% if password_reset_url %}
-  <div class="password-reset-link">
-    <a href="{{ password_reset_url }}">{% translate 'Forgotten your login credentials?' %}</a>
-  </div>
-  {% endif %}
-  <div class="submit-row">
-    <input type="submit" value="{% translate 'Log in' %}">
-  </div>
-</form>
 
+    <div class="console-auth__brand-copy">
+      <p class="console-auth__eyebrow">
+        {% if console_label == "administrator console" %}
+          METRODRIP PLATFORM
+        {% else %}
+          STORE MANAGEMENT
+        {% endif %}
+      </p>
+      <h1 id="console-auth-heading">{{ site_header }}</h1>
+      <p>
+        {% if console_label == "administrator console" %}
+          Govern staff access, platform settings, and the system audit trail from one protected workspace.
+        {% else %}
+          Manage products, inventory, orders, fulfilment, and customer service from your seller workspace.
+        {% endif %}
+      </p>
+    </div>
+
+    <div class="console-auth__route" aria-hidden="true">
+      {% if console_label == "administrator console" %}/ADMIN/{% else %}/MERCHANT/{% endif %}
+    </div>
+    <div class="console-auth__barcode" aria-hidden="true"></div>
+    <a href="/" class="console-auth__storefront-link">&#8592; Return to storefront</a>
+  </section>
+
+  <section class="console-auth__form-panel" aria-labelledby="console-auth-form-heading">
+    <div class="console-auth__form-heading">
+      <p class="console-auth__eyebrow">SECURE STAFF ACCESS</p>
+      <h2 id="console-auth-form-heading">Welcome back</h2>
+      <p>Use the credentials assigned to this console.</p>
+    </div>
+
+    {% if form.errors %}
+      <div class="console-auth__errors" role="alert" aria-live="polite">
+        {% if not form.non_field_errors %}
+          <p class="errornote">
+            {% blocktranslate count counter=form.errors.items|length %}Please correct the error below.{% plural %}Please correct the errors below.{% endblocktranslate %}
+          </p>
+        {% endif %}
+        {% for error in form.non_field_errors %}
+          <p class="errornote">{{ error }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <form action="{{ app_path }}" method="post" id="login-form">
+      {% csrf_token %}
+      <div class="form-row">
+        {{ form.username.errors }}
+        {{ form.username.label_tag }}
+        {{ form.username }}
+      </div>
+      <div class="form-row">
+        {{ form.password.errors }}
+        {{ form.password.label_tag }}
+        {{ form.password }}
+      </div>
+      <div class="form-row">
+        {{ form.otp_token.errors }}
+        {{ form.otp_token.label_tag }}
+        {{ form.otp_token }}
+        <div class="help" id="otp_token_help">
+          {% translate "Leave blank unless a two-factor device is enrolled on your account." %}
+        </div>
+        <input type="hidden" name="next" value="{{ next }}">
+      </div>
+      {% if form.fields.otp_device.widget.choices %}
+        <div class="form-row">
+          {{ form.otp_device.errors }}
+          {{ form.otp_device.label_tag }}
+          {{ form.otp_device }}
+        </div>
+      {% endif %}
+      {% url 'admin_password_reset' as password_reset_url %}
+      {% if password_reset_url %}
+        <div class="password-reset-link">
+          <a href="{{ password_reset_url }}">{% translate 'Forgotten your login credentials?' %}</a>
+        </div>
+      {% endif %}
+      <div class="submit-row">
+        <input type="submit" value="{% translate 'Log in' %}">
+      </div>
+    </form>
+
+    <div class="console-auth__access-note">
+      <span aria-hidden="true">&#9632;</span>
+      <p>
+        {% if console_label == "administrator console" %}
+          Administrator access is provisioned internally. Ask an existing administrator if you need an account.
+        {% else %}
+          Merchant access is provisioned by a MetroDrip administrator. Staff self-registration is disabled.
+        {% endif %}
+      </p>
+    </div>
+  </section>
 </div>
 {% endblock %}

@@ -16,6 +16,17 @@
 
 {% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
 
+{% block responsive %}
+  {{ block.super }}
+  <meta name="description" content="Secure staff access to the MetroDrip {{ console_label }}.">
+  <link rel="icon" href="{% static 'images/favicon.svg' %}" type="image/svg+xml">
+{% endblock %}
+
+{% block dark-mode-vars %}
+  <meta name="color-scheme" content="light dark">
+  <script src="{% static 'js/console-theme.js' %}"></script>
+{% endblock %}
+
 {% block extrastyle %}
   <link rel="stylesheet" href="{% static 'css/console.css' %}">
 {% endblock %}

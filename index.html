@@ -814,10 +814,10 @@
         <li>Alpine.js</li>
         <li>Docker</li>
         <li>Expo SDK 57</li>
-        <li>React Native 0.86.2</li>
+        <li>React Native 0.86.3</li>
       </ul>
       <p class="tagline verification-scope">
-        <b>Guide refreshed 24 August 2026.</b> The Linux and Android instructions are backed by the captured
+        <b>Guide refreshed 29 August 2026.</b> The Linux and Android instructions are backed by the captured
         results beside each step, plus clean APK smoke tests on Android API&nbsp;24 and API&nbsp;36. Windows and
         macOS commands are maintained as equivalent setup paths;
         iOS compilation and App Store submission remain unverified because they require qualifying Apple
@@ -1587,6 +1587,18 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         and shipping fees. A merchant cannot sign into the admin console and vice versa.
       </p>
 
+      <div class="note note--tip">
+        <span class="note__label">Responsive sign-in and an explicit console theme</span>
+        <p>
+          Both staff sign-in pages use the same phone-friendly layout as the storefront while keeping a
+          distinct Merchant or Administrator identity. Choose <strong>Light</strong> or <strong>Dark</strong>
+          on the sign-in page; after sign-in, the same selector is at the bottom of the console sidebar.
+          The choice is saved in this browser and shared with the storefront. Staff accounts are provisioned
+          with <code>create_console_account</code> below&mdash;there is intentionally no public Merchant or
+          Administrator sign-up form.
+        </p>
+      </div>
+
       <p>
         <code>seed_demo</code> loads products only — it does <strong>not</strong> create users. Open a
         <strong>second terminal</strong> in the project folder (leave the server running) and create the
@@ -1790,7 +1802,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
                  loading="lazy" decoding="async" width="1600" height="1075">
             <span class="figure-enlarge">Open full-size</span>
           </a>
-          <figcaption><b>Merchant:</b> <code>/merchant/</code> exposes catalogue, inventory, and order work without administrator account controls.</figcaption>
+          <figcaption><b>Merchant (Dark selected):</b> <code>/merchant/</code> exposes catalogue, inventory, and order work without administrator account controls; Light is available from the sidebar.</figcaption>
         </figure>
         <figure>
           <a class="image-link" href="docs/images/step-08-admin-console.png" target="_blank">
@@ -1799,7 +1811,7 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
                  loading="lazy" decoding="async" width="1600" height="1075">
             <span class="figure-enlarge">Open full-size</span>
           </a>
-          <figcaption><b>Administrator:</b> <code>/admin/</code> is a separate login surface for accounts, roles, and system configuration.</figcaption>
+          <figcaption><b>Administrator (Dark selected):</b> <code>/admin/</code> is a separate login surface for accounts, roles, and system configuration; Light is available from the sidebar.</figcaption>
         </figure>
       </div>
       <a class="back-to-top" href="#guide-navigation">Back to guide navigation ↑</a>
@@ -2100,9 +2112,9 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
       </div>
 
       <p>
-        <code>mobile/</code> holds the <strong>customer app</strong>: React&nbsp;Native&nbsp;0.86.2 and
+        <code>mobile/</code> holds the <strong>customer app</strong>: React&nbsp;Native&nbsp;0.86.3 and
         React&nbsp;19.2.3 on <a href="https://docs.expo.dev/versions/latest/">Expo SDK&nbsp;57</a>
-        (<code>expo</code>&nbsp;<code>~57.0.16</code>), with TypeScript&nbsp;<code>~6.0.3</code>. Its twelve screen
+        (<code>expo</code>&nbsp;<code>~57.0.18</code>), with TypeScript&nbsp;<code>~6.0.3</code>. Its twelve screen
         components target iOS and Android from one codebase. The app talks to the Django server you already have
         running through the <code>/api/mobile/v1/</code> endpoints you can already curl from
         <a href="#verify">Step 9</a>.

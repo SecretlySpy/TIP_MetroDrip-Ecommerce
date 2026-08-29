@@ -97,7 +97,13 @@ class ConsoleAuthenticationForm(OTPAuthenticationFormMixin, AdminAuthenticationF
     otp_token = forms.CharField(
         required=False,
         label="Authentication code",
-        widget=forms.TextInput(attrs={"autocomplete": "one-time-code", "inputmode": "numeric"}),
+        widget=forms.TextInput(
+            attrs={
+                "autocomplete": "one-time-code",
+                "inputmode": "numeric",
+                "aria-describedby": "otp_token_help",
+            }
+        ),
     )
     otp_challenge = forms.CharField(required=False)
 

@@ -1,5 +1,8 @@
 node_modules/
 .expo/
+# Repository-local homes and caches created by Android/Gradle tooling.
+.gradle_home/
+home/
 # Native projects are generated from app.json by Expo CNG.
 android/
 ios/

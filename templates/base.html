@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MetroDrip{% endblock %} — MetroDrip Streetwear</title>
   <meta name="description" content="{% block meta_description %}Metro Manila streetwear — shop tees, hoodies, pants, and outerwear. Free shipping on select orders.{% endblock %}">
+  {% load static %}
+  <link rel="icon" href="{% static 'images/favicon.svg' %}" type="image/svg+xml">
   <meta name="color-scheme" content="light dark">
   <script>
     (function() {
@@ -24,7 +26,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   {# Design system CSS #}
-  {% load static %}
   <link rel="stylesheet" href="{% static 'css/storefront.css' %}">
 
   {% block extra_css %}{% endblock %}
