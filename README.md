@@ -182,6 +182,21 @@ native Android gate additionally runs `npm run prebuild:android` followed by
 
 **Never write `except A, B:`** — use `except (A, B):`. Guarded by `tests/test_source_compiles.py` and the pre-commit `compile-python` hook.
 
+## GitHub Pages guide deployment
+
+The public setup guide is deployed by `.github/workflows/static.yml`. The repository setting must
+remain **Settings → Pages → Build and deployment → Source: GitHub Actions**; no publication branch
+or `/docs` folder is selected. The workflow needs no repository secret and requests its own
+job-scoped permissions: read-only source access while building, then Pages write plus OpenID Connect
+only in the `github-pages` deployment job. The repository-wide Actions default may remain read-only.
+
+The deployment does not upload the repository. It runs
+`python scripts/build-pages-site.py --output .pages-site`, which creates a new artifact containing
+only `index.html` and the PNG/SVG files that the guide references under `docs/images/`. Missing,
+escaping, symlinked, or non-image references fail before deployment. Pushes to `main` redeploy only
+when the guide, its public images, the builder, or the Pages workflow changes; the Actions tab also
+offers a manual `workflow_dispatch` run.
+
 ## Key environment variables
 
 | Variable | Purpose |

@@ -23,6 +23,7 @@ deploy/.env.staging
 .ruff_cache/
 .coverage
 htmlcov/
+.pages-site/
 
 # Local runtime output
 *.log

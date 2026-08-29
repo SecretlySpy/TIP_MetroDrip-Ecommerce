@@ -1,5 +1,6 @@
 node_modules/
 .expo/
+.eslintcache
 # Repository-local homes and caches created by Android/Gradle tooling.
 .gradle_home/
 home/

@@ -2711,6 +2711,75 @@ Expo localhost server → encoded `exp+metrodrip://` URL → installed developme
   helper pins `REACT_NATIVE_PACKAGER_HOSTNAME`; review that compatibility seam with any Expo CLI update.
 - Physical devices must keep the separate LAN-oriented `npm start` workflow.
 
+# Module / File: mobile/package.json, mobile/package-lock.json, and mobile/eslint.config.js
+
+## Purpose
+Provide a reproducible Expo flat-ESLint gate whose TypeScript path resolver is loadable from a clean
+npm installation and whose result cannot be hidden by a stale local cache.
+
+## Public Interfaces
+### Command: `npm run lint`
+- **Purpose**: Run Expo's maintained lint configuration over the mobile source without result caching.
+- **Inputs**: JavaScript/TypeScript sources, `tsconfig.json` aliases, and the locked npm dependency graph.
+- **Outputs**: Exit 0 with no findings, or actionable ESLint diagnostics and a non-zero exit.
+- **Errors**: Missing imports, invalid aliases, rule violations, parser failures, or dependency corruption.
+- **Dependencies**: Expo SDK 57 lint tooling, ESLint 9, TypeScript 6, and pinned direct
+  `eslint-import-resolver-typescript@3.10.1`.
+- **Behavior**: `expo lint --no-cache` resolves the `@/` alias through the root-loadable TypeScript
+  resolver. The direct dependency prevents npm's otherwise valid nested placement from making
+  `eslint-plugin-import` fall back to loading the `typescript` compiler as though it were a resolver.
+- **Side Effects**: None; `.eslintcache` is neither read nor written by the command.
+- **Security & Privacy Notes**: Reads repository source only and emits no environment values.
+- **Performance / DSA Notes**: Linear in linted source size; cache-free execution trades a few seconds
+  for deterministic results.
+- **Verification Status**: Executed 2026-08-30 after `npm ci`; tooling tests, Expo dependency check,
+  Doctor (21/21), TypeScript, and cache-free lint all passed.
+
+## Data Flow
+Locked dependency graph + source files + TypeScript aliases → Expo flat config → TypeScript import
+resolver → ESLint diagnostics and process status.
+
+## Known Risks / Follow-ups
+- Recheck the direct resolver pin when Expo changes `eslint-config-expo` or adopts a newer resolver
+  interface; do not remove it solely because a warm local lint cache appears green.
+
+# Module / File: scripts/build-pages-site.py and .github/workflows/static.yml
+
+## Purpose
+Build and deploy the MetroDrip guide as a minimal GitHub Pages artifact without publishing the
+application repository.
+
+## Public Interfaces
+### Command: `python scripts/build-pages-site.py --output DIRECTORY`
+- **Purpose**: Create a new Pages artifact from the guide and its referenced public visual assets.
+- **Inputs**: `index.html`, local `src`/`href` references, and a path that does not already exist.
+- **Outputs**: A directory containing `index.html` plus referenced PNG/SVG files under
+  `docs/images`, and a printed inventory.
+- **Errors**: Existing output, missing assets, absolute/escaping paths, symlinks, files outside the
+  public image directory, and non-PNG/SVG file types.
+- **Dependencies**: Python 3 standard library only.
+- **Behavior**: Parse the guide, ignore fragments and remote URLs, deduplicate local references,
+  validate every source against the allowlist, then preserve its relative path in the output.
+- **Side Effects**: Creates one new output directory; never overlays or removes an existing path.
+- **Security & Privacy Notes**: The allowlist prevents linked repository files or symlinks from being
+  copied into the public artifact. The Pages workflow grants build and deployment permissions to
+  separate jobs and uses no secret.
+- **Performance / DSA Notes**: O(H + A + B) time for HTML size, asset count, and copied bytes; O(A)
+  path metadata.
+- **Accessibility / UX Notes**: The builder preserves every screenshot, captioned visual reference,
+  favicon, and existing inline diagram in the source guide.
+- **Observability Notes**: Logs the exact artifact file count and relative inventory before upload.
+- **Verification Status**: Executed locally 2026-08-30 against the current guide; targeted builder
+  and guide-structure tests passed. Remote workflow execution is pending the next authenticated push.
+
+## Data Flow
+`index.html` → local-reference parser → path/type/symlink allowlist → `.pages-site` artifact →
+GitHub Pages artifact upload → `github-pages` environment deployment.
+
+## Known Risks / Follow-ups
+- The GitHub repository setting is external state and must remain Source: GitHub Actions. Confirm the
+  public URL and workflow annotations after each Actions major-version update.
+
 # Module / File: scripts/wait-for-http.py, scripts/launch-android-emulator.py, scripts/setup-android-emulator.ps1, and .vscode/tasks.json
 
 ## Purpose

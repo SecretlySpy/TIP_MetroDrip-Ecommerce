@@ -14,7 +14,7 @@
     "ios": "expo run:ios",
     "test:tooling": "node --test ./scripts/*.test.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "expo lint",
+    "lint": "expo lint --no-cache",
     "doctor": "expo-doctor",
     "dependencies:check": "expo install --check",
     "export:android": "expo export --platform android --output-dir dist/android",
@@ -53,6 +53,7 @@
     "@types/react": "~19.2.2",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~57.0.2",
+    "eslint-import-resolver-typescript": "3.10.1",
     "expo-doctor": "^1.19.1",
     "typescript": "~6.0.3"
   },
