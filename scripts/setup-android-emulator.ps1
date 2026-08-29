@@ -279,7 +279,10 @@ Next steps:
   3. Boot the emulator:
        emulator -avd $AvdName
   4. Start the app:
-       cd mobile && npm run android
+       cd mobile && npm run android:emulator
+
+     Later JavaScript-only sessions use:
+       cd mobile && npm run start:android:emulator
 
   In Antigravity: Terminal > Run Task... > "MetroDrip: Full mobile stack"
   does steps 1-4 in one go.

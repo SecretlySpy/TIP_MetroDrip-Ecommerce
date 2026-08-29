@@ -2173,9 +2173,10 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           <title id="toolchaintitle">Which mobile targets and run modes your host operating system allows</title>
           <desc id="toolchaindesc">
             A Windows host can target Android only. A macOS host can target both Android and iOS. A Linux host
-            can target Android only. All three use a development client: install it first with npm run android
-            or npm run ios, then use npm start for the fast JavaScript editing loop. EAS distribution builds
-            additionally need an Expo project, signing credentials, final API URL, and release assets.
+            can target Android only. The named Android emulator uses npm run android colon emulator once and
+            npm run start colon android colon emulator later so its ADB reverse mapping is always restored.
+            Physical devices and iOS retain the LAN-oriented npm start loop. EAS distribution builds additionally
+            need an Expo project, signing credentials, final API URL, and release assets.
           </desc>
 
           <defs>
@@ -2221,11 +2222,11 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           <!-- Ladder of run modes -->
           <rect x="110" y="206" width="500" height="54" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
           <text x="126" y="228" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">1 · Install the dev client once</text>
-          <text x="126" y="248" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">npm run android · npm run ios</text>
+          <text x="126" y="248" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">android:emulator · android(device) · ios</text>
 
           <rect x="110" y="278" width="500" height="54" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
           <text x="126" y="300" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">2 · Daily JavaScript loop</text>
-          <text x="126" y="320" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">npm start — opens the installed dev client</text>
+          <text x="126" y="320" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">start:android:emulator · npm start (device/iOS)</text>
 
           <rect x="110" y="350" width="500" height="54" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
           <text x="126" y="372" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#141414">3 · Signed EAS distribution build</text>
@@ -2248,16 +2249,22 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
           </thead>
           <tbody>
             <tr>
-              <td><strong>First local install</strong></td>
-              <td><code>npm run android</code><br><code>npm run ios</code></td>
-              <td>Node 22.13+, then JDK 17 + Android API 36; or macOS + Xcode 26.4+</td>
-              <td>Generates the native project and installs MetroDrip's development client.</td>
+              <td><strong>Android emulator install</strong></td>
+              <td><code>npm run android:emulator</code></td>
+              <td>Node 22.13+, JDK 17, API 36, and <code>MetroDrip_Pixel_API36</code></td>
+              <td>Builds/installs, restores ADB reverse, and opens localhost Metro explicitly.</td>
             </tr>
             <tr>
-              <td><strong>Daily development</strong></td>
-              <td><code>npm start</code></td>
-              <td>The development client already installed on the selected target</td>
-              <td>Fast TypeScript and UI edits. Rebuild after changing plugins or native configuration.</td>
+              <td><strong>Android emulator daily loop</strong></td>
+              <td><code>npm run start:android:emulator</code></td>
+              <td>The development client already installed on the named AVD</td>
+              <td>Revalidates the AVD and reverse mapping before opening the exact loopback URL.</td>
+            </tr>
+            <tr>
+              <td><strong>Physical device / iOS</strong></td>
+              <td><code>npm start</code> after <code>npm run android</code> or <code>npm run ios</code></td>
+              <td>LAN reachability or the Apple toolchain</td>
+              <td>Keeps the development client's LAN workflow for non-emulator targets.</td>
             </tr>
             <tr>
               <td><strong>EAS distribution</strong></td>
@@ -2273,9 +2280,10 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
         <span class="note__label">Use the development client, not Expo Go</span>
         <p>
           MetroDrip includes native modules for secure storage, local authentication, notifications, and its
-          native splash. Install its own development client with <code>npm run android</code> or
-          <code>npm run ios</code>. <code>npm start</code> then reconnects that installed client; it is not an
-          instruction to install or open Expo Go.
+          native splash. On the named emulator use <code>npm run android:emulator</code> once and
+          <code>npm run start:android:emulator</code> later. Physical devices and iOS use
+          <code>npm run android</code> or <code>npm run ios</code>, then <code>npm start</code>. None of these
+          commands installs or opens Expo Go.
         </p>
         <p>
           The project uses <a href="https://docs.expo.dev/workflow/continuous-native-generation/"><strong>Continuous Native Generation</strong></a>:
@@ -2647,9 +2655,10 @@ npm run lint</code></pre></div>
             First terminal: docker compose up dash d db redis dash dash wait, which is ready when both containers
             report Healthy. Second terminal: the Django server bound to 0.0.0.0 port 8080 with the simulated
             payment provider, ready when it prints Starting development server. Third: the emulator or simulator,
-            ready when the device shows its home screen. Fourth, inside the mobile folder: npm run android for
-            the first native install, or npm start after that development client is installed. It is ready when
-            Metro is waiting on a local port and the MetroDrip app opens. Each step depends on the one before it.
+            ready when the device shows its home screen. Fourth, inside the mobile folder: the named Android
+            emulator uses npm run android colon emulator for the first native install, or npm run start colon
+            android colon emulator later. Physical devices and iOS use their LAN-oriented commands. It is ready
+            when Metro is waiting on a local port and the MetroDrip app opens.
           </desc>
 
           <defs>
@@ -2679,7 +2688,7 @@ npm run lint</code></pre></div>
           <rect x="390" y="190" width="310" height="120" rx="8" fill="#FFFFFF" stroke="#141414" stroke-width="2"/>
           <text x="408" y="216" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#75756E">TERMINAL 4</text>
           <text x="408" y="240" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#141414">The app</text>
-          <text x="408" y="264" font-family="'IBM Plex Mono', monospace" font-size="11" fill="#141414">npm run android · later: npm start</text>
+          <text x="408" y="264" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#141414">android:emulator · later: start:android:emulator</text>
           <text x="408" y="292" font-family="'IBM Plex Mono', monospace" font-size="10" fill="#75756E">wait for: Waiting on http://localhost:8081</text>
 
           <line x1="332" y1="80" x2="384" y2="80" stroke="#141414" stroke-width="2" marker-end="url(#arrow4)"/>
@@ -2785,11 +2794,16 @@ npm run ios -- --device "iPhone 15"   <span class="c"># run on one of them</span
 
       <div class="plat-android">
         <div class="code"><pre><code>cd mobile
-npm run android -- --device MetroDrip_Pixel_API36
+npm run android:emulator
                      <span class="c"># first install, or after native configuration changes</span>
 
 <span class="c"># Later JavaScript-only sessions:</span>
-npm start            <span class="c"># then press `a` to open the installed development client</span></code></pre></div>
+npm run start:android:emulator</code></pre></div>
+        <p>
+          Both commands target only <code>MetroDrip_Pixel_API36</code> on <code>emulator-5554</code>, recreate
+          <code>adb reverse tcp:8081 tcp:8081</code>, and open the exact localhost development-client URL.
+          They do not clear the app's account, cart, or saved launcher history.
+        </p>
       </div>
       <div class="plat-ios">
         <div class="code"><pre><code>cd mobile
@@ -2819,7 +2833,17 @@ npm start</code></pre></div>
 <span class="o">env: load .env</span>
 <span class="o">env: export EXPO_PUBLIC_API_URL</span>
 <span class="o">Starting Metro Bundler</span>
-<span class="o">Waiting on http://localhost:8081</span></code></pre></div>
+<span class="o">Waiting on http://localhost:8081</span>
+<span class="o">Connected MetroDrip_Pixel_API36 to MetroDrip through http://127.0.0.1:8081.</span></code></pre></div>
+
+      <div class="note note--tip plat-android">
+        <span class="note__label">Metro port 8081 and API port 8080 are different paths</span>
+        <p>
+          ADB reverse carries the development bundle from emulator <code>127.0.0.1:8081</code> to host Metro.
+          The running app still calls Django through <code>http://10.0.2.2:8080/api/mobile/v1</code>. Changing
+          one address cannot repair the other.
+        </p>
+      </div>
 
       <div class="note note--tip">
         <span class="note__label">Check the two env lines</span>
@@ -3029,12 +3053,22 @@ npm run lint         <span class="c"># expo lint</span></code></pre></div>
             <tr>
               <td>Expo asks for Expo Go or says no development build is installed</td>
               <td>The MetroDrip development client has not been built for this emulator</td>
-              <td>Run <code>npm run android</code> once. Use <code>npm start</code> only after that native install succeeds.</td>
+              <td>Run <code>npm run android:emulator</code> once, then use <code>npm run start:android:emulator</code>.</td>
+            </tr>
+            <tr>
+              <td><code>Failed to connect to /192.168…:8081</code></td>
+              <td>The launcher reopened a saved LAN URL while Metro listens on localhost, or an emulator restart removed ADB reverse</td>
+              <td>Run <code>npm run start:android:emulator</code>. It restores the mapping and opens the loopback URL without clearing app data.</td>
+            </tr>
+            <tr>
+              <td>Port 8081 is already occupied or incompatible</td>
+              <td>Another project or a LAN-mode Metro process owns the port</td>
+              <td>Stop that process, then rerun the emulator command. MetroDrip refuses to reuse a foreign manifest.</td>
             </tr>
             <tr>
               <td>Edits do not appear, or the bundle looks stale</td>
               <td>Metro's cache</td>
-              <td><code>npm start -- --clear</code> clears it while keeping development-client mode.</td>
+              <td>Stop Metro, then run <code>npm run start:android:emulator -- --clear</code> to preserve the safe emulator transport.</td>
             </tr>
             <tr>
               <td>The emulator helper refuses the reserved port</td>
@@ -3296,7 +3330,7 @@ $env:PAYMENT_PROVIDER="simulated"
 
 <span class="c"># 3. Emulator, then the app (separate terminals).</span>
 &amp; "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd MetroDrip_Pixel_API36 -port 5554
-cd mobile; npm start    <span class="c"># use npm run android for the first install</span></code></pre></div>
+cd mobile; npm run start:android:emulator    <span class="c"># first install: npm run android:emulator</span></code></pre></div>
       </div>
       <div class="only-mac">
         <div class="code"><pre><code><span class="c"># 1. Data containers.</span>
@@ -3317,7 +3351,7 @@ PAYMENT_PROVIDER=simulated .venv/bin/python manage.py runserver 0.0.0.0:8080
 
 <span class="c"># 3. Emulator, then the app (separate terminals).</span>
 $ANDROID_HOME/emulator/emulator -avd MetroDrip_Pixel_API36 -port 5554
-cd mobile &amp;&amp; npm start        <span class="c"># use npm run android for the first install</span></code></pre></div>
+cd mobile &amp;&amp; npm run start:android:emulator <span class="c"># first install: npm run android:emulator</span></code></pre></div>
       </div>
 
       <h3>Full command reference</h3>
@@ -3346,10 +3380,12 @@ cd mobile &amp;&amp; npm start        <span class="c"># use npm run android for 
             <tr><td><code>pytest</code></td><td>Run the full test suite</td></tr>
             <tr><td><code>ruff check .</code></td><td>Lint the code</td></tr>
             <tr><td><code>runserver 0.0.0.0:8080</code></td><td>Serve so an emulator or phone can reach it</td></tr>
-            <tr><td><code>npm start</code> — inside <code>mobile/</code></td><td>Start Metro for the already installed development client</td></tr>
-            <tr><td><code>npm run android</code> / <code>npm run ios</code></td><td>Generate, build, and install the native development client</td></tr>
+            <tr><td><code>npm run android:emulator</code></td><td>Build/install on the named AVD, restore ADB reverse, and open localhost Metro</td></tr>
+            <tr><td><code>npm run start:android:emulator</code></td><td>Reconnect the installed named AVD through verified localhost Metro</td></tr>
+            <tr><td><code>npm start</code></td><td>Start LAN-oriented Metro for a physical device or iOS target</td></tr>
+            <tr><td><code>npm run android</code> / <code>npm run ios</code></td><td>Generate, build, and install on a physical/Apple target</td></tr>
             <tr><td><code>npm run typecheck</code> / <code>npm run lint</code></td><td>App-side quality checks</td></tr>
-            <tr><td><code>npm start -- --clear</code></td><td>Restart the development-client bundler with a cleared cache</td></tr>
+            <tr><td><code>npm run start:android:emulator -- --clear</code></td><td>After stopping Metro, clear its cache while retaining the deterministic emulator connection</td></tr>
             <tr><td><code>adb devices</code></td><td>List attached Android devices and emulators</td></tr>
           </tbody>
         </table>
@@ -3382,8 +3418,9 @@ Phone app (Steps 11-12) — skip if you only need the website:
 [ ] mobile/.env exists and its URL matches where the app will run
 [ ] Django started with runserver 0.0.0.0:8080
 [ ] emulator or simulator booted (adb devices shows "device")
-[ ] first install: npm run android or npm run ios completed
-[ ] later loop: npm start printed "env: load .env" and Metro is waiting
+[ ] named Android AVD: npm run android:emulator completed once
+[ ] later Android AVD loop: npm run start:android:emulator restored ADB reverse and opened MetroDrip
+[ ] physical device / iOS: npm run android or npm run ios completed, then npm start
 [ ] the app opens on the onboarding screen
 [ ] signed-in checkout reaches Paid tracking
 [ ] Home → Notifications shows “Order confirmed”

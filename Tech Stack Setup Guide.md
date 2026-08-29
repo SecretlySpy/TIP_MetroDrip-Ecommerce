@@ -523,8 +523,8 @@ Mobile app (section 14), if in scope:
 [ ] mobile/.env exists and its URL matches the target device
 [ ] Django is bound to 0.0.0.0:8080
 [ ] adb devices shows "device" (Android), or the simulator is booted (iOS)
-[ ] npm run android builds and installs the development client the first time
-[ ] npm start serves later JavaScript-only development-client sessions
+[ ] npm run android:emulator builds/installs and connects the API 36 emulator the first time
+[ ] npm run start:android:emulator serves later emulator JavaScript-only sessions
 [ ] the app renders the splash and Home screens on the API 36 emulator
 [ ] a guest checkout reaches Order Tracking at Paid
 [ ] a signed-in checkout creates "Order confirmed" under Home → bell → Notifications
@@ -555,8 +555,9 @@ emulator setup and its failure modes. This section is the setup and run path onl
 
 | Mode | Command | Requires | Notes |
 |---|---|---|---|
-| First local native build | `npm run android` / `npm run ios` | Node 22.13+, JDK 17/API 36; or macOS/Xcode 26.4+ | CNG generates the ignored native project, installs the development client, and starts Metro |
-| Later JavaScript-only loop | `npm start` | An installed MetroDrip development client | Runs `expo start --dev-client`; it does not target Expo Go |
+| First Android emulator build | `npm run android:emulator` | Node 22.13+, JDK 17/API 36, and the named AVD | Builds/installs, restores ADB reverse, and opens localhost Metro deterministically |
+| Later Android emulator loop | `npm run start:android:emulator` | An installed MetroDrip development client | Revalidates the named AVD and reverse mapping before opening Metro |
+| Physical device / iOS | `npm start` after `npm run android` / `npm run ios` | LAN reachability or the Apple toolchain | Keeps Expo's LAN-oriented development-client behavior; it does not target Expo Go |
 | EAS internal build | `npm run build:android` / `npm run build:ios` | Expo project/account, environment URL, signing credentials, final assets | Profiles exist; external inputs are intentionally absent |
 
 Expo Go is not the supported client. The app uses native modules and `expo-dev-client`; using the
@@ -668,11 +669,12 @@ adb devices                                    # want: "device", not "offline"
 open -a Simulator                              # or let `npm run ios` boot one
 
 # 4. First native build/install
-cd mobile && npm run android
+cd mobile && npm run android:emulator             # named Android AVD
 cd mobile && npm run ios                       # macOS only
 
 # Later JavaScript-only sessions, after the development client is installed
-cd mobile && npm start
+cd mobile && npm run start:android:emulator       # Android AVD
+cd mobile && npm start                            # LAN/physical device or iOS
 ```
 
 Windows PowerShell equivalents for steps 2 and 3:
@@ -697,6 +699,11 @@ env: export EXPO_PUBLIC_API_URL
 Starting Metro Bundler
 Waiting on http://localhost:8081
 ```
+
+For the Android emulator, the launcher additionally reports that it connected
+`MetroDrip_Pixel_API36` through `http://127.0.0.1:8081`. That address works because the command
+recreates `adb reverse tcp:8081 tcp:8081` after every ADB/emulator restart. It deliberately ignores
+saved LAN entries in Expo's development launcher and never clears application data.
 
 If those `env:` lines are absent, `mobile/.env` does not exist and the app falls back to the
 built-in `http://10.0.2.2:8080/api/mobile/v1` — correct for an Android emulator, wrong elsewhere.
@@ -770,8 +777,10 @@ attached.
 | `emulator: command not found` | `PATH` not reloaded | Restart terminal and editor so `ANDROID_HOME` is inherited |
 | `adb devices` empty | Emulator still booting | Wait for the home screen and retry |
 | Emulator hangs on the boot logo | Virtualisation disabled | Enable in BIOS (Windows) or check `kvm-ok` (Linux); or use a device |
-| Expo opens Expo Go or cannot find a development build | The MetroDrip native client has not been installed | Run `npm run android` or, on macOS, `npm run ios` once; use `npm start` afterwards |
-| Stale bundle after edits | Metro cache | `npx expo start -c` |
+| Expo opens Expo Go or cannot find a development build | The MetroDrip native client has not been installed | For the named emulator run `npm run android:emulator`; on macOS run `npm run ios` |
+| “Failed to connect to /192.168…:8081” on the emulator | A saved LAN bundle URL conflicts with localhost Metro, or ADB reverse was lost on restart | Run `npm run start:android:emulator`; it restores the mapping and opens the exact loopback URL without clearing data |
+| Port 8081 is incompatible | Another project or a LAN-mode Metro owns the port | Stop that process and rerun the emulator command; foreign manifests are never reused |
+| Stale bundle after edits | Metro cache | Stop Metro, then run `npm run start:android:emulator -- --clear` on the named emulator |
 | Reserved `emulator-5554` runs a different AVD | Another emulator occupies the task's port | Stop that emulator; rerun the named-emulator helper. It refuses to kill or reuse the wrong AVD |
 | `expo-doctor` reports native/config drift | A generated native directory is present or was edited | Remove only the ignored generated `android/`/`ios/`, then run a clean Expo prebuild; keep durable settings in `app.json` |
 | `400 Bad Request` naming the host, on a device | LAN address not allowed | Usually automatic; otherwise add it in `config/settings/dev.py` |

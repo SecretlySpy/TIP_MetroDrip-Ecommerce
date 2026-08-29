@@ -4,8 +4,9 @@ Antigravity is VS Code-based, so it uses the repository's `.vscode/tasks.json`
 directly. This guide runs the Expo 57 development client against the local
 Django API on the dedicated **`MetroDrip_Pixel_API36`** emulator.
 
-Verified scope on 2026-08-24: Linux host, real API 36 Android AVD, local Django
-API, simulated checkout, and clean-APK render smoke tests on API 24 and API 36.
+Verified scope through 2026-08-30: Linux host, real API 36 Android AVD, local Django
+API, simulated checkout, deterministic Metro reconnect after a cold boot, and clean-APK render
+smoke tests on API 24 and API 36.
 The APK declares compile/minimum/target SDK 36/24/36; a CNG config plugin supplies
 `desugar_jdk_libs` 2.0.3 for Java time APIs on API 24–25. The Windows installer/task path is syntax- and
 contract-checked but has not been executed on Windows in this delivery. Native
@@ -82,8 +83,8 @@ PAYMENT_PROVIDER=simulated .venv/bin/python manage.py runserver 0.0.0.0:8080
 .venv/bin/python scripts/launch-android-emulator.py \
   --avd MetroDrip_Pixel_API36 --port 5554 --timeout 240
 
-# 4. mobile/: first native build and installation
-npm run android -- --device MetroDrip_Pixel_API36
+# 4. mobile/: first native build/install and deterministic Metro connection
+npm run android:emulator
 ```
 
 PowerShell uses:
@@ -94,13 +95,18 @@ $env:PAYMENT_PROVIDER="simulated"
 .\.venv\Scripts\python.exe scripts\launch-android-emulator.py `
   --avd MetroDrip_Pixel_API36 --port 5554 --timeout 240
 Set-Location mobile
-npm run android -- --device MetroDrip_Pixel_API36
+npm run android:emulator
 ```
 
-After the native development client is installed, JavaScript-only sessions use
-`npm start`. It runs `expo start --dev-client`; Expo Go is not part of this
-workflow. Re-run `npm run android` after changing Expo plugins, native settings,
-or native dependencies.
+After the native development client is installed, emulator JavaScript-only sessions use
+`npm run start:android:emulator`. The command validates `emulator-5554`, restores and verifies
+`adb reverse tcp:8081 tcp:8081`, starts localhost Metro, and opens the exact development-client
+URL. Re-run `npm run android:emulator` after changing Expo plugins, native settings, or native
+dependencies. `npm start` is deliberately retained for LAN-connected physical devices.
+
+ADB reverse rules disappear when the emulator or ADB server restarts. Expo's development launcher
+also remembers prior LAN URLs. The emulator commands recreate the rule every time and bypass saved
+history without clearing the app's session, cart, or other data.
 
 ## 3. API address and local-network behavior
 
@@ -156,7 +162,7 @@ build environment.
 | `MetroDrip: Django API (0.0.0.0:8080)` | Runs the device-reachable API with explicit simulated payments |
 | `MetroDrip: Wait for Django API` | Polls `/healthz/ready/` until the database-backed check returns 200 |
 | `MetroDrip: Start and verify Android emulator` | Starts the exact API 36 AVD on port 5554 and waits for full boot |
-| `MetroDrip: Expo on Android` | Builds/installs only on the verified named AVD |
+| `MetroDrip: Expo on Android` | Builds/installs, restores the 8081 reverse mapping, and opens localhost Metro on the verified AVD |
 | `MetroDrip: Full mobile stack` | Executes the complete dependency graph |
 | `MetroDrip: Backend QA` | Runs Ruff and pytest |
 | `MetroDrip: Mobile typecheck` | Runs strict TypeScript checking |
@@ -172,8 +178,10 @@ build environment.
 | `adb` stays `offline` | Guest has not completed boot or virtualisation is unhealthy | Wait; then inspect the emulator window/log. Use a physical device if the host cannot virtualise |
 | App shows the offline banner | API binding/address mismatch | Bind Django to `0.0.0.0:8080` and use `10.0.2.2` in the emulator |
 | `HTTP 400 missing_client_version` | Code bypassed `src/api/client.ts` | Route every mobile API call through the shared client |
-| Metro says no development build is installed | Only the bundler was started | Run `npm run android` once, then return to `npm start` |
-| Bundle is stale | Metro cache | Stop Metro and run `npx expo start --dev-client -c` |
+| “Failed to connect to /192.168…:8081” | The launcher reopened a saved LAN URL while Metro listens on localhost, or an emulator restart removed ADB reverse | Run `npm run start:android:emulator`; do not clear app data |
+| Metro says no development build is installed | Only the bundler was started | Run `npm run android:emulator` once, then use `npm run start:android:emulator` |
+| Bundle is stale | Metro cache | Stop Metro and run `npm run start:android:emulator -- --clear` |
+| Port 8081 belongs to another project or host mode | A foreign or LAN-mode Metro process is already running | Stop that process; the helper refuses to reuse an incompatible manifest |
 | Doctor reports native/config drift | Generated native output is stale or hand-edited | Recreate the ignored native directory with a clean prebuild |
 | Checkout succeeds but Notifications is empty | Purchase was made as a guest | Sign in before checkout; guest notifications are deliberately skipped |
 | Order is absent from `/admin/` | Orders belong to the merchant console | Verify the matching order number under `/merchant/` |

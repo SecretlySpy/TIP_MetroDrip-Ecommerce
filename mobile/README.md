@@ -28,14 +28,16 @@ Tools 36.0.0 (the app's runtime minimum is API 24); for iOS, macOS with Xcode
 ```bash
 npm ci
 cp .env.example .env        # point EXPO_PUBLIC_API_URL at your backend
-npm run android             # first Android build/install
+npm run android:emulator    # first build/install on MetroDrip_Pixel_API36
 # macOS only: npm run ios   # first iOS build/install
 
-# Later JavaScript-only sessions, once the development client is installed:
-npm start
+# Later JavaScript-only Android-emulator sessions:
+npm run start:android:emulator
 ```
 
-`npm start` runs `expo start --dev-client`. Expo Go is not the supported client.
+The emulator commands restore `adb reverse tcp:8081 tcp:8081` and open the exact localhost
+development-client URL, so Expo cannot reopen a saved LAN address by mistake. `npm start` remains
+the LAN-oriented `expo start --dev-client` command for physical devices. Expo Go is not supported.
 Native projects use Continuous Native Generation: `android/` and `ios/` are
 ignored outputs created from `app.json`. Put durable native configuration in
 Expo config or a config plugin, then validate it with a clean prebuild; do not

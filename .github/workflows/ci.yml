@@ -231,6 +231,8 @@ jobs:
           java-version: "17"
       - name: Install dependencies
         run: npm ci
+      - name: Test Android development tooling
+        run: npm run test:tooling
       - name: Verify Expo dependency alignment
         run: npm run dependencies:check
       - name: Expo project diagnostics

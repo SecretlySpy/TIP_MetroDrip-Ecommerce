@@ -361,13 +361,49 @@
 - **Consequences:** Durable native work must be represented in Expo config or a config plugin;
   hand-edits inside generated projects are disposable. CI checks Expo dependency alignment,
   Doctor, typecheck, flat-config lint, Android/iOS exports, clean Android prebuild, and an API 36
-  debug assembly. Local first install uses `npm run android`/`npm run ios`; later JavaScript-only
-  sessions use `npm start` (`expo start --dev-client`). EAS owner/project ID, final API URLs, brand
+  debug assembly. Android-emulator transport is refined by ADR-H-007; physical-device and iOS
+  development retain `npm run android`/`npm run ios` followed by LAN-oriented `npm start`. EAS
+  owner/project ID, final API URLs, brand
   assets, signing/store accounts, and remote-push credentials remain external launch inputs.
 - **Verification / review trigger:** Linux/Android passed the complete mobile gate; one clean debug
   APK (`compileSdk`/`minSdk`/`targetSdk` 36/24/36) rendered on real API 24 and API 36 emulators.
   Native iOS remains unverified until the macOS/iOS checklist in
   `docs/images/README.md` passes; review this ADR on the next Expo SDK or store-target change.
+
+## ADR-H-007 — Deterministic Metro transport for the named Android emulator
+
+- **Status:** Accepted
+- **Date:** 2026-08-30
+- **Context:** Expo's development launcher persists recently opened bundle URLs. The API 36 client
+  contained both `http://192.168.31.232:8081` from a default LAN launch and
+  `http://127.0.0.1:8081` from a localhost launch. Metro was listening only on host loopback, while
+  an emulator restart had removed the ephemeral ADB reverse rule. Reopening the LAN entry therefore
+  failed before React Native or Django loaded. The repository mixed LAN and localhost commands and
+  did not restore or verify bundle transport after a restart.
+- **Decision:** Keep `npm start` LAN-oriented for physical devices. The dedicated
+  `MetroDrip_Pixel_API36` AVD instead uses `npm run android:emulator` for the first build/install and
+  `npm run start:android:emulator` later. A cross-platform Node launcher verifies
+  `emulator-5554`, full boot completion, installed-client state, and
+  `adb reverse tcp:8081 tcp:8081`; it then starts Expo in localhost development-client mode and
+  opens the exact encoded loopback URL. Expo 57's `run:android --no-bundler` still opens a URL and
+  exposes no host flag, so that subprocess receives `REACT_NATIVE_PACKAGER_HOSTNAME=127.0.0.1` and
+  its transient post-install launch also uses the reversed endpoint. An existing port is reused only
+  when its Expo manifest identifies MetroDrip, package `ph.metrodrip.app`, and loopback host mode.
+- **Alternatives considered:** LAN-only Metro remains sensitive to interface changes, firewalls,
+  and persisted addresses. Making generic `npm start` localhost-only would break the intended
+  same-Wi-Fi physical-device workflow. Clearing development-launcher or application data would hide
+  the symptom while discarding customer session/cart state and would not survive the next restart.
+- **Consequences:** ADB reverse is recreated on every emulator command, and saved LAN history is
+  bypassed without deletion. Port 8081 conflicts fail with an actionable message instead of opening
+  the wrong bundle. Metro bundle transport (`127.0.0.1:8081` through ADB reverse) remains separate
+  from the Django API transport (`10.0.2.2:8080`). VS Code/Antigravity uses the deterministic first-
+  install command; physical devices and iOS retain the generic workflow.
+- **Verification / review trigger:** Executed 2026-08-30: 12 Node tooling contracts passed; the
+  persisted-LAN failure was reproduced; a cold API 36 boot began with no reverse mapping; the new
+  command restored `tcp:8081`, refused a foreign manifest, built/installed with a loopback URL, and
+  rendered a clean CNG APK with `MainActivity` resumed and no connection exception. Review if the
+  AVD/serial, Metro port, Expo manifest shape, CLI host semantics, or
+  `REACT_NATIVE_PACKAGER_HOSTNAME` compatibility changes.
 
 ## ADR-E-001 — Courier webhook is signature-verified and fails closed
 

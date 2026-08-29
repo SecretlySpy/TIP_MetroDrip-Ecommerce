@@ -9,7 +9,10 @@
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
+    "android:emulator": "node ./scripts/run-android-emulator.mjs --install",
+    "start:android:emulator": "node ./scripts/run-android-emulator.mjs",
     "ios": "expo run:ios",
+    "test:tooling": "node --test ./scripts/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "doctor": "expo-doctor",

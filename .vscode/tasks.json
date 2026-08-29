@@ -68,9 +68,9 @@
     },
     {
       "label": "MetroDrip: Expo on Android",
-      "detail": "Starts Metro and installs the app only on the verified MetroDrip emulator.",
+      "detail": "Builds/installs on the verified emulator, restores ADB reverse, and opens localhost Metro explicitly.",
       "type": "shell",
-      "command": "npm run android -- --device MetroDrip_Pixel_API36",
+      "command": "npm run android:emulator",
       "options": {
         "cwd": "${workspaceFolder}/mobile",
         "env": { "ANDROID_SERIAL": "emulator-5554" }

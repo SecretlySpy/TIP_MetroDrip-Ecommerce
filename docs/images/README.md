@@ -66,7 +66,9 @@ decoding, a caption, and a full-resolution link.
   are never rendered.
 - **Android:** real `MetroDrip_Pixel_API36` AVD and local API, captured from ADB
   at the device framebuffer's **1080×2400** resolution. The device image is
-  cropped to the screen, not the emulator toolbar or desktop.
+  cropped to the screen, not the emulator toolbar or desktop. Repeat captures use
+  `npm run start:android:emulator`, which restores `adb reverse tcp:8081 tcp:8081` and opens the
+  exact localhost development-client URL; Django remains separate at `10.0.2.2:8080`.
 - **Checkout evidence:** the NCR checkout frame uses a separate fictional
   signed-in capture account so its complete short `.test` email remains legible.
   The Paid tracking, in-app Order confirmed notification, and merchant-console
@@ -107,7 +109,7 @@ Checklist:
 2. Run `scripts\setup-android-emulator.ps1`; verify Platform 36, Build Tools
    36.0.0, and `MetroDrip_Pixel_API36` with a 10 GB data partition.
 3. Run `MetroDrip: Full mobile stack`; verify Compose health, Django readiness,
-   AVD name, `emulator-5554`, and the MetroDrip development client.
+   AVD name, `emulator-5554`, the `tcp:8081` reverse mapping, and the MetroDrip development client.
 4. Run the Windows backend and mobile QA commands from the guide. Capture only
    final success output, not environment values or tokens.
 5. Stop Metro/Django/emulator and use `docker compose down` without `-v`; prove

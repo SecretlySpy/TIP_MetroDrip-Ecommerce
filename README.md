@@ -147,14 +147,15 @@ bash scripts/smoke-services.sh
 cd mobile
 npm ci
 cp .env.example .env                 # EXPO_PUBLIC_API_URL → host API
-npm run android                      # first build/install: Android development client
-# Later JavaScript-only sessions:
-npm start                            # Expo development-client bundler
+npm run android:emulator             # first API 36 emulator build/install + Metro
+# Later emulator JavaScript-only sessions:
+npm run start:android:emulator       # restores ADB reverse and reconnects safely
 ```
 
 Android emulator alias for the host machine: `http://10.0.2.2:8080/api/mobile/v1`.
 The first iOS build is `npm run ios` on macOS with Xcode 26.4+; Apple-side execution has not been
-verified from this Linux workspace. Expo Go is not the supported client.
+verified from this Linux workspace. `npm start` remains the LAN-oriented development-client command
+for physical devices. Expo Go is not the supported client.
 
 Two different purchase checks are intentional:
 

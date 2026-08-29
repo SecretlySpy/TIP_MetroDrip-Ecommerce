@@ -187,3 +187,12 @@ def test_existing_diagrams_remain_in_the_guide() -> None:
         assert labelled_by[1] in parser.svg_desc_ids
     assert '<link rel="icon" href="docs/images/favicon.svg" type="image/svg+xml">' in source
     assert (ROOT / "docs/images/favicon.svg").is_file()
+
+
+def test_android_emulator_guide_uses_the_deterministic_transport_commands() -> None:
+    source, _ = _parse_guide()
+    assert "npm run android:emulator" in source
+    assert "npm run start:android:emulator" in source
+    assert "adb reverse tcp:8081 tcp:8081" in source
+    assert "http://10.0.2.2:8080/api/mobile/v1" in source
+    assert "Failed to connect to /192.168…:8081" in source
