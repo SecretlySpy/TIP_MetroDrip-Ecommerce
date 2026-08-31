@@ -2251,14 +2251,14 @@ uv pip install --python .venv/bin/python -r requirements.txt</code></pre></div>
             <tr>
               <td><strong>Android emulator install</strong></td>
               <td><code>npm run android:emulator</code></td>
-              <td>Node 22.13+, JDK 17, API 36, and <code>MetroDrip_Pixel_API36</code></td>
-              <td>Builds/installs, restores ADB reverse, and opens localhost Metro explicitly.</td>
+              <td>Node 22.13+, JDK 17, API 36, <code>MetroDrip_Pixel_API36</code>, and a ready local API</td>
+              <td>Checks database-backed API readiness, builds/installs, restores ADB reverse, and opens localhost Metro explicitly.</td>
             </tr>
             <tr>
               <td><strong>Android emulator daily loop</strong></td>
               <td><code>npm run start:android:emulator</code></td>
-              <td>The development client already installed on the named AVD</td>
-              <td>Revalidates the AVD and reverse mapping before opening the exact loopback URL.</td>
+              <td>The development client installed on the named AVD and a ready local API</td>
+              <td>Checks API readiness, then revalidates the AVD and reverse mapping before opening the exact loopback URL.</td>
             </tr>
             <tr>
               <td><strong>Physical device / iOS</strong></td>
@@ -2802,7 +2802,13 @@ npm run start:android:emulator</code></pre></div>
         <p>
           Both commands target only <code>MetroDrip_Pixel_API36</code> on <code>emulator-5554</code>, recreate
           <code>adb reverse tcp:8081 tcp:8081</code>, and open the exact localhost development-client URL.
-          They do not clear the app's account, cart, or saved launcher history.
+          Before doing that, they require <code>http://127.0.0.1:8080/healthz/ready/</code> to return
+          <code>{"status":"ok"}</code>. They do not clear the app's account, cart, or saved launcher history.
+        </p>
+        <p>
+          To test the saved-content/offline state intentionally, use
+          <code>npm run start:android:emulator -- --allow-offline</code>. Do not use that flag for a normal
+          full-stack session.
         </p>
       </div>
       <div class="plat-ios">
@@ -3026,9 +3032,14 @@ npm run lint         <span class="c"># expo lint</span></code></pre></div>
           </thead>
           <tbody>
             <tr>
-              <td>The app shows an offline banner</td>
-              <td>It cannot reach Django</td>
-              <td>Bind the server to <code>0.0.0.0:8080</code>; confirm <code>EXPO_PUBLIC_API_URL</code> matches the table in <a href="#mobile-setup">Step 11</a>.</td>
+              <td>The launcher reports <code>MetroDrip API is not ready</code></td>
+              <td>Django or its MySQL dependency is stopped or unready</td>
+              <td>From the repository root run <code>docker compose up -d --wait db redis</code>, start Django on <code>0.0.0.0:8080</code> as printed, then rerun the launcher.</td>
+            </tr>
+            <tr>
+              <td>The app shows an offline banner after <code>--allow-offline</code></td>
+              <td>The bypass was intentional, Django is bound incorrectly, or the API URL targets the wrong host</td>
+              <td>Remove the flag; bind the server to <code>0.0.0.0:8080</code>; confirm <code>EXPO_PUBLIC_API_URL</code> matches the table in <a href="#mobile-setup">Step 11</a>.</td>
             </tr>
             <tr>
               <td><code>HTTP 400 missing_client_version</code></td>
@@ -3380,12 +3391,13 @@ cd mobile &amp;&amp; npm run start:android:emulator <span class="c"># first inst
             <tr><td><code>pytest</code></td><td>Run the full test suite</td></tr>
             <tr><td><code>ruff check .</code></td><td>Lint the code</td></tr>
             <tr><td><code>runserver 0.0.0.0:8080</code></td><td>Serve so an emulator or phone can reach it</td></tr>
-            <tr><td><code>npm run android:emulator</code></td><td>Build/install on the named AVD, restore ADB reverse, and open localhost Metro</td></tr>
-            <tr><td><code>npm run start:android:emulator</code></td><td>Reconnect the installed named AVD through verified localhost Metro</td></tr>
+            <tr><td><code>npm run android:emulator</code></td><td>Require a ready local API, build/install on the named AVD, restore ADB reverse, and open localhost Metro</td></tr>
+            <tr><td><code>npm run start:android:emulator</code></td><td>Require a ready local API and reconnect the installed named AVD through verified localhost Metro</td></tr>
             <tr><td><code>npm start</code></td><td>Start LAN-oriented Metro for a physical device or iOS target</td></tr>
             <tr><td><code>npm run android</code> / <code>npm run ios</code></td><td>Generate, build, and install on a physical/Apple target</td></tr>
             <tr><td><code>npm run typecheck</code> / <code>npm run lint</code></td><td>App-side quality checks</td></tr>
             <tr><td><code>npm run start:android:emulator -- --clear</code></td><td>After stopping Metro, clear its cache while retaining the deterministic emulator connection</td></tr>
+            <tr><td><code>npm run start:android:emulator -- --allow-offline</code></td><td>Bypass only the API readiness gate for an intentional offline-state test</td></tr>
             <tr><td><code>adb devices</code></td><td>List attached Android devices and emulators</td></tr>
           </tbody>
         </table>
@@ -3417,6 +3429,7 @@ Phone app (Steps 11-12) — skip if you only need the website:
 [ ] mobile/ npm ci finished
 [ ] mobile/.env exists and its URL matches where the app will run
 [ ] Django started with runserver 0.0.0.0:8080
+[ ] http://127.0.0.1:8080/healthz/ready/ returns {"status":"ok"}
 [ ] emulator or simulator booted (adb devices shows "device")
 [ ] named Android AVD: npm run android:emulator completed once
 [ ] later Android AVD loop: npm run start:android:emulator restored ADB reverse and opened MetroDrip

@@ -2594,8 +2594,8 @@ distribution boundaries (ADR-H-006).
 ### Scripts: `start`, `android`, `android:emulator`, `start:android:emulator`, `ios`, `test:tooling`, validation, export, prebuild, and build commands
 - **Purpose**: Provide one stable command vocabulary for development, validation,
   native generation, and EAS builds.
-- **Inputs**: Node 22.13+, npm lockfile, public `EXPO_PUBLIC_API_URL`, and the
-  platform toolchain appropriate to the command.
+- **Inputs**: Node 22.13+, npm lockfile, public `EXPO_PUBLIC_API_URL`, the platform toolchain
+  appropriate to the command, and a database-backed ready local API for the default emulator path.
 - **Outputs**: Development-client Metro server, generated native project,
   installed debug application, production bundle exports, or EAS build request.
 - **Errors**: Dependency drift, invalid Expo config, TypeScript/ESLint errors,
@@ -2604,7 +2604,8 @@ distribution boundaries (ADR-H-006).
   TypeScript 6.0.3, React Navigation 7, `expo-dev-client`, and Expo modules.
 - **Behavior**: The named API 36 emulator uses `npm run android:emulator` for its first native
   build/install and `npm run start:android:emulator` later; both implement ADR-H-007's verified
-  loopback transport. `npm run android`/`ios` plus LAN-oriented `npm start` remain available for
+  loopback transport and check Django readiness before launching. `--allow-offline` makes bypassing
+  that API gate explicit for offline-state tests. `npm run android`/`ios` plus LAN-oriented `npm start` remain available for
   physical devices and iOS. Prebuild
   recreates ignored native output from `app.json`. Android pins compile/target
   36, Build Tools 36.0.0, and minimum 24. The versioned
@@ -2623,7 +2624,10 @@ distribution boundaries (ADR-H-006).
   destinations with truthful labels.
 - **Verification Status**: The Expo 57.0.18/React Native 0.86.3 Linux gate passed, and a clean
   debug APK with compile/minimum/target SDK 36/24/36 launched in the development client on the
-  named API 36 emulator. On 2026-08-30 the new emulator scripts also passed 12 Node contracts,
+  named API 36 emulator. On 2026-08-31 the emulator scripts passed 15 Node contracts, including
+  healthy/unready/refused API checks and the explicit offline bypass. The runtime Product screen
+  recovered from its offline state after MySQL/Redis and Django were restored; its catalog request
+  returned HTTP 200 through `10.0.2.2:8080`. Earlier emulator verification also covered
   cold-boot/missing-reverse recovery, foreign-manifest rejection, first-install loopback launch,
   and clean-APK runtime smoke. The earlier Expo 57 APK was smoke-tested on API 24 and API 36; the current
   patch was not re-run on API 24 because that system image is not installed on this low-space host. Native
@@ -2649,21 +2653,26 @@ bundle → development client → `/api/mobile/v1/`.
 # Module / File: mobile/scripts/run-android-emulator.mjs
 
 ## Purpose
-Provide one deterministic Expo development-client transport for the dedicated API 36 Android
-emulator without clearing application data or relying on Expo launcher's persisted LAN history.
+Provide one deterministic Expo development-client transport and API readiness gate for the
+dedicated API 36 Android emulator without clearing application data or relying on Expo launcher's
+persisted LAN history.
 
 ## Public Interfaces
 
-### Command: `npm run android:emulator [-- --clear]`
-- **Purpose**: Build/install the native development client, then connect it to localhost Metro.
+### Command: `npm run android:emulator [-- --clear|--allow-offline]`
+- **Purpose**: Verify the local API, build/install the native development client, then connect it to
+  localhost Metro.
 - **Inputs**: Fully booted `MetroDrip_Pixel_API36` on `emulator-5554`, Android SDK/ADB, installed npm
-  dependencies, optional `--clear` Metro-cache flag.
+  dependencies, ready `http://127.0.0.1:8080/healthz/ready/`, optional `--clear` Metro-cache flag,
+  or explicit `--allow-offline` for an intentional offline-state test.
 - **Outputs**: Installed `ph.metrodrip.app`, verified `tcp:8081` ADB reverse mapping, localhost Expo
   server, and an explicit development-client deep link.
-- **Errors**: Missing/wrong/unbooted AVD, unavailable SDK/Expo, failed native build, failed reverse,
-  or a port 8081 listener whose manifest does not identify MetroDrip loopback mode.
+- **Errors**: Missing/wrong/unbooted AVD, unavailable/unhealthy local API, unavailable SDK/Expo,
+  failed native build, failed reverse, or a port 8081 listener whose manifest does not identify
+  MetroDrip loopback mode.
 - **Dependencies**: Node 22 standard library, local Expo CLI, Android Platform Tools, Expo manifest.
-- **Behavior**: Validate the exact guest → reject incompatible port ownership → establish reverse →
+- **Behavior**: Validate the exact guest → require database-backed API readiness unless explicitly
+  bypassed → reject incompatible port ownership → establish reverse →
   run `expo run:android --no-bundler` with its packager hostname pinned to loopback → re-establish
   reverse → start localhost Metro → open the encoded loopback URL.
 - **Side Effects**: Creates ignored CNG/native build output, installs the debug app, starts Metro,
@@ -2673,23 +2682,27 @@ emulator without clearing application data or relying on Expo launcher's persist
 - **Performance / DSA Notes**: Fixed-size process and manifest checks; time and space are O(1).
 - **Accessibility / UX Notes**: Failures name the unsafe/missing boundary and recovery command;
   application sessions, carts, and launcher history are preserved.
-- **Observability Notes**: Success identifies the exact AVD and loopback origin; conflicts identify
-  port 8081 without dumping another project's manifest.
-- **Verification Status**: Executed 2026-08-30: 12 Node contracts cover script separation, installed
+- **Observability Notes**: Success identifies API readiness, the exact AVD, and the loopback origin;
+  API and port conflicts identify their boundary without dumping sensitive response content or
+  another project's manifest.
+- **Verification Status**: Executed 2026-08-31: 15 Node contracts cover script separation, installed
   client, AVD identity/boot, reverse retention, manifest compatibility, environment/URL encoding,
-  first-install versus JavaScript-only arguments, foreign ports, and cache-clear behavior. Runtime
-  cold boot and first install passed on the real API 36 AVD.
+  first-install versus JavaScript-only arguments, foreign ports, cache-clear behavior, API health
+  semantics, refused readiness, and explicit offline mode. Runtime recovery passed on the real API
+  36 AVD: host readiness returned `{"status":"ok"}`, a versioned catalogue request returned 200,
+  and the Product screen rendered its server-backed product after Retry.
 
-### Command: `npm run start:android:emulator [-- --clear]`
+### Command: `npm run start:android:emulator [-- --clear|--allow-offline]`
 - **Purpose**: Start or reconnect the already-installed development client without rebuilding native
   code.
-- **Inputs**: Same emulator/tooling contract plus installed `ph.metrodrip.app`.
+- **Inputs**: Same emulator/API/tooling contract plus installed `ph.metrodrip.app`.
 - **Outputs**: Verified reverse mapping and MetroDrip opened through `http://127.0.0.1:8081`.
-- **Errors**: Same transport errors plus an actionable first-install requirement when the package is
-  absent.
+- **Errors**: Same API/transport errors plus an actionable first-install requirement when the
+  package is absent.
 - **Dependencies**: Same as the first-install command.
-- **Behavior**: Reuse an existing server only if its Expo manifest matches MetroDrip, package ID,
-  launch-asset origin, and loopback host; otherwise start Expo with
+- **Behavior**: Require API readiness unless `--allow-offline` was supplied. Reuse an existing
+  server only if its Expo manifest matches MetroDrip, package ID, launch-asset origin, and loopback
+  host; otherwise start Expo with
   `--dev-client --localhost --android --port 8081` and open the exact deep link.
 - **Side Effects**: Starts or reuses Metro, restores ADB reverse, and opens the installed client.
 - **Security & Privacy Notes**: Does not clear or inspect application data.
@@ -2698,12 +2711,14 @@ emulator without clearing application data or relying on Expo launcher's persist
 - **Observability Notes**: Distinguishes absent, compatible, and conflicting port states.
 - **Verification Status**: API 36 cold boot started with no reverse mapping; this command restored
   it, reused or started only a compatible loopback Metro, opened `MainActivity`, bundled the clean
-  APK successfully, and produced no connection exception. Emulator access to
-  `10.0.2.2:8080` also succeeded independently.
+  APK successfully, and produced no connection exception. On 2026-08-31 the command accepted the
+  live ready API, reused the compatible Metro process, and reopened the recovered Product screen.
+  Emulator access to `10.0.2.2:8080` also succeeded independently.
 
 ## Data Flow
-ADB device properties + host port 8081 manifest → identity/transport validation → ADB reverse →
-Expo localhost server → encoded `exp+metrodrip://` URL → installed development client.
+ADB device properties + host API readiness → identity/API validation → host port 8081 manifest →
+transport validation → ADB reverse → Expo localhost server → encoded `exp+metrodrip://` URL →
+installed development client → Django through emulator alias `10.0.2.2:8080`.
 
 ## Known Risks / Follow-ups
 - The AVD name, serial, Metro port, scheme, package ID, and Expo manifest shape are intentional fixed

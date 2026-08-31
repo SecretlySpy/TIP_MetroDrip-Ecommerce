@@ -35,9 +35,13 @@ npm run android:emulator    # first build/install on MetroDrip_Pixel_API36
 npm run start:android:emulator
 ```
 
-The emulator commands restore `adb reverse tcp:8081 tcp:8081` and open the exact localhost
-development-client URL, so Expo cannot reopen a saved LAN address by mistake. `npm start` remains
-the LAN-oriented `expo start --dev-client` command for physical devices. Expo Go is not supported.
+The emulator commands first require the host readiness check at
+`http://127.0.0.1:8080/healthz/ready/` to report `{"status":"ok"}`. They then restore
+`adb reverse tcp:8081 tcp:8081` and open the exact localhost development-client URL, so a stopped
+API cannot look like an unexplained offline app and Expo cannot reopen a saved LAN address by
+mistake. Use `npm run start:android:emulator -- --allow-offline` only for an intentional offline-UI
+test. `npm start` remains the LAN-oriented `expo start --dev-client` command for physical devices.
+Expo Go is not supported.
 Native projects use Continuous Native Generation: `android/` and `ios/` are
 ignored outputs created from `app.json`. Put durable native configuration in
 Expo config or a config plugin, then validate it with a clean prebuild; do not

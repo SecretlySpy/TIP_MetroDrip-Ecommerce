@@ -370,10 +370,10 @@
   Native iOS remains unverified until the macOS/iOS checklist in
   `docs/images/README.md` passes; review this ADR on the next Expo SDK or store-target change.
 
-## ADR-H-007 — Deterministic Metro transport for the named Android emulator
+## ADR-H-007 — Deterministic Metro and API readiness for the named Android emulator
 
 - **Status:** Accepted
-- **Date:** 2026-08-30
+- **Date:** 2026-08-31
 - **Context:** Expo's development launcher persists recently opened bundle URLs. The API 36 client
   contained both `http://192.168.31.232:8081` from a default LAN launch and
   `http://127.0.0.1:8081` from a localhost launch. Metro was listening only on host loopback, while
@@ -383,23 +383,31 @@
 - **Decision:** Keep `npm start` LAN-oriented for physical devices. The dedicated
   `MetroDrip_Pixel_API36` AVD instead uses `npm run android:emulator` for the first build/install and
   `npm run start:android:emulator` later. A cross-platform Node launcher verifies
-  `emulator-5554`, full boot completion, installed-client state, and
+  `emulator-5554`, full boot completion, database-backed Django readiness on host port 8080,
+  installed-client state, and
   `adb reverse tcp:8081 tcp:8081`; it then starts Expo in localhost development-client mode and
   opens the exact encoded loopback URL. Expo 57's `run:android --no-bundler` still opens a URL and
   exposes no host flag, so that subprocess receives `REACT_NATIVE_PACKAGER_HOSTNAME=127.0.0.1` and
   its transient post-install launch also uses the reversed endpoint. An existing port is reused only
   when its Expo manifest identifies MetroDrip, package `ph.metrodrip.app`, and loopback host mode.
+  `--allow-offline` is the sole explicit bypass for intentional offline-state testing.
 - **Alternatives considered:** LAN-only Metro remains sensitive to interface changes, firewalls,
   and persisted addresses. Making generic `npm start` localhost-only would break the intended
   same-Wi-Fi physical-device workflow. Clearing development-launcher or application data would hide
   the symptom while discarding customer session/cart state and would not survive the next restart.
+  Automatically owning Docker and Django from the mobile helper would hide process lifecycles and
+  duplicate the existing full-stack editor task, so the helper reports exact recovery commands.
 - **Consequences:** ADB reverse is recreated on every emulator command, and saved LAN history is
   bypassed without deletion. Port 8081 conflicts fail with an actionable message instead of opening
-  the wrong bundle. Metro bundle transport (`127.0.0.1:8081` through ADB reverse) remains separate
-  from the Django API transport (`10.0.2.2:8080`). VS Code/Antigravity uses the deterministic first-
-  install command; physical devices and iOS retain the generic workflow.
-- **Verification / review trigger:** Executed 2026-08-30: 12 Node tooling contracts passed; the
-  persisted-LAN failure was reproduced; a cold API 36 boot began with no reverse mapping; the new
+  the wrong bundle. A stopped or database-unready API now fails before an expensive native build or
+  opaque offline app screen. Metro bundle transport (`127.0.0.1:8081` through ADB reverse) remains
+  separate from the Django API transport (`10.0.2.2:8080`). VS Code/Antigravity uses the
+  deterministic first-install command; physical devices and iOS retain the generic workflow.
+- **Verification / review trigger:** Executed 2026-08-31: 15 Node tooling contracts passed, including
+  ready, unhealthy, and refused API responses plus explicit offline mode. The reported offline state
+  was reproduced with no listener on port 8080; starting healthy data services and Django restored
+  an HTTP 200 catalogue response and the Product screen on the API 36 emulator. Earlier checks also
+  reproduced the persisted-LAN failure; a cold API 36 boot began with no reverse mapping; the
   command restored `tcp:8081`, refused a foreign manifest, built/installed with a loopback URL, and
   rendered a clean CNG APK with `MainActivity` resumed and no connection exception. Review if the
   AVD/serial, Metro port, Expo manifest shape, CLI host semantics, or

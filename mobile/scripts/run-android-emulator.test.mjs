@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
+  API_HEALTH_URL,
   APP_ID,
+  assertApiReady,
   assertDedicatedEmulator,
   assertDevelopmentClientInstalled,
   developmentClientUrl,
@@ -12,8 +14,10 @@ import {
   expoInstallArguments,
   expoStartArguments,
   inspectMetro,
+  inspectApi,
   isCompatibleMetroManifest,
   openDevelopmentClient,
+  parseArguments,
   shouldReuseExistingMetro,
 } from './run-android-emulator.mjs';
 
@@ -183,6 +187,57 @@ test('Metro inspection distinguishes no listener from a foreign listener', async
     fetchImpl: async () => ({ ok: true, json: async () => manifest({ slug: 'foreign' }) }),
   });
   assert.equal(foreign.state, 'conflict');
+});
+
+test('API readiness accepts only the database-backed healthy response', async () => {
+  let requestedUrl;
+  assert.deepEqual(
+    await inspectApi({
+      fetchImpl: async (url) => {
+        requestedUrl = url;
+        return { ok: true, status: 200, json: async () => ({ status: 'ok' }) };
+      },
+    }),
+    { state: 'ready' },
+  );
+  assert.equal(requestedUrl, API_HEALTH_URL);
+
+  assert.deepEqual(
+    await inspectApi({
+      fetchImpl: async () => ({
+        ok: false,
+        status: 503,
+        json: async () => ({ status: 'unavailable' }),
+      }),
+    }),
+    { state: 'unavailable', reason: 'readiness returned HTTP 503' },
+  );
+});
+
+test('API readiness failure names the server startup and intentional-offline paths', async () => {
+  const refused = new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } });
+  await assert.rejects(
+    () => assertApiReady({ fetchImpl: async () => Promise.reject(refused) }),
+    (error) =>
+      error.message.includes('nothing is listening on host port 8080') &&
+      error.message.includes('docker compose up -d --wait db redis') &&
+      error.message.includes('manage.py runserver 0.0.0.0:8080') &&
+      error.message.includes('--allow-offline'),
+  );
+});
+
+test('launcher arguments keep offline mode explicit', () => {
+  assert.deepEqual(parseArguments(['--install']), {
+    install: true,
+    clear: false,
+    allowOffline: false,
+  });
+  assert.deepEqual(parseArguments(['--clear', '--allow-offline']), {
+    install: false,
+    clear: true,
+    allowOffline: true,
+  });
+  assert.throws(() => parseArguments(['--offline']), /Supported:.*--allow-offline/);
 });
 
 test('cache clearing never silently reuses an existing Metro process', () => {

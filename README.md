@@ -153,6 +153,11 @@ npm run start:android:emulator       # restores ADB reverse and reconnects safel
 ```
 
 Android emulator alias for the host machine: `http://10.0.2.2:8080/api/mobile/v1`.
+Both named-emulator commands first require the database-backed host check at
+`http://127.0.0.1:8080/healthz/ready/` to return `{"status":"ok"}`. If Django or its data
+services are stopped, the launcher now fails before opening the app and prints the recovery
+commands. Use `npm run start:android:emulator -- --allow-offline` only when deliberately testing
+the saved-content/offline UI.
 The first iOS build is `npm run ios` on macOS with Xcode 26.4+; Apple-side execution has not been
 verified from this Linux workspace. `npm start` remains the LAN-oriented development-client command
 for physical devices. Expo Go is not the supported client.

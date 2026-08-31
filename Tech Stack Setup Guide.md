@@ -522,6 +522,7 @@ Mobile app (section 14), if in scope:
 [ ] mobile/ npm ci completes
 [ ] mobile/.env exists and its URL matches the target device
 [ ] Django is bound to 0.0.0.0:8080
+[ ] http://127.0.0.1:8080/healthz/ready/ returns {"status":"ok"}
 [ ] adb devices shows "device" (Android), or the simulator is booted (iOS)
 [ ] npm run android:emulator builds/installs and connects the API 36 emulator the first time
 [ ] npm run start:android:emulator serves later emulator JavaScript-only sessions
@@ -555,8 +556,8 @@ emulator setup and its failure modes. This section is the setup and run path onl
 
 | Mode | Command | Requires | Notes |
 |---|---|---|---|
-| First Android emulator build | `npm run android:emulator` | Node 22.13+, JDK 17/API 36, and the named AVD | Builds/installs, restores ADB reverse, and opens localhost Metro deterministically |
-| Later Android emulator loop | `npm run start:android:emulator` | An installed MetroDrip development client | Revalidates the named AVD and reverse mapping before opening Metro |
+| First Android emulator build | `npm run android:emulator` | Node 22.13+, JDK 17/API 36, named AVD, and ready local API | Checks database-backed API readiness, builds/installs, restores ADB reverse, and opens localhost Metro deterministically |
+| Later Android emulator loop | `npm run start:android:emulator` | Installed MetroDrip client and ready local API | Checks API readiness, then revalidates the named AVD and reverse mapping before opening Metro |
 | Physical device / iOS | `npm start` after `npm run android` / `npm run ios` | LAN reachability or the Apple toolchain | Keeps Expo's LAN-oriented development-client behavior; it does not target Expo Go |
 | EAS internal build | `npm run build:android` / `npm run build:ios` | Expo project/account, environment URL, signing credentials, final assets | Profiles exist; external inputs are intentionally absent |
 
@@ -705,6 +706,16 @@ For the Android emulator, the launcher additionally reports that it connected
 recreates `adb reverse tcp:8081 tcp:8081` after every ADB/emulator restart. It deliberately ignores
 saved LAN entries in Expo's development launcher and never clears application data.
 
+Before any build or app launch, both named-emulator commands require
+`http://127.0.0.1:8080/healthz/ready/` to return `{"status":"ok"}`. This distinguishes a stopped
+local API from an app networking defect. If the check fails, start MySQL/Redis and Django using the
+commands printed by the launcher, then rerun it. Only bypass the check when the offline state is the
+test subject:
+
+```bash
+cd mobile && npm run start:android:emulator -- --allow-offline
+```
+
 If those `env:` lines are absent, `mobile/.env` does not exist and the app falls back to the
 built-in `http://10.0.2.2:8080/api/mobile/v1` — correct for an Android emulator, wrong elsewhere.
 
@@ -726,8 +737,9 @@ ownership paths separately rather than implying that a guest order belongs to a 
 | Guest: Continue as guest → product/variant → Cart → Checkout → Pay | Public Order Tracking reaches **Paid**. There is no customer notification or account order because the order has no customer. |
 | Signed in before checkout → product/variant → Cart → Checkout → Pay | Tracking reaches **Paid**; Home → bell → Notifications contains **Order confirmed**; the same order number appears in `/merchant/` → Orders. |
 
-A network error during checkout, or an offline banner anywhere, is almost always the server binding or
-`EXPO_PUBLIC_API_URL`, not the app.
+A network error during checkout, or an offline banner anywhere, usually means the API stopped, its
+database is unready, the server is bound incorrectly, or `EXPO_PUBLIC_API_URL` targets the wrong
+host. The default emulator launcher now checks the first two conditions before opening the app.
 
 ### 14.9 Mobile QA
 
@@ -772,7 +784,8 @@ attached.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Offline banner in the app | Server on `127.0.0.1`, or wrong `EXPO_PUBLIC_API_URL` | Bind `0.0.0.0:8080`; match the address table in 14.5 |
+| Launcher reports `MetroDrip API is not ready` | Django or its MySQL dependency is stopped/unready | From the repository root run `docker compose up -d --wait db redis`, start Django on `0.0.0.0:8080` as printed, and rerun the launcher |
+| Offline banner after using `--allow-offline` | The bypass was intentional, the server is bound to `127.0.0.1`, or `EXPO_PUBLIC_API_URL` is wrong | Remove the flag; bind `0.0.0.0:8080`; match the address table in 14.5 |
 | `HTTP 400 missing_client_version` | A request bypassed the shared client | Route every call through `src/api/client.ts` |
 | `emulator: command not found` | `PATH` not reloaded | Restart terminal and editor so `ANDROID_HOME` is inherited |
 | `adb devices` empty | Emulator still booting | Wait for the home screen and retry |

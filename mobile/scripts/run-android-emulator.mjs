@@ -21,6 +21,7 @@ export const APP_ID = 'ph.metrodrip.app';
 export const METRO_HOST = '127.0.0.1';
 export const METRO_PORT = 8081;
 export const METRO_ORIGIN = `http://${METRO_HOST}:${METRO_PORT}`;
+export const API_HEALTH_URL = 'http://127.0.0.1:8080/healthz/ready/';
 
 const SCRIPT_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const MOBILE_ROOT = resolve(SCRIPT_DIRECTORY, '..');
@@ -183,6 +184,49 @@ export async function inspectMetro({ fetchImpl = fetch, timeoutMs = 800 } = {}) 
   }
 }
 
+export async function inspectApi({ fetchImpl = fetch, timeoutMs = 1_500 } = {}) {
+  try {
+    const response = await fetchImpl(API_HEALTH_URL, {
+      headers: { 'User-Agent': 'MetroDrip-Android-launcher/1' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      return { state: 'unavailable', reason: `readiness returned HTTP ${response.status}` };
+    }
+    const payload = await response.json().catch(() => null);
+    if (payload?.status !== 'ok') {
+      return { state: 'unavailable', reason: 'readiness did not return {"status":"ok"}' };
+    }
+    return { state: 'ready' };
+  } catch (error) {
+    if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
+      return { state: 'unavailable', reason: `readiness timed out after ${timeoutMs}ms` };
+    }
+    if (error?.cause?.code === 'ECONNREFUSED') {
+      return { state: 'unavailable', reason: 'nothing is listening on host port 8080' };
+    }
+    return {
+      state: 'unavailable',
+      reason: `readiness request failed (${error?.message || 'unknown network error'})`,
+    };
+  }
+}
+
+export async function assertApiReady(options = {}) {
+  const api = await inspectApi(options);
+  if (api.state === 'ready') {
+    return;
+  }
+  throw new Error(
+    `MetroDrip API is not ready at ${API_HEALTH_URL}: ${api.reason}.\n` +
+      'From the repository root, start it with:\n' +
+      '  docker compose up -d --wait db redis\n' +
+      '  macOS/Linux: PAYMENT_PROVIDER=simulated .venv/bin/python manage.py runserver 0.0.0.0:8080\n' +
+      '  Windows PowerShell: $env:PAYMENT_PROVIDER="simulated"; .venv\\Scripts\\python.exe manage.py runserver 0.0.0.0:8080\n' +
+      "Use '--allow-offline' only when intentionally testing the app's offline UI.",
+  );
+}
+
 function assertNoMetroConflict(metro) {
   if (metro.state === 'conflict') {
     throw new Error(
@@ -303,22 +347,35 @@ async function waitForMetro(child, timeoutMs = 60_000) {
   throw new Error(`Timed out waiting for MetroDrip on ${METRO_ORIGIN}.`);
 }
 
-function parseArguments(argv) {
-  const allowed = new Set(['--install', '--clear']);
+export function parseArguments(argv) {
+  const allowed = new Set(['--install', '--clear', '--allow-offline']);
   const unknown = argv.filter((argument) => !allowed.has(argument));
   if (unknown.length) {
-    throw new Error(`Unknown option(s): ${unknown.join(', ')}. Supported: --install, --clear.`);
+    throw new Error(
+      `Unknown option(s): ${unknown.join(', ')}. ` +
+        'Supported: --install, --clear, --allow-offline.',
+    );
   }
-  return { install: argv.includes('--install'), clear: argv.includes('--clear') };
+  return {
+    install: argv.includes('--install'),
+    clear: argv.includes('--clear'),
+    allowOffline: argv.includes('--allow-offline'),
+  };
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const { install, clear } = parseArguments(argv);
+  const { install, clear, allowOffline } = parseArguments(argv);
   if (!existsSync(EXPO_CLI)) {
     throw new Error("Expo is not installed. Run 'npm ci' inside mobile/ first.");
   }
 
   const { adb } = assertDedicatedEmulator();
+  if (allowOffline) {
+    console.warn('Skipping the Django readiness gate for an intentional offline-mode test.');
+  } else {
+    await assertApiReady();
+    console.log(`MetroDrip API is ready at ${API_HEALTH_URL}.`);
+  }
   let existingMetro = await inspectMetro();
   assertNoMetroConflict(existingMetro);
 

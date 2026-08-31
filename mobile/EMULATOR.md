@@ -104,6 +104,15 @@ After the native development client is installed, emulator JavaScript-only sessi
 URL. Re-run `npm run android:emulator` after changing Expo plugins, native settings, or native
 dependencies. `npm start` is deliberately retained for LAN-connected physical devices.
 
+Both emulator commands first call the database-backed host readiness URL
+`http://127.0.0.1:8080/healthz/ready/`. If MySQL or Django is unavailable, they stop before
+building or opening the app and print the cross-platform startup commands. To exercise the real
+saved-content/offline state on purpose, bypass only this gate:
+
+```bash
+npm run start:android:emulator -- --allow-offline
+```
+
 ADB reverse rules disappear when the emulator or ADB server restarts. Expo's development launcher
 also remembers prior LAN URLs. The emulator commands recreate the rule every time and bypass saved
 history without clearing the app's session, cart, or other data.
@@ -176,7 +185,8 @@ build environment.
 | AVD is not installed | Name or API image differs | Create/run `MetroDrip_Pixel_API36`; do not silently substitute another AVD |
 | Reserved port has another AVD | `emulator-5554` belongs to a personal device | Stop it yourself; the helper intentionally refuses to kill or reuse it |
 | `adb` stays `offline` | Guest has not completed boot or virtualisation is unhealthy | Wait; then inspect the emulator window/log. Use a physical device if the host cannot virtualise |
-| App shows the offline banner | API binding/address mismatch | Bind Django to `0.0.0.0:8080` and use `10.0.2.2` in the emulator |
+| Launcher says `MetroDrip API is not ready` | Django or its MySQL dependency is stopped/unready | From the repository root run `docker compose up -d --wait db redis`, start Django on `0.0.0.0:8080` as printed, then rerun the emulator command |
+| App shows the offline banner after bypassing the gate | Intentional offline mode, API binding/address mismatch, or wrong target URL | Remove `--allow-offline`; bind Django to `0.0.0.0:8080`; use `10.0.2.2` in the emulator |
 | `HTTP 400 missing_client_version` | Code bypassed `src/api/client.ts` | Route every mobile API call through the shared client |
 | “Failed to connect to /192.168…:8081” | The launcher reopened a saved LAN URL while Metro listens on localhost, or an emulator restart removed ADB reverse | Run `npm run start:android:emulator`; do not clear app data |
 | Metro says no development build is installed | Only the bundler was started | Run `npm run android:emulator` once, then use `npm run start:android:emulator` |
