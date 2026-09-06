@@ -1572,16 +1572,24 @@
   - `real API 36 AVD`: installed MetroDrip development client and ADB framebuffer.
   - `real sanitized command output`: tool, setup, QA, and teardown evidence.
 - **Outputs**: 25 `step-*` PNGs for Steps 1–13, the preserved troubleshooting PNG, four preserved
-  inline SVGs, and an SVG favicon. Legacy `01-` through `08-` screenshots remain unreferenced.
-- **Dependencies**: Linux host, Playwright/browser capture, Android API 36 AVD, ADB, disposable
-  database/services, and lossless PNG processing.
-- **Behavior**: Terminal/tooling captures use the final 1598×918 canvas; browser captures use a 1280×860 viewport
-  at 1.25 scale (1600×1075); Android captures use the raw 1080×2400 framebuffer. Canonical flows
-  run after `seed_demo` and before optional mock fixtures. Signed-in checkout is correlated across
-  Paid tracking, the in-app Order confirmed notification, and the merchant-console order number.
-  Windows/macOS/iOS shots remain explicitly unverified checklist slots and are never fabricated.
-- **Side Effects**: Writes only disposable capture data and browser/device-local state; the capture
-  stack is isolated from the developer's normal database and contains no real personal data.
+  inline SVGs, an SVG favicon, 32 route/state-labelled Android PNGs under `mobile-pages/`, and 65
+  page-labelled browser PNGs under `web-pages/`. Legacy `01-` through `08-` screenshots remain
+  unreferenced.
+- **Dependencies**: Linux host, Playwright/browser capture, Chrome DevTools full-document capture,
+  Android API 36 AVD, ADB, disposable database/services, and lossless PNG processing.
+- **Behavior**: Terminal/tooling captures use the final 1598×918 canvas; numbered guide browser
+  captures use a 1280×860 viewport at 1.25 scale (1600×1075). The separate web-page inventory uses
+  a 1600×1000 viewport and expands both document bounds and fixed-height console scrollers before
+  capture. Android page captures start from the raw 1080×2400 framebuffer; scrollable native pages
+  are overlap-matched through their stable content end and keep each fixed header, app footer, and
+  Android system inset once. The infinite Shop screen uses a visible one-result query because its
+  default 1003-result feed has no finite full-page endpoint. Canonical flows run after `seed_demo`
+  and before optional mock fixtures. Signed-in checkout is correlated across tracking, in-app order
+  notifications, and the merchant-console order number. Windows/macOS/iOS shots remain explicitly
+  unverified checklist slots and are never fabricated.
+- **Side Effects**: Writes disposable guide-capture data, dedicated fictional `.test` page-capture
+  fixtures in the local development database, and browser/device-local state. It contains no real
+  personal data and does not call production payment, shipping, or push services.
 
 # Module / File: tests/
 

@@ -84,6 +84,135 @@ If final capture tooling produces a different intrinsic dimension, update both
 the manifest and the HTML `width`/`height` attributes in the same change. Do not
 stretch an image to fit the nominal sizes above.
 
+## 2026-09-06 complete mobile page capture
+
+The `mobile-pages/` directory is a route-level inventory requested as separate,
+human-readable page files. These images are not replacements for the numbered
+guide evidence above. Their title-case filenames are deliberate so each export
+reads as a page label when shared outside the repository.
+
+| File | Visible page/state |
+|---|---|
+| `mobile-pages/Splash Page.png` | Guest onboarding with Create account, Sign in, and Continue as guest actions |
+| `mobile-pages/Home Page.png` | Online home catalog |
+| `mobile-pages/Shop Page.png` | Online catalog constrained to the finite one-result `Harness Prod` search state |
+| `mobile-pages/Product Detail Page.png` | In-stock product with colour, size, and fit selected |
+| `mobile-pages/Cart Page.png` | Populated cart with server-calculated totals |
+| `mobile-pages/Checkout Page.png` | Guest delivery and payment form |
+| `mobile-pages/Order Tracking Page.png` | Simulated guest order at Paid |
+| `mobile-pages/Notifications Page.png` | Guest notification sign-in state |
+| `mobile-pages/Saved Page.png` | Guest wishlist sign-in state |
+| `mobile-pages/Orders Page.png` | Guest order-history sign-in state |
+| `mobile-pages/Account Page.png` | Guest account state |
+| `mobile-pages/Sign In Page.png` | Sign-in form with no credentials entered |
+| `mobile-pages/Create Account Page.png` | Registration form with no personal data entered |
+| `mobile-pages/Signed In Home Page.png` | Authenticated home with a saved item and unread-notification indicator |
+| `mobile-pages/Signed In Saved Page.png` | Authenticated wishlist with one saved product |
+| `mobile-pages/Signed In Checkout Page.png` | Checkout prefilled from the fictional customer profile |
+| `mobile-pages/Signed In Order Tracking Page.png` | Authenticated simulated order at Delivered, with the complete six-step timeline |
+| `mobile-pages/Signed In Order History Page.png` | Authenticated order history with all three simulated orders |
+| `mobile-pages/Signed In Notifications Page.png` | Full authenticated notification history for the three simulated orders |
+| `mobile-pages/Signed In Account Page.png` | Authenticated account dashboard with order, wishlist, and unread counts |
+
+### Order journey: tracking and history at every step
+
+The `mobile-pages/order-status-steps/` directory follows one authenticated
+simulated order through the complete successful fulfilment journey. Each step
+has two independent captures: the detailed tracking page and the order-history
+list that a signed-in customer sees.
+
+| Journey step | Order Tracking capture | Order History capture | Server state represented |
+|---:|---|---|---|
+| 1. Order placed | `Order Tracking - Order Placed Step.png` | `Order History - Order Placed Step.png` | Order `Pending`; no shipment yet |
+| 2. Payment confirmed | `Order Tracking - Payment Confirmed Step.png` | `Order History - Payment Confirmed Step.png` | Order `Paid`; stock hold consumed |
+| 3. Packed | `Order Tracking - Packed Step.png` | `Order History - Packed Step.png` | Order `Packed`; simulated shipment booked |
+| 4. Shipped | `Order Tracking - Shipped Step.png` | `Order History - Shipped Step.png` | Order `Shipped`; shipment `In Transit` |
+| 5. Out for delivery | `Order Tracking - Out for Delivery Step.png` | `Order History - Out for Delivery Step.png` | Order remains `Shipped`; shipment is `Out for Delivery` |
+| 6. Delivered | `Order Tracking - Delivered Step.png` | `Order History - Delivered Step.png` | Order and shipment both `Delivered` |
+
+The fifth Order History capture intentionally says `Shipped`. `Out for
+Delivery` is a shipment-level checkpoint in the domain model, while the order
+itself remains `Shipped`; the tracking page combines both state machines and
+therefore advances to the fifth step.
+
+### Page-component coverage audit
+
+The code-level audit found 12 components in `mobile/src/screens/`. Every screen
+component has at least one page capture; `AuthScreen` has both of its page
+modes, and credential-dependent destinations have authenticated variants.
+
+| Screen component | Page capture coverage |
+|---|---|
+| `SplashScreen` | `Splash Page.png` |
+| `HomeScreen` | `Home Page.png`, `Signed In Home Page.png` |
+| `ShopScreen` | `Shop Page.png` |
+| `ProductDetailScreen` | `Product Detail Page.png` |
+| `CartScreen` | `Cart Page.png` |
+| `CheckoutScreen` | `Checkout Page.png`, `Signed In Checkout Page.png` |
+| `OrderTrackingScreen` | Guest and signed-in page captures, plus all six journey-step captures above |
+| `NotificationsScreen` | `Notifications Page.png`, `Signed In Notifications Page.png` |
+| `WishlistScreen` | `Saved Page.png`, `Signed In Saved Page.png` |
+| `OrdersScreen` | `Orders Page.png`, `Signed In Order History Page.png`, plus all six history captures above |
+| `AccountScreen` | `Account Page.png`, `Signed In Account Page.png` |
+| `AuthScreen` | `Sign In Page.png`, `Create Account Page.png` |
+
+Reusable UI components are also represented inside these route-level pages:
+
+| Reusable component | Representative full-page capture |
+|---|---|
+| `ProductCard` | Home, Shop, and Signed In Saved |
+| `NavBar` | Home, Shop, Saved, Orders, and Account variants |
+| `StickyBar` | Product Detail, Cart, Checkout, and Order Tracking |
+| `PillButton` | Splash, authentication, empty states, checkout, and tracking |
+| `MicroLabel` and `Mono` | Home, product, cart, checkout, account, and tracking |
+| `EmptyState` | Guest Notifications, Saved, and Orders |
+| `QtyStepper` | Cart |
+| `CardActionPill` | Signed In Saved |
+
+`OfflineBanner` and `LoadingState` are transient state components rather than
+pages. They are deliberately absent from this online page set: the normal
+emulator launch is readiness-gated, and none of these final captures was taken
+from the offline fallback or during an indeterminate load. The exported
+`BarcodeStrip` primitive is not imported by any screen and therefore has no
+routed-page rendering to capture; Splash uses its own screen-local barcode
+motif, which is visible in `Splash Page.png`.
+
+- **Capture environment:** real `MetroDrip_Pixel_API36` Android emulator and
+  live local Django API. ADB framebuffers are **1080 pixels wide**. Long native
+  scroll views were captured to their true content end and stitched while
+  retaining the app header, tab/sticky bar, and Android system inset exactly
+  once; resulting heights range from **2400 to 4356 pixels**.
+- **Infinite-scroll boundary:** the default Shop catalog has 1003 results and
+  can keep loading additional pages, so it has no finite full-page endpoint.
+  `Shop Page.png` uses the visible search `Harness Prod` (one result), making
+  the captured page complete and reproducible rather than arbitrarily truncated.
+- **Transaction evidence:** `Order Tracking Page.png` came from simulated guest
+  order `MD-2026-00006`. The signed-in set uses a separate fictional customer
+  and three simulated orders; order `MD-2026-00009` is shown at Delivered.
+  The twelve journey-step captures follow that same order from Pending through
+  Delivered. All flows use `.test` contact data.
+- **Verification:** all 32 PNG files were decoded and dimension-checked. The 13
+  route-level files, seven authenticated variants, and twelve order-journey
+  captures were reviewed in generated contact sheets. Scroll probes reached a
+  stable end before every stitched file was accepted. No offline banner,
+  loading overlay, keyboard, password, token, or real personal data is visible.
+
+## 2026-09-06 complete web page capture
+
+The separate `web-pages/` collection contains 65 title-labelled desktop PNGs:
+17 storefront/customer pages, one development-only staging preview, 28
+merchant-console pages, and 19 administrator-console pages. Every image is a
+full-document browser capture: the viewport is 1600×1000, while PNG dimensions
+expand to the rendered content bounds. Fixed-height console scrollers are
+expanded for capture so their complete navigation, forms, and table rows are
+present. The collection covers every navigable HTML route, every registered
+console module, representative populated detail pages, both role-boundary
+refusal pages, and the custom order report/documents without replacing the
+numbered setup-guide evidence above.
+
+See [`web-pages/README.md`](web-pages/README.md) for the complete page-to-file
+matrix, capture provenance, security controls, and explicit non-page exclusions.
+
 ## Exact unverified follow-up captures
 
 These slots are intentionally absent and unreferenced. Capture them only on the
