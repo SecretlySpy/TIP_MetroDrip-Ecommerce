@@ -831,3 +831,28 @@ administrator. Once a device is confirmed, the password alone stops working whil
 > test suite. Locally that means per-process, in-memory counting that a restart clears; under several
 > Gunicorn workers the effective limit is roughly the configured value times the worker count. Point
 > `CACHES` at the Redis already running in Compose before treating the numbers as exact.
+
+## Five-schema database update
+
+The alignment branch now defaults to five MySQL databases: `db_identity`,
+`db_catalog`, `db_orders`, `db_fulfillment`, and `db_content`. The old instruction
+`python manage.py migrate` alone is no longer the fresh-install command. Use:
+
+```sh
+python manage.py migrate_service_schemas
+python manage.py validate_service_schemas
+python manage.py validate_service_references
+python manage.py sync_console_roles
+```
+
+Fresh Compose volumes create the standard schemas. Existing volumes are not
+reinitialized automatically. If you already have customers, catalog data or orders,
+follow the [maintenance-window cutover guide](docs/five-schema-alignment.md) before
+switching database mode. The transfer preserves IDs and does not delete the source.
+`DATABASE_LAYOUT=legacy` is available for upgrading/exporting the old database.
+
+If MySQL reports an unknown database, bootstrap the five schemas and grants. If
+it reports a missing trigger or column, run `migrate_service_schemas` against the
+same settings used by the app. If import reports a nonempty target, keep the app
+stopped and inspect the target rather than overwriting it. The guide explains
+backup, import recovery and rollback limits.

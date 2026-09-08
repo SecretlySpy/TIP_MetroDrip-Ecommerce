@@ -3,6 +3,8 @@ interface added in Epic E; manual waybill entry is the launch fallback (FR-7).""
 
 from django.db import models
 
+from apps.core.lifecycle import service_cascade
+
 
 class ShippingZone(models.Model):
     """Zone-based flat shipping rates (D-02). NCR, Luzon, VisMin, etc."""
@@ -29,7 +31,13 @@ class ShipmentStatus(models.TextChoices):
 
 
 class Shipment(models.Model):
-    order = models.OneToOneField("orders.Order", on_delete=models.CASCADE, related_name="shipment")
+    order = models.OneToOneField(
+        "orders.Order",
+        db_constraint=False,
+        db_column="order_ref",
+        on_delete=service_cascade,
+        related_name="shipment",
+    )
     courier = models.CharField(max_length=20, default="jnt")
     waybill_no = models.CharField(max_length=64, blank=True)  # blank until booked/manually entered
     tracking_url = models.URLField(blank=True)
@@ -37,6 +45,23 @@ class Shipment(models.Model):
         max_length=20, choices=ShipmentStatus.choices, default=ShipmentStatus.PENDING
     )
     booked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=[
+                        "pending",
+                        "booked",
+                        "in_transit",
+                        "out_for_delivery",
+                        "delivered",
+                        "failed",
+                    ]
+                ),
+                name="chk_shipment_status",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.order_id} {self.courier} {self.waybill_no or '(no waybill)'}"
@@ -60,4 +85,4 @@ class Shipment(models.Model):
 
             from apps.notifications.push import notify_out_for_delivery
 
-            transaction.on_commit(lambda: notify_out_for_delivery(self))
+            transaction.on_commit(lambda: notify_out_for_delivery(self), using=self._state.db)

@@ -8,6 +8,8 @@ atomic initial seed balances and their matching restock movements.
 
 from django.db import models
 
+from apps.core.lifecycle import service_protect, service_set_null
+
 
 class StockRecord(models.Model):
     """Single-warehouse stock counters for one SKU (variant)."""
@@ -76,9 +78,11 @@ class Reservation(models.Model):
     # operational state, not audit evidence (StockMovement carries the audit).
     order = models.ForeignKey(
         "orders.Order",
+        db_constraint=False,
+        db_column="order_ref",
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=service_set_null,
         related_name="reservations",
     )
     expires_at = models.DateTimeField()
@@ -92,6 +96,10 @@ class Reservation(models.Model):
             models.Index(fields=["status", "expires_at"], name="idx_res_status_expiry"),
         ]
         constraints = [
+            models.CheckConstraint(
+                condition=models.Q(status__in=["active", "committed", "released", "expired"]),
+                name="chk_reservation_status",
+            ),
             # A zero-unit hold is meaningless and would let bad input mask bugs.
             models.CheckConstraint(condition=models.Q(qty__gte=1), name="chk_reservation_qty_min1"),
         ]
@@ -196,7 +204,13 @@ class StockMovement(models.Model):
     delta = models.IntegerField()  # signed: sale −n, restock +n
     reason = models.CharField(max_length=12, choices=MovementReason.choices)
     ref_order = models.ForeignKey(
-        "orders.Order", null=True, blank=True, on_delete=models.PROTECT, related_name="movements"
+        "orders.Order",
+        db_constraint=False,
+        db_column="ref_order_ref",
+        null=True,
+        blank=True,
+        on_delete=service_protect,
+        related_name="movements",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

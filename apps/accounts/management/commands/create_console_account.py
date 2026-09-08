@@ -20,7 +20,7 @@ import os
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import router, transaction
 
 from apps.accounts.models import Customer, StaffRole
 
@@ -57,7 +57,7 @@ class Command(BaseCommand):
         if password is not None:
             self._validate_password(password, email, name)
 
-        with transaction.atomic():
+        with transaction.atomic(using=router.db_for_write(Customer)):
             if account is None:
                 account = Customer.objects.create_user(
                     email=email, password=password, name=name, role=role, is_staff=True

@@ -190,15 +190,14 @@ class TestVariantMatrixGenerator:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.django_db(transaction=True, databases="__all__")
 @patch("django.contrib.admin.ModelAdmin.message_user")
 class TestRefundAtomicity:
-    """A refund that fails mid-loop must leave the order and its stock untouched.
+    """Committed refunds retain retryable intent; Catalog never partly restores.
 
-    The action previously transitioned the order first and then restored each
-    line in a bare loop, so a failure on line 2 of 3 committed the REFUNDED
-    transition and part of the restock. Both assertions below fail against that
-    version, which is what makes them a regression test rather than a
-    restatement of the implementation.
+    Fault injection after a real first-line write proves the Catalog transaction
+    rolls back all stock changes. Replaying the persisted instruction restores
+    once without reversing the already-committed Orders decision.
     """
 
     @staticmethod
@@ -243,6 +242,9 @@ class TestRefundAtomicity:
                 fit=Fit.REGULAR,
             )
             StockRecord.objects.create(variant=variant, qty_on_hand=0, qty_reserved=0)
+            from apps.inventory.models import StockMovement
+
+            StockMovement.objects.create(variant=variant, delta=-1, reason="sale", ref_order=order)
             OrderItem.objects.create(
                 order=order, variant=variant, qty=1, unit_price_snapshot=100_00
             )
@@ -281,13 +283,22 @@ class TestRefundAtomicity:
             model_admin.mark_as_refunded(request, Order.objects.filter(pk=order.pk))
 
         order.refresh_from_db()
-        assert order.status == OrderStatus.PAID, (
-            "order must not stay REFUNDED after a failed restore"
-        )
+        assert order.status == OrderStatus.REFUNDED
+        from apps.orders.models import OutboxMessage, OutboxState
+        from apps.orders.refunds import deliver_refund
+
+        message = OutboxMessage.objects.get(topic="order.restore_stock")
+        assert message.state == OutboxState.PENDING
 
         for variant in variants:
             record = StockRecord.objects.get(variant=variant)
-            assert record.qty_on_hand == 0, f"{variant.sku} was restocked despite the rollback"
+            assert record.qty_on_hand == 0, f"{variant.sku} was partially restocked"
+
+        deliver_refund(message.payload)
+        deliver_refund(message.payload)
+        assert list(
+            StockRecord.objects.filter(variant__in=variants).values_list("qty_on_hand", flat=True)
+        ) == [1, 1, 1]
 
     def test_one_bad_order_does_not_abort_the_rest_of_the_selection(
         self, mock_message_user, request_factory, admin_site
@@ -325,5 +336,5 @@ class TestRefundAtomicity:
 
         bad_order.refresh_from_db()
         good_order.refresh_from_db()
-        assert bad_order.status == OrderStatus.PAID
+        assert bad_order.status == OrderStatus.REFUNDED
         assert good_order.status == OrderStatus.REFUNDED, "the healthy order was skipped"

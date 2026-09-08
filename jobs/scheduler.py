@@ -56,8 +56,13 @@ def drain_outbox_messages():
     """
     close_old_connections()
     try:
+        from django.db import connections
+
+        from apps.core.lifecycle import drain_service_events
         from apps.orders.outbox import drain_outbox
 
+        for alias in connections:
+            drain_service_events(alias)
         delivered, failed = drain_outbox()
         if delivered or failed:
             logger.info("Outbox drained: %d delivered, %d failed.", delivered, failed)

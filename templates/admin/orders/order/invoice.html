@@ -60,9 +60,9 @@
         <tbody>
             {% for item in order.items.all %}
             <tr>
-                <td>{{ item.variant.product.name }}</td>
-                <td>{{ item.variant.sku }}</td>
-                <td>{{ item.variant.get_size_display }}, {{ item.variant.color }}</td>
+                <td>{{ item.product_name_snapshot }}</td>
+                <td>{{ item.sku_snapshot }}</td>
+                <td>{{ item.get_size_display }}, {{ item.color_snapshot }}</td>
                 <td class="right">{{ item.qty }}</td>
                 <td class="right">{{ item.unit_price_snapshot|centavos_to_peso }}</td>
                 <td class="right">{{ item.line_total|centavos_to_peso }}</td>

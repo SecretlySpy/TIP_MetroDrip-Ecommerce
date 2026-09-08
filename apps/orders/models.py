@@ -7,6 +7,8 @@ reject normal ORM bypasses. Money fields are integer centavos (Hard Invariant 2)
 from django.conf import settings
 from django.db import models, transaction
 
+from apps.core.lifecycle import service_protect, service_set_null
+
 
 class OrderStatus(models.TextChoices):
     PENDING = "pending", "Pending"
@@ -98,9 +100,11 @@ class Order(models.Model):
     # destroys the commercial record.
     customer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
+        db_constraint=False,
+        db_column="customer_ref",
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        on_delete=service_set_null,
         related_name="orders",
     )
     status = models.CharField(
@@ -120,6 +124,20 @@ class Order(models.Model):
     class Meta:
         ordering = ["-created_at"]
         constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=[
+                        "pending",
+                        "paid",
+                        "packed",
+                        "shipped",
+                        "delivered",
+                        "cancelled",
+                        "refunded",
+                    ]
+                ),
+                name="chk_order_status",
+            ),
             # Persisted totals must reconcile exactly in integer centavos.
             models.CheckConstraint(
                 condition=models.Q(total=models.F("subtotal") + models.F("shipping_fee")),
@@ -202,20 +220,81 @@ class Order(models.Model):
         return self
 
 
+SNAPSHOT_FIELDS = frozenset(
+    {
+        "product_ref",
+        "sku_snapshot",
+        "product_name_snapshot",
+        "product_slug_snapshot",
+        "size_snapshot",
+        "color_snapshot",
+        "fit_snapshot",
+        "image_url_snapshot",
+        "unit_price_snapshot",
+        "snapshot_source",
+        "variant",
+        "variant_id",
+        "order",
+        "order_id",
+        "qty",
+    }
+)
+
+
+class OrderItemQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if SNAPSHOT_FIELDS.intersection(kwargs):
+            raise ValueError("Purchased order lines are immutable.")
+        return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if SNAPSHOT_FIELDS.intersection(fields):
+            raise ValueError("Purchased order lines are immutable.")
+        return super().bulk_update(objs, fields, batch_size=batch_size)
+
+    def bulk_create(self, objs, **kwargs):
+        if kwargs.get("update_conflicts"):
+            raise ValueError("Purchased order lines cannot be overwritten on conflict.")
+        objs = list(objs)
+        for obj in objs:
+            obj.capture_snapshot()
+        return super().bulk_create(objs, **kwargs)
+
+
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     # PROTECT: a variant that has ever been sold must never be hard-deleted,
     # or order history and the movement ledger lose their reference.
     variant = models.ForeignKey(
-        "catalog.ProductVariant", on_delete=models.PROTECT, related_name="order_items"
+        "catalog.ProductVariant",
+        db_constraint=False,
+        db_column="variant_ref",
+        on_delete=service_protect,
+        related_name="order_items",
     )
     qty = models.PositiveIntegerField()
     # Price at purchase time (centavos) — later catalog edits must not rewrite
     # historical orders.
     unit_price_snapshot = models.PositiveIntegerField()
 
+    product_ref = models.BigIntegerField(db_index=True)
+    sku_snapshot = models.CharField(max_length=64)
+    product_name_snapshot = models.CharField(max_length=200)
+    product_slug_snapshot = models.CharField(max_length=220, blank=True)
+    size_snapshot = models.CharField(max_length=4)
+    color_snapshot = models.CharField(max_length=40)
+    fit_snapshot = models.CharField(max_length=10)
+    image_url_snapshot = models.URLField(max_length=2048, blank=True)
+    snapshot_source = models.CharField(max_length=16, default="checkout")
+
+    objects = OrderItemQuerySet.as_manager()
+
     class Meta:
         constraints = [
+            models.CheckConstraint(
+                condition=models.Q(snapshot_source__in=["checkout", "legacy_catalog"]),
+                name="chk_snapshot_source",
+            ),
             models.CheckConstraint(condition=models.Q(qty__gte=1), name="chk_order_item_qty_gte_1"),
             # The cart merges duplicate lines; one row per SKU per order.
             models.UniqueConstraint(fields=["order", "variant"], name="uniq_order_line"),
@@ -223,6 +302,42 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"{self.order_id} × {self.variant_id} ({self.qty})"
+
+    def save(self, *args, **kwargs):
+        if self._state.adding:
+            self.capture_snapshot()
+        else:
+            original = type(self).objects.get(pk=self.pk)
+            for name in SNAPSHOT_FIELDS - {"variant", "order"}:
+                if getattr(original, name) != getattr(self, name):
+                    raise ValueError("Purchased order lines are immutable.")
+        return super().save(*args, **kwargs)
+
+    def capture_snapshot(self):
+        """Freeze the purchased identity once, never recalculate on reads."""
+        if self.sku_snapshot and self.product_name_snapshot and self.product_ref:
+            return
+        variant = self.variant
+        product = variant.product
+        self.product_ref = product.pk
+        self.sku_snapshot = variant.sku
+        self.product_name_snapshot = product.name
+        self.product_slug_snapshot = product.slug
+        self.size_snapshot = variant.size
+        self.color_snapshot = variant.color
+        self.fit_snapshot = variant.fit
+        self.image_url_snapshot = (product.images or [""])[0]
+        self.snapshot_source = "checkout"
+
+    def get_size_display(self):
+        from apps.catalog.models import Size
+
+        return dict(Size.choices).get(self.size_snapshot, self.size_snapshot)
+
+    def get_fit_display(self):
+        from apps.catalog.models import Fit
+
+        return dict(Fit.choices).get(self.fit_snapshot, self.fit_snapshot)
 
     @property
     def line_total(self):
@@ -302,6 +417,12 @@ class StockHold(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(state__in=["active", "committed", "released", "unknown"]),
+                name="chk_hold_state",
+            ),
+        ]
         indexes = [
             # The reconciliation query: holds that need a human or a retry.
             models.Index(fields=["state", "expires_at"], name="idx_hold_state_expiry"),
@@ -356,6 +477,11 @@ class OutboxMessage(models.Model):
     sent_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(state__in=["pending", "sent", "dead"]), name="chk_outbox_state"
+            ),
+        ]
         indexes = [
             # The poller's only query.
             models.Index(fields=["state", "next_attempt_at"], name="idx_outbox_ready"),

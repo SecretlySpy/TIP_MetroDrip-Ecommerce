@@ -3,14 +3,15 @@ import enum
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     CheckConstraint,
     Column,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     String,
 )
+from sqlalchemy.dialects.mysql import INTEGER
 
 from .database import Base
 
@@ -48,10 +49,11 @@ class StockRecord(Base):
 
     # We don't have the catalog ProductVariant model here, so we store the variant_id
     # directly as an integer.
-    variant_id = Column(Integer, primary_key=True, autoincrement=False)
-    qty_on_hand = Column(Integer, default=0, nullable=False)
-    qty_reserved = Column(Integer, default=0, nullable=False)
-    low_stock_threshold = Column(Integer, default=5, nullable=False)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    variant_id = Column(BigInteger, unique=True, nullable=False)
+    qty_on_hand = Column(INTEGER(unsigned=True), default=0, nullable=False)
+    qty_reserved = Column(INTEGER(unsigned=True), default=0, nullable=False)
+    low_stock_threshold = Column(INTEGER(unsigned=True), default=5, nullable=False)
 
     @property
     def available(self):
@@ -66,11 +68,9 @@ class Reservation(Base):
         table_args,
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    variant_id = Column(
-        Integer, ForeignKey("inventory_stockrecord.variant_id", ondelete="RESTRICT"), nullable=False
-    )
-    qty = Column(Integer, nullable=False)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    variant_id = Column(BigInteger, nullable=False)
+    qty = Column(INTEGER(unsigned=True), nullable=False)
     status = Column(String(9), default=ReservationStatus.ACTIVE.value, nullable=False)
     session_key = Column(String(64), default="", nullable=False)
     # The caller's identity for this hold group. Every mutation addresses a
@@ -80,7 +80,7 @@ class Reservation(Base):
 
     # order_id carries no foreign key: Orders is a separate bounded context and
     # the link is owned by its StockHold row, not by this table.
-    order_id = Column(Integer, nullable=True)
+    order_id = Column("order_ref", BigInteger, nullable=True)
 
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(
@@ -98,13 +98,11 @@ class StockMovement(Base):
     # Django owns this DDL (chk_movement_reason_delta); nothing is declared here.
     __table_args__ = (table_args,)
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    variant_id = Column(
-        Integer, ForeignKey("inventory_stockrecord.variant_id", ondelete="RESTRICT"), nullable=False
-    )
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    variant_id = Column(BigInteger, nullable=False)
     reason = Column(String(12), nullable=False)
     delta = Column(Integer, nullable=False)
-    ref_order_id = Column(Integer, nullable=True)
+    ref_order_id = Column("ref_order_ref", BigInteger, nullable=True)
     created_at = Column(
         DateTime, default=lambda: datetime.datetime.now(datetime.UTC), nullable=False
     )

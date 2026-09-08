@@ -2930,3 +2930,35 @@ components; button selection → storage → synchronized storefront/console pre
 ## Known Risks / Follow-ups
 - Review the overridden login markup on every Django upgrade.
 - Manual Safari/iOS and Windows high-contrast-mode execution remains a platform follow-up.
+
+## Five-schema alignment (ADR-DB-001)
+
+```yaml
+scope: five logical schemas; Figma REF semantics; immutable order history; complete ERD
+branch: codex/align-five-schema-erd
+pull_request: https://github.com/SecretlySpy/TIP_MetroDrip-Ecommerce/pull/4
+figma_file: SmJIlTZ9ZVRxQ5eKucmrd0
+figma_page: '31:2'
+figma_aligned_board: '333:2'
+source_commit: e9da6788e3abc639a6b614c85c7e5dda3f1a5cb2
+contract: docs/five-schema-alignment.md
+verification: docs/five-schema-alignment-progress.md
+schema_aliases:
+  identity: db_identity
+  catalog: db_catalog
+  default: db_orders
+  fulfillment: db_fulfillment
+  content: db_content
+migration_command: python manage.py migrate_service_schemas
+metadata_check: python manage.py validate_service_schemas
+reference_check: python manage.py validate_service_references
+legacy_mode: DATABASE_LAYOUT=legacy
+production_migrated: false
+```
+
+Read the cutover guide before running the new default on an existing deployment.
+The app router preserves cross-owner Python references while SQL FKs remain local.
+All on-commit stock effects must use a durable Orders outbox instruction; never
+assume `transaction.atomic()` can roll back Catalog or Identity. ServiceEvent is
+replicated physically in every schema, and its queries must specify the source
+alias. Legacy snapshots are marked `legacy_catalog`; do not recalculate them.

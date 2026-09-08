@@ -92,3 +92,8 @@ def get_stock_records(variant_ids):
     trip each, so a loop over it is a per-request fan-out.
     """
     return _provider().get_stock_records(variant_ids)
+
+
+def restore_order_stock(*, order, lines):
+    """Restore a full refund once, inside the stock owner's transaction."""
+    return _provider().restore_order_stock(order=order, lines=lines)
