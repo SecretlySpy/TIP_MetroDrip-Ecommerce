@@ -18,6 +18,7 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
       - --default-storage-engine=InnoDB
+      - --log-bin-trust-function-creators=ON
     environment:
       MYSQL_DATABASE: "${MYSQL_DATABASE:?Set MYSQL_DATABASE in deploy/.env.staging}"
       MYSQL_USER: "${MYSQL_USER:?Set MYSQL_USER in deploy/.env.staging}"

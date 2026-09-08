@@ -60,9 +60,29 @@ class Command(BaseCommand):
                             )
                             if has_fk != field.db_constraint:
                                 errors.append(f"{alias}.{table}.{field.column}: FK mismatch")
-                    for constraint in model._meta.constraints:
+                        if field.unique and not any(
+                            c.get("unique") and c["columns"] == [field.column]
+                            for c in constraints.values()
+                        ):
+                            errors.append(f"{alias}.{table}.{field.column}: missing unique key")
+                        if field.is_relation and not any(
+                            c.get("index") and c["columns"][0] == field.column
+                            for c in constraints.values()
+                        ):
+                            errors.append(f"{alias}.{table}.{field.column}: missing REF/FK index")
+                    for constraint in [*model._meta.constraints, *model._meta.indexes]:
                         if constraint.name not in constraints:
                             errors.append(f"{alias}.{table}: missing {constraint.name}")
+                expected_triggers = {
+                    "catalog": {"stock_movement_no_update", "stock_movement_no_delete"},
+                    "default": {"order_item_snapshot_immutable"},
+                }.get(alias, set())
+                cursor.execute(
+                    "SELECT trigger_name FROM information_schema.triggers "
+                    "WHERE trigger_schema=DATABASE()"
+                )
+                missing = expected_triggers - {row[0] for row in cursor.fetchall()}
+                errors.extend(f"{alias}: missing SQL guard {name}" for name in missing)
         if errors:
             raise CommandError("\n".join(errors))
         self.stdout.write(

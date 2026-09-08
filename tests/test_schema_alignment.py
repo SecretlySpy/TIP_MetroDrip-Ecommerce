@@ -154,10 +154,11 @@ def test_purchase_snapshot_cannot_be_rewritten_with_sql(purchase):
 
 
 def test_fulfillment_delivery_replay_never_creates_a_second_sale(purchase):
+    from django.utils import timezone
+
     from apps.inventory.services import reserve_lines
     from apps.orders.models import OrderStatus, StockHold
     from apps.payments.holds import deliver_order_stock
-    from django.utils import timezone
 
     _, _, variant, stock, order, _ = purchase
     reserve_lines(checkout_id="delivery-replay", lines=[{"variant_id": variant.pk, "qty": 1}])

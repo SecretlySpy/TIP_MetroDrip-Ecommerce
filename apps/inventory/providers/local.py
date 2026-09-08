@@ -21,6 +21,7 @@ from apps.inventory.exceptions import (
     InsufficientStock,
     InvalidReservationState,
     InvalidStockAdjustment,
+    ReservationUnavailable,
 )
 from apps.inventory.models import (
     IdempotencyRecord,
@@ -144,12 +145,18 @@ class LocalInventoryProvider(InventoryProvider):
                 movements = StockMovement.objects.filter(
                     variant_id=line["variant_id"], ref_order_id=order.pk
                 )
-                sold = -(movements.filter(reason=MovementReason.SALE).aggregate(
-                    total=models.Sum("delta")
-                )["total"] or 0)
-                returned = movements.filter(reason=MovementReason.RETURN).aggregate(
-                    total=models.Sum("delta")
-                )["total"] or 0
+                sold = -(
+                    movements.filter(reason=MovementReason.SALE).aggregate(
+                        total=models.Sum("delta")
+                    )["total"]
+                    or 0
+                )
+                returned = (
+                    movements.filter(reason=MovementReason.RETURN).aggregate(
+                        total=models.Sum("delta")
+                    )["total"]
+                    or 0
+                )
                 quantity = min(line["qty"], max(0, sold - returned))
                 if quantity == 0:
                     continue

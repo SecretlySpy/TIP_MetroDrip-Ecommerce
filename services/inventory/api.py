@@ -453,8 +453,10 @@ async def adjust_stock(
 
         totals = await db.execute(
             select(StockMovement.reason, func.sum(StockMovement.delta))
-            .where(StockMovement.variant_id == payload.variant_id,
-                   StockMovement.ref_order_id == payload.ref_order_ref)
+            .where(
+                StockMovement.variant_id == payload.variant_id,
+                StockMovement.ref_order_id == payload.ref_order_ref,
+            )
             .group_by(StockMovement.reason)
         )
         by_reason = dict(totals.all())
@@ -472,8 +474,14 @@ async def adjust_stock(
 
     record.qty_on_hand = new_on_hand
     if delta:
-        db.add(StockMovement(variant_id=payload.variant_id, delta=delta,
-                             reason=payload.reason, ref_order_id=payload.ref_order_ref))
+        db.add(
+            StockMovement(
+                variant_id=payload.variant_id,
+                delta=delta,
+                reason=payload.reason,
+                ref_order_id=payload.ref_order_ref,
+            )
+        )
     await db.flush()
 
     result = AdjustResponse(

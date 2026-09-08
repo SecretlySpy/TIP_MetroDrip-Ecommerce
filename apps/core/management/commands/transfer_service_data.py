@@ -105,4 +105,5 @@ class Command(BaseCommand):
             if actual != expected:
                 raise CommandError(f"Row count mismatch for {label}: {actual} != {expected}")
         call_command("validate_service_schemas")
+        call_command("validate_service_references")
         self.stdout.write("Import and row-count verification complete. Source remains unchanged.")

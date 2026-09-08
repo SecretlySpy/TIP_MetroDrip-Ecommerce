@@ -9,7 +9,7 @@ which both consoles admit.
 """
 
 from django.contrib import admin
-from django.db import router, IntegrityError, transaction
+from django.db import IntegrityError, router, transaction
 
 from apps.core.money import format_centavos
 from config.consoles import merchant_site
