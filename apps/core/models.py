@@ -22,3 +22,6 @@ class ServiceEvent(models.Model):
             ),
         ]
         indexes = [models.Index(fields=["completed_at", "id"], name="idx_service_event_pending")]
+
+    def __str__(self):
+        return f"{self.operation} {self.target_model}.{self.target_field}={self.reference_id}"

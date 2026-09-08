@@ -160,7 +160,6 @@ class Customer(AbstractBaseUser, PermissionsMixin):
         )
 
 
-
 class WishlistItem(models.Model):
     """FR-16: product saved by a logged-in customer. Product-level, not variant-level."""
 

@@ -89,7 +89,6 @@ class OrderQuerySet(models.QuerySet):
         )
 
 
-
 class OrderManager(models.Manager.from_queryset(OrderQuerySet)):
     """Default manager carrying the state-machine bulk-write protections."""
 
@@ -221,7 +220,6 @@ class Order(models.Model):
         return self
 
 
-
 SNAPSHOT_FIELDS = frozenset(
     {
         "product_ref",
@@ -261,7 +259,6 @@ class OrderItemQuerySet(models.QuerySet):
         for obj in objs:
             obj.capture_snapshot()
         return super().bulk_create(objs, **kwargs)
-
 
 
 class OrderItem(models.Model):
@@ -353,7 +350,6 @@ class OrderItem(models.Model):
         return self.unit_price_snapshot * self.qty
 
 
-
 class OrderNumberSequence(models.Model):
     """Per-year counter backing MD-YYYY-NNNNN allocation.
 
@@ -378,7 +374,6 @@ class OrderNumberSequence(models.Model):
 
     def __str__(self):
         return f"{self.year}: {self.last_value}"
-
 
 
 class StockHoldState(models.TextChoices):
@@ -435,7 +430,6 @@ class StockHold(models.Model):
 
     def __str__(self):
         return f"{self.checkout_id} ({self.state})"
-
 
 
 class OutboxState(models.TextChoices):
@@ -495,4 +489,3 @@ class OutboxMessage(models.Model):
 
     def __str__(self):
         return f"{self.topic} ({self.state}, attempt {self.attempts})"
-

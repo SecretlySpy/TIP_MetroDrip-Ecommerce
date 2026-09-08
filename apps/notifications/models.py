@@ -30,15 +30,16 @@ class DeviceToken(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     last_seen_at = models.DateTimeField(auto_now=True)
 
-    def __str__(self):
-        return f"{self.customer_id} {self.platform} …{self.token[-8:]}"
-
     class Meta:
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(platform__in=["ios", "android"]), name="chk_device_platform"
             ),
         ]
+
+    def __str__(self):
+        return f"{self.customer_id} {self.platform} …{self.token[-8:]}"
+
 
 
 class NotificationCategory(models.TextChoices):

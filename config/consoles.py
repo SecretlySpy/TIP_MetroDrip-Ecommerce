@@ -31,9 +31,9 @@ from django.conf import settings
 from django.contrib import admin
 from django.contrib.admin.forms import AdminAuthenticationForm
 from django.core.exceptions import ValidationError
+from django.db import router, transaction
 from django.shortcuts import render
 from django.urls import NoReverseMatch, reverse
-from django.db import router, transaction
 from django_otp import devices_for_user
 from django_otp.forms import OTPAuthenticationFormMixin
 
@@ -150,6 +150,10 @@ class ConsoleAuthenticationForm(OTPAuthenticationFormMixin, AdminAuthenticationF
                         "to enroll a TOTP device for you.",
                         code="otp_enrollment_required",
                     )
+                if not self.cleaned_data.get("otp_device"):
+                    devices = list(devices_for_user(user, confirmed=True))
+                    if len(devices) == 1:
+                        self.cleaned_data["otp_device"] = devices[0].persistent_id
                 with transaction.atomic(using=router.db_for_write(type(user))):
                     self.clean_otp(user)
         except ValidationError:

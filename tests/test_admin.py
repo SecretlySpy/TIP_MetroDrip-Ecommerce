@@ -285,6 +285,7 @@ class TestRefundAtomicity:
         assert order.status == OrderStatus.REFUNDED
         from apps.orders.models import OutboxMessage, OutboxState
         from apps.orders.refunds import deliver_refund
+
         message = OutboxMessage.objects.get(topic="order.restore_stock")
         assert message.state == OutboxState.PENDING
 
@@ -294,9 +295,9 @@ class TestRefundAtomicity:
 
         deliver_refund(message.payload)
         deliver_refund(message.payload)
-        assert list(StockRecord.objects.filter(variant__in=variants).values_list(
-            "qty_on_hand", flat=True
-        )) == [1, 1, 1]
+        assert list(
+            StockRecord.objects.filter(variant__in=variants).values_list("qty_on_hand", flat=True)
+        ) == [1, 1, 1]
 
     def test_one_bad_order_does_not_abort_the_rest_of_the_selection(
         self, mock_message_user, request_factory, admin_site

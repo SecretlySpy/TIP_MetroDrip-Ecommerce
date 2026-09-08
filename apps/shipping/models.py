@@ -86,4 +86,3 @@ class Shipment(models.Model):
             from apps.notifications.push import notify_out_for_delivery
 
             transaction.on_commit(lambda: notify_out_for_delivery(self), using=self._state.db)
-

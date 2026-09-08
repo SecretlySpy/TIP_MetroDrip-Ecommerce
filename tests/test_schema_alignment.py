@@ -138,3 +138,16 @@ def test_payment_rollback_does_not_consume_catalog_stock(purchase):
     assert provider.confirm_order_paid(order=order) is False
     stock.refresh_from_db()
     assert stock.qty_on_hand == 9
+
+
+def test_purchase_snapshot_cannot_be_rewritten_with_sql(purchase):
+    from django.db import DatabaseError
+
+    *_, line = purchase
+    with pytest.raises(DatabaseError), transaction.atomic():
+        with connections["default"].cursor() as cursor:
+            cursor.execute(
+                "UPDATE orders_orderitem SET sku_snapshot=%s WHERE id=%s", ["rewritten", line.pk]
+            )
+    line.refresh_from_db()
+    assert line.sku_snapshot != "rewritten"

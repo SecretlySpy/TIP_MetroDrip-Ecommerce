@@ -198,6 +198,9 @@ jobs:
             sleep 2
           done
           test "$ready" = '{"status": "ok"}'
+      - name: Show disposable stack diagnostics
+        if: failure()
+        run: docker compose -p metrodrip-ci --env-file deploy/.env.staging.example -f deploy/compose.staging.yml logs --tail=120
       - name: Remove disposable HTTPS stack
         if: always()
         run: >-

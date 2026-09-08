@@ -137,12 +137,14 @@ class LocalInventoryProvider(InventoryProvider):
             except IntegrityError:
                 record = IdempotencyRecord.objects.get(key_hash=key)
                 if record.request_fingerprint != _fingerprint(ordered):
-                    raise InvalidStockAdjustment("Refund payload changed on replay")
+                    raise InvalidStockAdjustment("Refund payload changed on replay") from None
                 return
             for line in ordered:
                 services.adjust_stock(
-                    variant_id=line["variant_id"], delta=line["qty"],
-                    reason=MovementReason.RETURN, ref_order=order,
+                    variant_id=line["variant_id"],
+                    delta=line["qty"],
+                    reason=MovementReason.RETURN,
+                    ref_order=order,
                 )
 
     def reserve_lines(self, *, checkout_id, lines, session_key="", ttl_minutes=None):
@@ -330,7 +332,8 @@ class LocalInventoryProvider(InventoryProvider):
 
             # Ledger row in the same transaction (Invariant 4).
             StockMovement.objects.create(
-                variant_id=variant_id, delta=delta, reason=reason, ref_order=ref_order
+                variant_id=variant_id, delta=delta, reason=reason,
+                ref_order_id=ref_order.pk if ref_order else None,
             )
         return stock
 

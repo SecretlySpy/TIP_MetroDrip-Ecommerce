@@ -35,6 +35,8 @@ jobs:
           python manage.py makemigrations --check --dry-run
       - name: Test five-schema ownership and transaction boundaries
         run: pytest tests/test_schema_alignment.py -vv --maxfail=10
+      - name: Legacy transfer and snapshot backfill rehearsal
+        run: python scripts/rehearse-schema-transfer.py
       - name: Full regression suite
         run: pytest --maxfail=30
       - name: Formatting diagnostics

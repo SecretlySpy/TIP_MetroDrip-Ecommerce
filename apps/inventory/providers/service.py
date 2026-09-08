@@ -278,8 +278,10 @@ class ServiceInventoryProvider(InventoryProvider):
         # delivery is safe to retry; no line can be restored twice.
         for line in sorted(lines, key=lambda item: item["variant_id"]):
             self.adjust_stock(
-                variant_id=line["variant_id"], delta=line["qty"],
-                reason="return", ref_order=order,
+                variant_id=line["variant_id"],
+                delta=line["qty"],
+                reason="return",
+                ref_order=order,
             )
 
     def adjust_stock(self, *, variant_id, delta, reason, ref_order=None, ref_order_no=""):
