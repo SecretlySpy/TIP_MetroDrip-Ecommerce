@@ -174,5 +174,5 @@ cannot reconstruct removed snapshot columns or unknown historical values.
 
 Actual MySQL 8.4 / Python 3.14 GitHub Actions tests, migration reversal and legacy
 transfer rehearsal are tracked in `five-schema-alignment-progress.md`. Local
-syntax checks are supplementary. Do not treat draft status as a passing release
+syntax checks are supplementary. Do not treat PR status alone as a passing release
 gate; consult the latest PR checks before merge or deployment.
