@@ -11,10 +11,9 @@ Shipment includes a manual waybill entry field (FR-7 fallback) so the store
 owner can enter tracking numbers even without J&T API integration.
 """
 
-from apps.core.admin import ServiceReferenceAdminMixin
-
 from django.contrib import admin
 
+from apps.core.admin import ServiceReferenceAdminMixin
 from config.consoles import merchant_site
 
 from .models import Shipment, ShippingZone

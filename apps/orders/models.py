@@ -4,10 +4,10 @@ Status changes MUST go through Order.transition_to(); model and queryset guards
 reject normal ORM bypasses. Money fields are integer centavos (Hard Invariant 2).
 """
 
-from apps.core.lifecycle import service_protect, service_set_null
-
 from django.conf import settings
 from django.db import models, transaction
+
+from apps.core.lifecycle import service_protect, service_set_null
 
 
 class OrderStatus(models.TextChoices):
@@ -89,6 +89,7 @@ class OrderQuerySet(models.QuerySet):
         )
 
 
+
 class OrderManager(models.Manager.from_queryset(OrderQuerySet)):
     """Default manager carrying the state-machine bulk-write protections."""
 
@@ -99,7 +100,9 @@ class Order(models.Model):
     # NULL = guest order (D-05). SET_NULL so account erasure (RA 10173) never
     # destroys the commercial record.
     customer = models.ForeignKey(
-        settings.AUTH_USER_MODEL, db_constraint=False, db_column="customer_ref",
+        settings.AUTH_USER_MODEL,
+        db_constraint=False,
+        db_column="customer_ref",
         null=True,
         blank=True,
         on_delete=service_set_null,
@@ -122,8 +125,20 @@ class Order(models.Model):
     class Meta:
         ordering = ["-created_at"]
         constraints = [
-            models.CheckConstraint(condition=models.Q(status__in=['pending', 'paid', 'packed', 'shipped', 'delivered', 'cancelled', 'refunded']), name='chk_order_status'),
-
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=[
+                        "pending",
+                        "paid",
+                        "packed",
+                        "shipped",
+                        "delivered",
+                        "cancelled",
+                        "refunded",
+                    ]
+                ),
+                name="chk_order_status",
+            ),
             # Persisted totals must reconcile exactly in integer centavos.
             models.CheckConstraint(
                 condition=models.Q(total=models.F("subtotal") + models.F("shipping_fee")),
@@ -206,11 +221,26 @@ class Order(models.Model):
         return self
 
 
-SNAPSHOT_FIELDS = frozenset({
-    "product_ref", "sku_snapshot", "product_name_snapshot", "product_slug_snapshot",
-    "size_snapshot", "color_snapshot", "fit_snapshot", "image_url_snapshot",
-    "unit_price_snapshot", "snapshot_source", "variant", "variant_id", "order", "order_id", "qty",
-})
+
+SNAPSHOT_FIELDS = frozenset(
+    {
+        "product_ref",
+        "sku_snapshot",
+        "product_name_snapshot",
+        "product_slug_snapshot",
+        "size_snapshot",
+        "color_snapshot",
+        "fit_snapshot",
+        "image_url_snapshot",
+        "unit_price_snapshot",
+        "snapshot_source",
+        "variant",
+        "variant_id",
+        "order",
+        "order_id",
+        "qty",
+    }
+)
 
 
 class OrderItemQuerySet(models.QuerySet):
@@ -233,12 +263,17 @@ class OrderItemQuerySet(models.QuerySet):
         return super().bulk_create(objs, **kwargs)
 
 
+
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
     # PROTECT: a variant that has ever been sold must never be hard-deleted,
     # or order history and the movement ledger lose their reference.
     variant = models.ForeignKey(
-        "catalog.ProductVariant", db_constraint=False, db_column="variant_ref", on_delete=service_protect, related_name="order_items"
+        "catalog.ProductVariant",
+        db_constraint=False,
+        db_column="variant_ref",
+        on_delete=service_protect,
+        related_name="order_items",
     )
     qty = models.PositiveIntegerField()
     # Price at purchase time (centavos) — later catalog edits must not rewrite
@@ -257,6 +292,30 @@ class OrderItem(models.Model):
 
     objects = OrderItemQuerySet.as_manager()
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(snapshot_source__in=["checkout", "legacy_catalog"]),
+                name="chk_snapshot_source",
+            ),
+            models.CheckConstraint(condition=models.Q(qty__gte=1), name="chk_order_item_qty_gte_1"),
+            # The cart merges duplicate lines; one row per SKU per order.
+            models.UniqueConstraint(fields=["order", "variant"], name="uniq_order_line"),
+        ]
+
+    def __str__(self):
+        return f"{self.order_id} × {self.variant_id} ({self.qty})"
+
+    def save(self, *args, **kwargs):
+        if self._state.adding:
+            self.capture_snapshot()
+        else:
+            original = type(self).objects.get(pk=self.pk)
+            for name in SNAPSHOT_FIELDS - {"variant", "order"}:
+                if getattr(original, name) != getattr(self, name):
+                    raise ValueError("Purchased order lines are immutable.")
+        return super().save(*args, **kwargs)
+
     def capture_snapshot(self):
         """Freeze the purchased identity once, never recalculate on reads."""
         if self.sku_snapshot and self.product_name_snapshot and self.product_ref:
@@ -273,35 +332,15 @@ class OrderItem(models.Model):
         self.image_url_snapshot = (product.images or [""])[0]
         self.snapshot_source = "checkout"
 
-    def save(self, *args, **kwargs):
-        if self._state.adding:
-            self.capture_snapshot()
-        else:
-            original = type(self).objects.get(pk=self.pk)
-            for name in SNAPSHOT_FIELDS - {"variant", "order"}:
-                if getattr(original, name) != getattr(self, name):
-                    raise ValueError("Purchased order lines are immutable.")
-        return super().save(*args, **kwargs)
-
     def get_size_display(self):
         from apps.catalog.models import Size
+
         return dict(Size.choices).get(self.size_snapshot, self.size_snapshot)
 
     def get_fit_display(self):
         from apps.catalog.models import Fit
+
         return dict(Fit.choices).get(self.fit_snapshot, self.fit_snapshot)
-
-    class Meta:
-        constraints = [
-            models.CheckConstraint(condition=models.Q(snapshot_source__in=['checkout', 'legacy_catalog']), name='chk_snapshot_source'),
-
-            models.CheckConstraint(condition=models.Q(qty__gte=1), name="chk_order_item_qty_gte_1"),
-            # The cart merges duplicate lines; one row per SKU per order.
-            models.UniqueConstraint(fields=["order", "variant"], name="uniq_order_line"),
-        ]
-
-    def __str__(self):
-        return f"{self.order_id} × {self.variant_id} ({self.qty})"
 
     @property
     def line_total(self):
@@ -312,6 +351,7 @@ class OrderItem(models.Model):
         invoice. Every surface that shows a line total reads this.
         """
         return self.unit_price_snapshot * self.qty
+
 
 
 class OrderNumberSequence(models.Model):
@@ -338,6 +378,7 @@ class OrderNumberSequence(models.Model):
 
     def __str__(self):
         return f"{self.year}: {self.last_value}"
+
 
 
 class StockHoldState(models.TextChoices):
@@ -382,7 +423,10 @@ class StockHold(models.Model):
 
     class Meta:
         constraints = [
-            models.CheckConstraint(condition=models.Q(state__in=['active', 'committed', 'released', 'unknown']), name='chk_hold_state'),
+            models.CheckConstraint(
+                condition=models.Q(state__in=["active", "committed", "released", "unknown"]),
+                name="chk_hold_state",
+            ),
         ]
         indexes = [
             # The reconciliation query: holds that need a human or a retry.
@@ -391,6 +435,7 @@ class StockHold(models.Model):
 
     def __str__(self):
         return f"{self.checkout_id} ({self.state})"
+
 
 
 class OutboxState(models.TextChoices):
@@ -439,7 +484,9 @@ class OutboxMessage(models.Model):
 
     class Meta:
         constraints = [
-            models.CheckConstraint(condition=models.Q(state__in=['pending', 'sent', 'dead']), name='chk_outbox_state'),
+            models.CheckConstraint(
+                condition=models.Q(state__in=["pending", "sent", "dead"]), name="chk_outbox_state"
+            ),
         ]
         indexes = [
             # The poller's only query.
@@ -448,3 +495,4 @@ class OutboxMessage(models.Model):
 
     def __str__(self):
         return f"{self.topic} ({self.state}, attempt {self.attempts})"
+

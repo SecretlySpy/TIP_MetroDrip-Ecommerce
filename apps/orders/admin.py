@@ -11,12 +11,10 @@ second copy of this screen (ADR-F-001).
 
 import logging
 
-from apps.core.admin import ServiceReferenceAdminMixin
-
 from django.contrib import admin
 from django.db import transaction
 
-from apps.core.admin import ExportCsvMixin
+from apps.core.admin import ExportCsvMixin, ServiceReferenceAdminMixin
 from apps.core.money import format_centavos
 from config.consoles import merchant_site
 
@@ -30,8 +28,24 @@ class OrderItemInline(admin.TabularInline):
 
     model = OrderItem
     extra = 0
-    fields = ("sku_snapshot", "product_name_snapshot", "size_snapshot", "color_snapshot", "fit_snapshot", "qty", "unit_price_display")
-    readonly_fields = ("sku_snapshot", "product_name_snapshot", "size_snapshot", "color_snapshot", "fit_snapshot", "qty", "unit_price_display")
+    fields = (
+        "sku_snapshot",
+        "product_name_snapshot",
+        "size_snapshot",
+        "color_snapshot",
+        "fit_snapshot",
+        "qty",
+        "unit_price_display",
+    )
+    readonly_fields = (
+        "sku_snapshot",
+        "product_name_snapshot",
+        "size_snapshot",
+        "color_snapshot",
+        "fit_snapshot",
+        "qty",
+        "unit_price_display",
+    )
 
     @admin.display(description="Unit Price")
     def unit_price_display(self, obj):
@@ -287,47 +301,17 @@ class OrderAdmin(ServiceReferenceAdminMixin, ExportCsvMixin, admin.ModelAdmin):
 
     @admin.action(description="Transition selected to REFUNDED (restores stock)")
     def mark_as_refunded(self, request, queryset):
-        """Refund each selected order and restore its lines, one order at a time.
-
-        **The transaction is per order, not per queryset** (ADR-P3-027). A refund
-        is a complete unit of work on its own: order B failing to restore is no
-        reason to un-refund order A, and a queryset-wide block would make a
-        merchant's whole selection hostage to its worst row.
-
-        Within one order the transition and *every* line restoration now commit
-        together. Previously the transition ran first and the lines followed in a
-        bare loop, so a failure on line 2 of 3 left the order REFUNDED with only
-        part of its stock back — and because only IllegalTransition was caught,
-        that failure also escaped the action, skipping every remaining order with
-        a 500 rather than reporting which one broke.
-
-        **Known limit under INVENTORY_PROVIDER=service.** `adjust_stock` is then
-        an HTTP call to a ledger writing on its own connection, so this block
-        cannot roll its writes back — a mid-loop failure would roll back the
-        order transition while the ledger keeps the lines it already applied, and
-        a retry would apply them a second time because a signed delta is not
-        idempotent. That direction is an oversell risk, which is why it is called
-        out here rather than left to be discovered: the refund path is an unmet
-        precondition for selecting `service`, tracked in ADR-P3-027. The default
-        provider is `local` (ADR-P3-025), where this block is exact.
-        """
-        from apps.inventory.models import MovementReason
-        from apps.inventory.services import adjust_stock
-        from apps.orders.models import IllegalTransition, OrderStatus
+        """Commit a refund and retryable stock intent in the Orders schema."""
+        from apps.orders.models import IllegalTransition, Order, OrderStatus
+        from apps.orders.refunds import enqueue_refund
 
         success, failed = 0, 0
         for order in queryset:
             try:
                 with transaction.atomic():
+                    order = Order.objects.select_for_update().get(pk=order.pk)
                     order.transition_to(OrderStatus.REFUNDED)
-                    # E-4: Ledger sync restore
-                    for item in order.items.all():
-                        adjust_stock(
-                            variant_id=item.variant_id,
-                            delta=item.qty,
-                            reason=MovementReason.RETURN,
-                            ref_order=order,
-                        )
+                    enqueue_refund(order)
                 success += 1
             except IllegalTransition as e:
                 self.message_user(request, str(e), level="ERROR")

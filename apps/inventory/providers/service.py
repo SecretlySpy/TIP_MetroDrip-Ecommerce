@@ -273,6 +273,15 @@ class ServiceInventoryProvider(InventoryProvider):
             "use commit_holds(checkout_id=...)."
         )
 
+    def restore_order_stock(self, *, order, lines):
+        # Each line has a stable provider idempotency key. A partial remote
+        # delivery is safe to retry; no line can be restored twice.
+        for line in sorted(lines, key=lambda item: item["variant_id"]):
+            self.adjust_stock(
+                variant_id=line["variant_id"], delta=line["qty"],
+                reason="return", ref_order=order,
+            )
+
     def adjust_stock(self, *, variant_id, delta, reason, ref_order=None, ref_order_no=""):
         """Apply a non-sale physical stock change through the ledger.
 

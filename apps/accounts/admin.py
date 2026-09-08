@@ -16,13 +16,11 @@ Both tiers are enforced server-side in `get_readonly_fields` and the
 between an account and an escalation (NFR-10).
 """
 
-from apps.core.admin import ServiceReferenceAdminMixin
-
 from django.contrib import admin
 from django.contrib.admin.models import LogEntry
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from apps.core.admin import ExportCsvMixin
+from apps.core.admin import ExportCsvMixin, ServiceReferenceAdminMixin
 
 from .models import Customer, StaffRole, WishlistItem
 

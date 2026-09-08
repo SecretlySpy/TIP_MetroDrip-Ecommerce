@@ -6,17 +6,31 @@ connection. Cross-owner relations are indexed IDs, never database foreign keys.
 """
 
 APP_DATABASE = {
-    "accounts": "identity", "auth": "identity", "contenttypes": "identity",
-    "admin": "identity", "sessions": "identity", "otp_totp": "identity", "otp_static": "identity",
+    "accounts": "identity",
+    "auth": "identity",
+    "contenttypes": "identity",
+    "admin": "identity",
+    "sessions": "identity",
+    "otp_totp": "identity",
+    "otp_static": "identity",
     "token_blacklist": "identity",
-    "catalog": "catalog", "inventory": "catalog",
-    "orders": "default", "payments": "default", "reviews": "default",
-    "shipping": "fulfillment", "notifications": "fulfillment",
-    "cms": "content", "flatpages": "content", "sites": "content",
+    "catalog": "catalog",
+    "inventory": "catalog",
+    "orders": "default",
+    "payments": "default",
+    "reviews": "default",
+    "shipping": "fulfillment",
+    "notifications": "fulfillment",
+    "cms": "content",
+    "flatpages": "content",
+    "sites": "content",
 }
 SCHEMA_NAMES = {
-    "identity": "db_identity", "catalog": "db_catalog", "default": "db_orders",
-    "fulfillment": "db_fulfillment", "content": "db_content",
+    "identity": "db_identity",
+    "catalog": "db_catalog",
+    "default": "db_orders",
+    "fulfillment": "db_fulfillment",
+    "content": "db_content",
 }
 
 

@@ -17,15 +17,24 @@ pytestmark = pytest.mark.django_db(transaction=True, databases="__all__")
 
 @pytest.fixture
 def purchase():
-    customer = Customer.objects.create_user(email="schema@example.test", name="Buyer", password="test")
+    customer = Customer.objects.create_user(
+        email="schema@example.test", name="Buyer", password="test"
+    )
     category = Category.objects.create(name="Tops", slug="tops")
-    product = Product.objects.create(name="Original tee", slug="original-tee", category=category,
-                                     base_price=12500, images=["https://example.test/original.jpg"])
-    variant = ProductVariant.objects.create(product=product, sku="ORIGINAL-M", size="M",
-                                            color="Black", fit="regular")
+    product = Product.objects.create(
+        name="Original tee",
+        slug="original-tee",
+        category=category,
+        base_price=12500,
+        images=["https://example.test/original.jpg"],
+    )
+    variant = ProductVariant.objects.create(
+        product=product, sku="ORIGINAL-M", size="M", color="Black", fit="regular"
+    )
     stock = StockRecord.objects.create(variant=variant, qty_on_hand=10)
-    order = Order.objects.create(order_no="MD-2026-00001", customer=customer,
-                                  subtotal=12500, shipping_fee=500, total=13000)
+    order = Order.objects.create(
+        order_no="MD-2026-00001", customer=customer, subtotal=12500, shipping_fee=500, total=13000
+    )
     line = OrderItem.objects.create(order=order, variant=variant, qty=1, unit_price_snapshot=12500)
     return customer, product, variant, stock, order, line
 
@@ -40,8 +49,12 @@ def test_owner_routes_and_real_local_fks(purchase):
     assert product._state.db == variant._state.db == stock._state.db == "catalog"
     assert order._state.db == line._state.db == "default"
     with connections["catalog"].cursor() as cursor:
-        constraints = connections["catalog"].introspection.get_constraints(cursor, stock._meta.db_table)
-    assert any(c.get("foreign_key") == ("catalog_productvariant", "id") for c in constraints.values())
+        constraints = connections["catalog"].introspection.get_constraints(
+            cursor, stock._meta.db_table
+        )
+    assert any(
+        c.get("foreign_key") == ("catalog_productvariant", "id") for c in constraints.values()
+    )
 
 
 def test_history_is_immutable_and_reads_no_catalog(purchase):
@@ -56,9 +69,14 @@ def test_history_is_immutable_and_reads_no_catalog(purchase):
     variant.save()
     with CaptureQueriesContext(connections["catalog"]) as queries:
         saved = OrderItem.objects.get(pk=line.pk)
-        assert (saved.product_name_snapshot, saved.sku_snapshot, saved.size_snapshot,
-                saved.color_snapshot, saved.fit_snapshot, saved.unit_price_snapshot) == (
-                    "Original tee", "ORIGINAL-M", "M", "Black", "regular", 12500)
+        assert (
+            saved.product_name_snapshot,
+            saved.sku_snapshot,
+            saved.size_snapshot,
+            saved.color_snapshot,
+            saved.fit_snapshot,
+            saved.unit_price_snapshot,
+        ) == ("Original tee", "ORIGINAL-M", "M", "Black", "regular", 12500)
         assert saved.get_size_display() == "Medium"
     assert len(queries) == 0
     with pytest.raises(ValueError):
@@ -87,17 +105,24 @@ def test_invalid_status_rejected_by_database(purchase):
 
 
 def test_payment_rollback_does_not_consume_catalog_stock(purchase):
+    import datetime
+
+    from django.utils import timezone
+
     from apps.inventory.services import reserve_lines
     from apps.orders.models import StockHold
-    from django.utils import timezone
-    import datetime
 
     _, _, variant, stock, order, _ = purchase
     reserve_lines(checkout_id="rollback-hold", lines=[{"variant_id": variant.pk, "qty": 1}])
-    StockHold.objects.create(order=order, checkout_id="rollback-hold",
-                             expires_at=timezone.now() + datetime.timedelta(minutes=15))
+    StockHold.objects.create(
+        order=order,
+        checkout_id="rollback-hold",
+        expires_at=timezone.now() + datetime.timedelta(minutes=15),
+    )
     provider = SimulatedPaymentProvider()
-    provider.create_checkout_session(order, "https://example.test/success", "https://example.test/cancel")
+    provider.create_checkout_session(
+        order, "https://example.test/success", "https://example.test/cancel"
+    )
     with pytest.raises(RuntimeError):
         with transaction.atomic():
             provider.confirm_order_paid(order=order)

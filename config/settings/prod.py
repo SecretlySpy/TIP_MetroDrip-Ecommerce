@@ -281,4 +281,4 @@ DATABASES["default"]["CONN_MAX_AGE"] = 60  # noqa: F405
 # Apply schema ownership after this module has finalized connection settings.
 from config.database_layout import configure_databases  # noqa: E402
 
-DATABASES, DATABASE_ROUTERS = configure_databases(DATABASES["default"])
+DATABASES, DATABASE_ROUTERS = configure_databases(DATABASES["default"])  # noqa: F405

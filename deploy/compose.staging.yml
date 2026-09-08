@@ -25,6 +25,7 @@ services:
       MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in deploy/.env.staging}"
     volumes:
       - dbdata:/var/lib/mysql
+      - ./init-service-schemas.sh:/docker-entrypoint-initdb.d/20-service-schemas.sh:ro
     networks:
       - database
     healthcheck:

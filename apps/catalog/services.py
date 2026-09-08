@@ -41,7 +41,6 @@ def get_catalog_queryset(*, filters=None, sort=None, search=None):
             min_price=Min("variants__price_override", default=models.Value(None)),
             max_price=Max("variants__price_override", default=models.Value(None)),
             variant_count=Count("variants", distinct=True),
-
         )
     )
 
@@ -52,8 +51,12 @@ def get_catalog_queryset(*, filters=None, sort=None, search=None):
     stats = product_statistics()
     sold = product_sales()
     qs = qs.annotate(
-        review_avg=_metric_case({key: value["average"] for key, value in stats.items()}, models.FloatField(), None),
-        review_count=_metric_case({key: value["count"] for key, value in stats.items()}, models.IntegerField(), 0),
+        review_avg=_metric_case(
+            {key: value["average"] for key, value in stats.items()}, models.FloatField(), None
+        ),
+        review_count=_metric_case(
+            {key: value["count"] for key, value in stats.items()}, models.IntegerField(), 0
+        ),
         total_sold=_metric_case(sold, models.IntegerField(), 0),
     )
 
@@ -214,6 +217,7 @@ def get_product_detail(slug):
     except Product.DoesNotExist:
         return None
     from apps.reviews.read_api import approved_reviews, product_statistics
+
     stats = product_statistics([product.pk]).get(product.pk, {"average": None, "count": 0})
     product.review_avg = stats["average"]
     product.review_count = stats["count"]
@@ -227,5 +231,6 @@ def _metric_case(values, field, default):
         return models.Value(default, output_field=field)
     return models.Case(
         *(models.When(pk=key, then=models.Value(value)) for key, value in values.items()),
-        default=models.Value(default), output_field=field,
+        default=models.Value(default),
+        output_field=field,
     )

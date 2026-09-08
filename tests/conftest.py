@@ -66,7 +66,8 @@ def _clear_content_type_cache():
 def django_db_modify_db_settings():
     """Give each schema an independent InnoDB test database."""
     from django.conf import settings
-    for alias, database in settings.DATABASES.items():
+
+    for database in settings.DATABASES.values():
         database.setdefault("TEST", {})["DEPENDENCIES"] = []
 
 
@@ -76,3 +77,6 @@ def pytest_collection_modifyitems(items):
         marker = item.get_closest_marker("django_db")
         if marker is not None:
             marker.kwargs["databases"] = "__all__"
+
+        elif {"db", "transactional_db"}.intersection(item.fixturenames):
+            item.add_marker(pytest.mark.django_db(databases="__all__"))

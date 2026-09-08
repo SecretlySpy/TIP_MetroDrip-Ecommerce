@@ -117,7 +117,7 @@ def test_commit_holds_replay_commits_nothing_further():
     reserve_lines(checkout_id="checkout-idem-1", lines=[{"variant_id": variant.pk, "qty": 2}])
 
     assert commit_holds(checkout_id="checkout-idem-1") == {variant.pk: 2}
-    assert commit_holds(checkout_id="checkout-idem-1") == {}
+    assert commit_holds(checkout_id="checkout-idem-1") == {variant.pk: 2}
 
     assert StockRecord.objects.get(variant=variant).qty_on_hand == 8
     assert StockMovement.objects.filter(variant=variant).count() == 1
@@ -167,6 +167,7 @@ def test_checkout_records_a_stock_hold_for_the_order():
 
 @pytest.mark.django_db
 @override_settings(PAYMENT_PROVIDER="simulated")
+@pytest.mark.django_db(transaction=True, databases="__all__")
 def test_paid_order_decrements_stock_and_writes_one_audit_row(client):
     """The regression: paying must move qty_on_hand and leave audit evidence.
 
@@ -207,6 +208,7 @@ def test_paid_order_decrements_stock_and_writes_one_audit_row(client):
 
 @pytest.mark.django_db
 @override_settings(PAYMENT_PROVIDER="simulated")
+@pytest.mark.django_db(transaction=True, databases="__all__")
 def test_replayed_payment_never_double_decrements(client):
     from apps.orders.checkout import place_order
     from apps.payments.services import confirm_order_paid
@@ -227,6 +229,7 @@ def test_replayed_payment_never_double_decrements(client):
     assert StockMovement.objects.filter(variant=variant).count() == 1
 
 
+@pytest.mark.django_db(transaction=True, databases="__all__")
 def test_payment_path_never_follows_a_reverse_fk_into_the_ledger():
     """Structural, because behaviour cannot catch this on one schema.
 

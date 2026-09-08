@@ -16,6 +16,9 @@ class ServiceEvent(models.Model):
 
     class Meta:
         constraints = [
-            models.CheckConstraint(condition=models.Q(operation__in=['delete', 'set_null']), name='chk_service_event_operation'),
+            models.CheckConstraint(
+                condition=models.Q(operation__in=["delete", "set_null"]),
+                name="chk_service_event_operation",
+            ),
         ]
         indexes = [models.Index(fields=["completed_at", "id"], name="idx_service_event_pending")]

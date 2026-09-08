@@ -123,6 +123,28 @@ class LocalInventoryProvider(InventoryProvider):
                 + datetime.timedelta(minutes=settings.RESERVATION_TTL_MINUTES),
             )
 
+    def restore_order_stock(self, *, order, lines):
+        from apps.inventory import services
+
+        ordered = sorted(lines, key=lambda line: int(line["variant_id"]))
+        with transaction.atomic(using=stock_database()):
+            key = _idempotency_key("refund", str(order.pk))
+            try:
+                with transaction.atomic(using=stock_database()):
+                    IdempotencyRecord.objects.create(
+                        key_hash=key, request_fingerprint=_fingerprint(ordered), status_code=200
+                    )
+            except IntegrityError:
+                record = IdempotencyRecord.objects.get(key_hash=key)
+                if record.request_fingerprint != _fingerprint(ordered):
+                    raise InvalidStockAdjustment("Refund payload changed on replay")
+                return
+            for line in ordered:
+                services.adjust_stock(
+                    variant_id=line["variant_id"], delta=line["qty"],
+                    reason=MovementReason.RETURN, ref_order=order,
+                )
+
     def reserve_lines(self, *, checkout_id, lines, session_key="", ttl_minutes=None):
         """Reserve every line under one `checkout_id`, or reserve nothing.
 
@@ -195,14 +217,17 @@ class LocalInventoryProvider(InventoryProvider):
         expired before payment landed), and it must get them from the ledger
         rather than by reading reservation rows it does not own.
 
-        An already-committed group returns `{}` rather than raising, so a
-        replayed payment webhook is a no-op — the webhook is the only payment
-        truth (Invariant 3) and providers retry it.
+        An already-committed group returns its original totals without another
+        stock mutation. Replayed fulfillment can then distinguish a completed
+        sale from expired holds that need replacement stock.
         """
         committed: dict[int, int] = {}
         with transaction.atomic(using=stock_database()):
-            reservations = list(Reservation.objects.select_for_update()
-                                .filter(checkout_id=checkout_id).order_by("pk"))
+            reservations = list(
+                Reservation.objects.select_for_update()
+                .filter(checkout_id=checkout_id)
+                .order_by("pk")
+            )
             for reservation in reservations:
                 if reservation.status == ReservationStatus.COMMITTED:
                     if reservation.order_id != order_id:
@@ -211,7 +236,9 @@ class LocalInventoryProvider(InventoryProvider):
                     self.commit_reservation(reservation_id=reservation.pk, order_id=order_id)
                 else:
                     continue
-                committed[reservation.variant_id] = committed.get(reservation.variant_id, 0) + reservation.qty
+                committed[reservation.variant_id] = (
+                    committed.get(reservation.variant_id, 0) + reservation.qty
+                )
         return committed
 
     def release_holds(self, *, checkout_id):
@@ -369,4 +396,5 @@ class LocalInventoryProvider(InventoryProvider):
 
 def stock_database():
     from django.db import router
+
     return router.db_for_write(StockRecord)

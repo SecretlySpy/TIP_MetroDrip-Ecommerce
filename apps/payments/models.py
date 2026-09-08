@@ -34,11 +34,17 @@ class Payment(models.Model):
     amount = models.PositiveIntegerField()  # MySQL INT centavos (Invariant 2)
     paid_at = models.DateTimeField(null=True, blank=True)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(method__in=["card", "gcash", "maya"]), name="chk_payment_method"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=["pending", "paid", "failed", "refunded"]),
+                name="chk_payment_status",
+            ),
+        ]
+
     def __str__(self):
         return f"{self.order_id} {self.method} {self.status}"
 
-    class Meta:
-        constraints = [
-            models.CheckConstraint(condition=models.Q(method__in=['card', 'gcash', 'maya']), name='chk_payment_method'),
-            models.CheckConstraint(condition=models.Q(status__in=['pending', 'paid', 'failed', 'refunded']), name='chk_payment_status'),
-        ]

@@ -27,6 +27,8 @@ jobs:
         with:
           python-version: "3.14"
       - run: pip install -r requirements.txt
+      - name: Bootstrap schemas
+        run: MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u root < scripts/bootstrap-service-schemas.sql
       - name: Check models and migration state
         run: |
           python manage.py check
@@ -34,7 +36,7 @@ jobs:
       - name: Test five-schema ownership and transaction boundaries
         run: pytest tests/test_schema_alignment.py -vv --maxfail=10
       - name: Full regression suite
-        run: pytest --maxfail=15
+        run: pytest --maxfail=30
       - name: Formatting diagnostics
         if: always()
         run: |

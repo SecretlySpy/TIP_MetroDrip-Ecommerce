@@ -428,7 +428,8 @@ def order_status(request, token):
 
     try:
         order = (
-            Order.objects.select_related("payment").prefetch_related("shipment")
+            Order.objects.select_related("payment")
+            .prefetch_related("shipment")
             .prefetch_related("items")
             .get(pk=order_id)
         )
@@ -463,7 +464,8 @@ def order_invoice(request, token):
 
     try:
         order = (
-            Order.objects.select_related("payment").prefetch_related("shipment")
+            Order.objects.select_related("payment")
+            .prefetch_related("shipment")
             .prefetch_related("items")
             .get(pk=order_id)
         )

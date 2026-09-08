@@ -41,21 +41,29 @@ class Command(BaseCommand):
         if set(connections) != {"default"}:
             raise CommandError("Export requires DATABASE_LAYOUT=legacy and upgraded migrations.")
         if path.exists() and any(path.iterdir()):
-            raise CommandError("Export directory must be empty; existing files are never overwritten.")
+            raise CommandError(
+                "Export directory must be empty; existing files are never overwritten."
+            )
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(path, 0o700)
         manifest = {"version": 1, "files": {}, "counts": {}}
         for alias in SCHEMA_NAMES:
-            models = [m for m in self.domain_models() if
-                      ("default" if m._meta.app_label == "core" else owner(m._meta.app_label)) == alias]
+            models = [
+                m
+                for m in self.domain_models()
+                if ("default" if m._meta.app_label == "core" else owner(m._meta.app_label)) == alias
+            ]
             queries = [m.objects.using("default").order_by("pk") for m in models]
             for model, query in zip(models, queries, strict=True):
                 manifest["counts"][model._meta.label_lower] = query.count()
             target = path / f"{alias}.json"
             with target.open("x", encoding="utf-8") as stream:
                 os.chmod(target, 0o600)
-                serializers.serialize("json", itertools.chain.from_iterable(
-                    q.iterator(chunk_size=500) for q in queries), stream=stream)
+                serializers.serialize(
+                    "json",
+                    itertools.chain.from_iterable(q.iterator(chunk_size=500) for q in queries),
+                    stream=stream,
+                )
             manifest["files"][target.name] = hashlib.sha256(target.read_bytes()).hexdigest()
         (path / "manifest.json").write_text(json.dumps(manifest, indent=2))
         os.chmod(path / "manifest.json", 0o600)
@@ -77,7 +85,9 @@ class Command(BaseCommand):
         for model in self.domain_models():
             if model._meta.label_lower in bootstrap:
                 continue
-            aliases = SCHEMA_NAMES if model._meta.app_label == "core" else [owner(model._meta.app_label)]
+            aliases = (
+                SCHEMA_NAMES if model._meta.app_label == "core" else [owner(model._meta.app_label)]
+            )
             for alias in aliases:
                 if model.objects.using(alias).exists():
                     raise CommandError(f"Target is not empty: {alias}.{model._meta.db_table}")

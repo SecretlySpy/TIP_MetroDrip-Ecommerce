@@ -4,10 +4,9 @@ Reviews have moderation actions (approve/reject) per FR-17. Nothing with
 status != approved may ever render publicly (M4.5 gate).
 """
 
-from apps.core.admin import ServiceReferenceAdminMixin
-
 from django.contrib import admin
 
+from apps.core.admin import ServiceReferenceAdminMixin
 from config.consoles import merchant_site
 
 from .models import Review, ReviewStatus

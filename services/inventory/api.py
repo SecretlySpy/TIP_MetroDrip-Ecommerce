@@ -153,7 +153,9 @@ async def scan_low_stock(db: AsyncSession = Depends(get_db)):  # noqa: B008
 # "low" and fail to parse it as an integer.
 @router.get(ROUTE_STOCK_ONE, response_model=StockRecordOut)
 async def get_stock(variant_id: int, db: AsyncSession = Depends(get_db)):  # noqa: B008
-    record = (await db.execute(select(StockRecord).where(StockRecord.variant_id == variant_id))).scalar_one_or_none()
+    record = (
+        await db.execute(select(StockRecord).where(StockRecord.variant_id == variant_id))
+    ).scalar_one_or_none()
     if not record:
         raise HTTPException(status_code=404, detail=envelope("unknown_variant", "No such SKU."))
     return _as_out(record)

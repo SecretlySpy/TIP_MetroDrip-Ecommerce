@@ -16,14 +16,14 @@ whichever side owns the rows.
 
 import logging
 
-from django.utils import timezone
 from django.db import transaction
+from django.utils import timezone
 
 from apps.inventory.services import (
     InsufficientStock,
     ReservationUnavailable,
     commit_holds,
-    reserve_stock,
+    reserve_lines,
 )
 from apps.orders.models import OutboxState, StockHoldState
 from apps.orders.outbox import enqueue, register_handler
@@ -62,7 +62,7 @@ def _consume_committed_order_holds(order):
     committed_by_variant: dict[int, int] = {}
 
     checkout_ids = (
-        order.stock_holds.filter(state=StockHoldState.ACTIVE)
+        order.stock_holds.filter(state__in=[StockHoldState.ACTIVE, StockHoldState.COMMITTED])
         .values_list("checkout_id", flat=True)
         .distinct()
     )
@@ -134,11 +134,9 @@ def _cover_shortfall(order, committed_by_variant):
             continue
         try:
             replacement_id = f"shortfall-{order.pk}-{item.variant_id}"
-            reserve_stock(
-                variant_id=item.variant_id,
-                qty=shortfall,
-                order=order,
+            reserve_lines(
                 checkout_id=replacement_id,
+                lines=[{"variant_id": item.variant_id, "qty": shortfall}],
             )
             commit_holds(
                 checkout_id=replacement_id,

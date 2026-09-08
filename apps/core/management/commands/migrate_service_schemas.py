@@ -14,5 +14,7 @@ class Command(BaseCommand):
             raise CommandError("This command requires DATABASE_LAYOUT=five.")
         for alias in aliases:
             self.stdout.write(f"Migrating {alias}")
-            call_command("migrate", database=alias, interactive=False, verbosity=options["verbosity"])
+            call_command(
+                "migrate", database=alias, interactive=False, verbosity=options["verbosity"]
+            )
         call_command("validate_service_schemas")

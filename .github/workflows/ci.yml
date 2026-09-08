@@ -47,6 +47,8 @@ jobs:
         run: ruff check .
       - name: Format contract (ruff)
         run: ruff format --check .
+      - name: Bootstrap logical schemas
+        run: MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u root < scripts/bootstrap-service-schemas.sql
       - name: Django system check
         run: python manage.py check
       - name: Migration drift
@@ -72,9 +74,9 @@ jobs:
         run: pytest
       - name: Reversible migration gate
         run: |
-          python manage.py migrate --noinput
-          python manage.py migrate catalog zero --noinput
-          python manage.py migrate --noinput
+          python manage.py migrate_service_schemas
+          python manage.py migrate catalog zero --database=catalog --noinput
+          python manage.py migrate_service_schemas
 
   deployment-contracts:
     runs-on: ubuntu-latest
@@ -183,7 +185,7 @@ jobs:
           "${compose[@]}" up -d --force-recreate --no-build --wait --wait-timeout 180
           counts="$("${compose[@]}" exec -T db sh -c '
             MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --batch --skip-column-names \
-              --user=root "$MYSQL_DATABASE" \
+              --user=root db_catalog \
               --execute="SELECT (SELECT COUNT(*) FROM catalog_product), (SELECT COUNT(*) FROM catalog_productvariant), (SELECT COUNT(*) FROM inventory_stockrecord), (SELECT COUNT(*) FROM inventory_stockmovement);"
           ')"
           test "$counts" = $'5\t180\t180\t180'

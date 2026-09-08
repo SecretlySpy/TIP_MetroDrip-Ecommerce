@@ -8,7 +8,7 @@ is replay-safe and retried by the scheduler. No distributed atomicity is claimed
 import logging
 
 from django.apps import apps
-from django.db import models, router, transaction
+from django.db import router, transaction
 from django.db.models.deletion import ProtectedError
 from django.db.models.signals import pre_delete
 from django.dispatch import receiver
@@ -69,8 +69,11 @@ def drain_service_events(using, limit=100):
     count = 0
     # The source event row remains locked until its idempotent target action
     # has completed. A process crash after target commit simply replays it.
-    for event_id in list(ServiceEvent.objects.using(using).filter(completed_at=None)
-                         .values_list("pk", flat=True)[:limit]):
+    for event_id in list(
+        ServiceEvent.objects.using(using)
+        .filter(completed_at=None)
+        .values_list("pk", flat=True)[:limit]
+    ):
         with transaction.atomic(using=using):
             event = ServiceEvent.objects.using(using).select_for_update().get(pk=event_id)
             if event.completed_at:

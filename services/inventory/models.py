@@ -3,15 +3,14 @@ import enum
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     CheckConstraint,
     Column,
     DateTime,
     Index,
     Integer,
-    BigInteger,
     String,
 )
-
 from sqlalchemy.dialects.mysql import INTEGER
 
 from .database import Base
@@ -70,9 +69,7 @@ class Reservation(Base):
     )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    variant_id = Column(
-        BigInteger, nullable=False
-    )
+    variant_id = Column(BigInteger, nullable=False)
     qty = Column(INTEGER(unsigned=True), nullable=False)
     status = Column(String(9), default=ReservationStatus.ACTIVE.value, nullable=False)
     session_key = Column(String(64), default="", nullable=False)
@@ -102,9 +99,7 @@ class StockMovement(Base):
     __table_args__ = (table_args,)
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    variant_id = Column(
-        BigInteger, nullable=False
-    )
+    variant_id = Column(BigInteger, nullable=False)
     reason = Column(String(12), nullable=False)
     delta = Column(Integer, nullable=False)
     ref_order_id = Column("ref_order_ref", BigInteger, nullable=True)

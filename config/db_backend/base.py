@@ -19,9 +19,11 @@ class DatabaseSchemaEditor(MySQLSchemaEditor):
         changed = []
         for field in fields:
             target = getattr(getattr(field, "remote_field", None), "model", None)
-            if hasattr(target, "_meta") and owner(model._meta.app_label) != owner(
-                target._meta.app_label
-            ) and getattr(field, "db_constraint", False):
+            if (
+                hasattr(target, "_meta")
+                and owner(model._meta.app_label) != owner(target._meta.app_label)
+                and getattr(field, "db_constraint", False)
+            ):
                 changed.append(field)
                 field.db_constraint = False
         try:

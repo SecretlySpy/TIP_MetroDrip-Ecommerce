@@ -560,9 +560,7 @@ class OrderTrackView(APIView):
 
     def get(self, request, token):
         try:
-            order = Order.objects.prefetch_related("items").get(
-                pk=Signer().unsign(token)
-            )
+            order = Order.objects.prefetch_related("items").get(pk=Signer().unsign(token))
         except (BadSignature, Order.DoesNotExist):
             return Response(
                 error_payload("not_found", "Order not found."), status=status.HTTP_404_NOT_FOUND

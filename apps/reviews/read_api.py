@@ -16,5 +16,8 @@ def product_statistics(product_ids=None):
 
 
 def approved_reviews(product_id):
-    return list(Review.objects.filter(product_id=product_id, status=ReviewStatus.APPROVED)
-                .prefetch_related("customer").order_by("-created_at"))
+    return list(
+        Review.objects.filter(product_id=product_id, status=ReviewStatus.APPROVED)
+        .prefetch_related("customer")
+        .order_by("-created_at")
+    )
