@@ -16,9 +16,12 @@ class Command(BaseCommand):
                 if not field.is_relation or getattr(field, "db_constraint", True):
                     continue
                 target = field.remote_field.model
-                rows = model.objects.using(router.db_for_read(model)).exclude(
-                    **{field.attname: None}
-                ).values_list(field.attname, flat=True).iterator(chunk_size=500)
+                rows = (
+                    model.objects.using(router.db_for_read(model))
+                    .exclude(**{field.attname: None})
+                    .values_list(field.attname, flat=True)
+                    .iterator(chunk_size=500)
+                )
                 batch = set()
                 missing = 0
                 for reference in rows:
@@ -36,7 +39,9 @@ class Command(BaseCommand):
 
     @staticmethod
     def missing(target, references):
-        found = set(target.objects.using(router.db_for_read(target)).filter(
-            pk__in=references
-        ).values_list("pk", flat=True))
+        found = set(
+            target.objects.using(router.db_for_read(target))
+            .filter(pk__in=references)
+            .values_list("pk", flat=True)
+        )
         return len(references - found)

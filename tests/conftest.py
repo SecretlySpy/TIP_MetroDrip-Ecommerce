@@ -97,9 +97,11 @@ def _truncate_disposable_test_tables():
     def sql_flush(self, style, tables, **kwargs):
         if not tables:
             return []
-        return ["SET FOREIGN_KEY_CHECKS = 0;"] + [
-            f"TRUNCATE TABLE {self.quote_name(table)};" for table in tables
-        ] + ["SET FOREIGN_KEY_CHECKS = 1;"]
+        return (
+            ["SET FOREIGN_KEY_CHECKS = 0;"]
+            + [f"TRUNCATE TABLE {self.quote_name(table)};" for table in tables]
+            + ["SET FOREIGN_KEY_CHECKS = 1;"]
+        )
 
     DatabaseOperations.sql_flush = sql_flush
     yield

@@ -45,19 +45,11 @@ TOPIC_STOCK_COMMIT = "stock.commit"
 
 
 def _consume_committed_order_holds(order):
-    """Commit every active hold on `order`, then cover any shortfall.
+    """Commit or replay each receipt after the payment has committed.
 
-    Called inside the same transaction as the payment status flip. While the
-    ledger is in-process that makes "paid" and "stock consumed" atomic. Once it
-    is remote they are two systems, so durable intent is recorded first: an
-    outbox row committed with the payment (ADR-P3-018). Delivery is then
-    at-least-once against the ledger's idempotency keys, which is exactly-once
-    in effect.
-
-    The synchronous attempt below is kept because it is what makes stock move
-    *immediately* in the common case; the outbox exists for when it does not.
-
-    Returns `{variant_id: qty}` actually committed.
+    Catalog owns each stock transaction. Orders records per-hold intent and
+    retires it after an idempotent owner response; the outer fulfillment intent
+    remains pending if any hold or shortfall is unresolved.
     """
     committed_by_variant: dict[int, int] = {}
 
@@ -83,7 +75,7 @@ def _consume_committed_order_holds(order):
                 checkout_id=checkout_id,
                 order_no=order.order_no,
                 order_id=order.pk,
-                # This runs with the payment transaction open, so the remote
+                # This runs with the delivery transaction open, so the remote
                 # budget is one tight attempt and the outbox row enqueued above
                 # carries the retry (ADR-P3-028).
                 inside_transaction=True,
@@ -112,21 +104,10 @@ def _consume_committed_order_holds(order):
 
 
 def _cover_shortfall(order, committed_by_variant):
-    """Re-reserve and commit anything the holds did not cover.
+    """Replace expired holds with stable, replayable reservation keys.
 
-    A hold can expire between checkout and payment confirmation, so the units
-    a paid order needs may no longer be held. This is the safety valve for
-    that; it is also the last line of defence when a commit came back
-    uncertain. When even this fails the order is paid and cannot be fulfilled,
-    which is a refund decision for a human — hence CRITICAL.
-
-    **This path keeps the full retry budget on purpose** (ADR-P3-028), and the
-    asymmetry with `consume_order_holds` above is the whole point. Cutting the
-    retries there is free because an outbox row was already committed and the
-    drainer will finish the job. Nothing enqueues these calls: this *is* the
-    last attempt, so a tight budget here would trade lock-hold time for orders
-    that are paid and unfulfillable. Do not "make it consistent" — the two paths
-    differ because their safety nets differ.
+    Failure leaves the durable order fulfillment instruction pending. After
+    retry exhaustion the operator can refund; no incomplete work is retired.
     """
     for item in order.items.all():
         shortfall = item.qty - committed_by_variant.get(item.variant_id, 0)

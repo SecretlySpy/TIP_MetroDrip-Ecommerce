@@ -181,3 +181,23 @@ def test_refund_before_stock_fulfillment_cannot_invent_stock(purchase):
     stock.refresh_from_db()
     assert stock.qty_on_hand == 10
     assert variant.movements.count() == 0
+
+
+def test_ledger_rejects_sql_update_and_delete(purchase):
+    from django.db import DatabaseError
+
+    from apps.inventory.models import StockMovement
+
+    _, _, variant, _, order, _ = purchase
+    movement = StockMovement.objects.create(
+        variant=variant, delta=-1, reason="sale", ref_order_id=order.pk
+    )
+    for sql in (
+        "UPDATE inventory_stockmovement SET delta=-2 WHERE id=%s",
+        "DELETE FROM inventory_stockmovement WHERE id=%s",
+    ):
+        with pytest.raises(DatabaseError), transaction.atomic(using="catalog"):
+            with connections["catalog"].cursor() as cursor:
+                cursor.execute(sql, [movement.pk])
+    movement.refresh_from_db()
+    assert movement.delta == -1

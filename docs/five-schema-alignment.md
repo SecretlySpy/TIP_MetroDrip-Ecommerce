@@ -88,7 +88,7 @@ preserved during backfill. Missing legacy variants fail migration for repair.
 - Unique payment provider reference; only verified provider events confirm payment.
 - Database checks on order, payment, review, reservation, shipment, hold, outbox,
   customer-role, device-platform, notification-category and snapshot-source values.
-- Review rating 1..5 and unique customer/product/order; delivered-purchase
+- Review rating 1..5 and unique customer/product; delivered-purchase
   verification remains application logic. Category depth/root uniqueness remain
   application validation; MySQL enforces sibling-name uniqueness.
 - Order transitions and number allocation lock Orders rows. Catalog stock mutations

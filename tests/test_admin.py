@@ -193,13 +193,11 @@ class TestVariantMatrixGenerator:
 @pytest.mark.django_db(transaction=True, databases="__all__")
 @patch("django.contrib.admin.ModelAdmin.message_user")
 class TestRefundAtomicity:
-    """A refund that fails mid-loop must leave the order and its stock untouched.
+    """Committed refunds retain retryable intent; Catalog never partly restores.
 
-    The action previously transitioned the order first and then restored each
-    line in a bare loop, so a failure on line 2 of 3 committed the REFUNDED
-    transition and part of the restock. Both assertions below fail against that
-    version, which is what makes them a regression test rather than a
-    restatement of the implementation.
+    Fault injection after a real first-line write proves the Catalog transaction
+    rolls back all stock changes. Replaying the persisted instruction restores
+    once without reversing the already-committed Orders decision.
     """
 
     @staticmethod
