@@ -41,7 +41,6 @@ class DeviceToken(models.Model):
         return f"{self.customer_id} {self.platform} …{self.token[-8:]}"
 
 
-
 class NotificationCategory(models.TextChoices):
     ORDER = "order", "Order update"
     DROP = "drop", "New drop"

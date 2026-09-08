@@ -151,3 +151,32 @@ def test_purchase_snapshot_cannot_be_rewritten_with_sql(purchase):
             )
     line.refresh_from_db()
     assert line.sku_snapshot != "rewritten"
+
+
+def test_fulfillment_delivery_replay_never_creates_a_second_sale(purchase):
+    from apps.inventory.services import reserve_lines
+    from apps.orders.models import OrderStatus, StockHold
+    from apps.payments.holds import deliver_order_stock
+    from django.utils import timezone
+
+    _, _, variant, stock, order, _ = purchase
+    reserve_lines(checkout_id="delivery-replay", lines=[{"variant_id": variant.pk, "qty": 1}])
+    StockHold.objects.create(order=order, checkout_id="delivery-replay", expires_at=timezone.now())
+    order.transition_to(OrderStatus.PAID)
+    deliver_order_stock({"order_id": order.pk})
+    deliver_order_stock({"order_id": order.pk})
+    stock.refresh_from_db()
+    assert stock.qty_on_hand == 9
+    assert stock.qty_reserved == 0
+    assert variant.movements.filter(reason="sale", ref_order_id=order.pk).count() == 1
+
+
+def test_refund_before_stock_fulfillment_cannot_invent_stock(purchase):
+    from apps.inventory.services import restore_order_stock
+
+    _, _, variant, stock, order, _ = purchase
+    restore_order_stock(order=order, lines=[{"variant_id": variant.pk, "qty": 1}])
+    restore_order_stock(order=order, lines=[{"variant_id": variant.pk, "qty": 1}])
+    stock.refresh_from_db()
+    assert stock.qty_on_hand == 10
+    assert variant.movements.count() == 0

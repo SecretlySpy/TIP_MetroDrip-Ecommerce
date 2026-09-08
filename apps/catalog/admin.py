@@ -9,7 +9,7 @@ which both consoles admit.
 """
 
 from django.contrib import admin
-from django.db import IntegrityError, transaction
+from django.db import router, IntegrityError, transaction
 
 from apps.core.money import format_centavos
 from config.consoles import merchant_site
@@ -117,7 +117,7 @@ class ProductAdmin(admin.ModelAdmin):
                         sku = f"MD-{product.slug[:8].upper()}-{size}-{color_code}-{fit_code}"
 
                         try:
-                            with transaction.atomic():
+                            with transaction.atomic(using=router.db_for_write(ProductVariant)):
                                 _, created = ProductVariant.objects.get_or_create(
                                     product=product,
                                     size=size,

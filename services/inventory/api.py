@@ -305,8 +305,10 @@ async def commit_reservations(
                 variant_id=reservation.variant_id,
                 delta=-reservation.qty,
                 reason=MovementReason.SALE.value,
+                ref_order_id=payload.order_ref,
             )
         )
+        reservation.order_id = payload.order_ref
         reservation.status = ReservationStatus.COMMITTED.value
         reservation.ended_at = _now()
         committed.append(reservation)
@@ -445,7 +447,20 @@ async def adjust_stock(
     if record is None:
         raise HTTPException(status_code=404, detail=envelope("unknown_variant", "No such SKU."))
 
-    new_on_hand = record.qty_on_hand + payload.delta
+    delta = payload.delta
+    if payload.reason == MovementReason.RETURN.value and payload.ref_order_ref is not None:
+        from sqlalchemy import func
+
+        totals = await db.execute(
+            select(StockMovement.reason, func.sum(StockMovement.delta))
+            .where(StockMovement.variant_id == payload.variant_id,
+                   StockMovement.ref_order_id == payload.ref_order_ref)
+            .group_by(StockMovement.reason)
+        )
+        by_reason = dict(totals.all())
+        outstanding = -by_reason.get("sale", 0) - by_reason.get("return", 0)
+        delta = min(delta, max(0, outstanding))
+    new_on_hand = record.qty_on_hand + delta
     if new_on_hand < record.qty_reserved:
         raise HTTPException(
             status_code=409,
@@ -456,7 +471,9 @@ async def adjust_stock(
         )
 
     record.qty_on_hand = new_on_hand
-    db.add(StockMovement(variant_id=payload.variant_id, delta=payload.delta, reason=payload.reason))
+    if delta:
+        db.add(StockMovement(variant_id=payload.variant_id, delta=delta,
+                             reason=payload.reason, ref_order_id=payload.ref_order_ref))
     await db.flush()
 
     result = AdjustResponse(

@@ -61,7 +61,10 @@ def configure_databases(base):
     import os
     import re
 
-    if os.environ.get("DATABASE_LAYOUT", "five") == "legacy":
+    layout = os.environ.get("DATABASE_LAYOUT", "five")
+    if layout not in {"legacy", "five"}:
+        raise ValueError("DATABASE_LAYOUT must be five or legacy")
+    if layout == "legacy":
         return {"default": base}, []
     databases = {}
     for alias, name in SCHEMA_NAMES.items():

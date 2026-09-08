@@ -146,13 +146,14 @@ def _cover_shortfall(order, committed_by_variant):
             committed_by_variant[item.variant_id] = (
                 committed_by_variant.get(item.variant_id, 0) + shortfall
             )
-        except (InsufficientStock, ReservationUnavailable):
+        except (InsufficientStock, ReservationUnavailable) as error:
             logger.critical(
                 "Order %s PAID but variant %s short by %d units — manual refund needed",
                 order.order_no,
                 item.variant_id,
                 shortfall,
             )
+            raise ReservationUnavailable("Paid stock fulfillment remains incomplete") from error
 
 
 @register_handler(TOPIC_STOCK_COMMIT)

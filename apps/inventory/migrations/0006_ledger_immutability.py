@@ -20,5 +20,6 @@ def remove(apps, editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
     dependencies = [("inventory", "0005_core_constraints")]
-    operations = [migrations.RunPython(install, remove)]
+    operations = [migrations.RunPython(install, remove, atomic=False)]

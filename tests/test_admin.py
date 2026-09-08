@@ -244,6 +244,9 @@ class TestRefundAtomicity:
                 fit=Fit.REGULAR,
             )
             StockRecord.objects.create(variant=variant, qty_on_hand=0, qty_reserved=0)
+            from apps.inventory.models import StockMovement
+
+            StockMovement.objects.create(variant=variant, delta=-1, reason="sale", ref_order=order)
             OrderItem.objects.create(
                 order=order, variant=variant, qty=1, unit_price_snapshot=100_00
             )

@@ -18,8 +18,11 @@ legacy = "metrodrip_transfer_ci_legacy"
 aliases = ("identity", "catalog", "default", "fulfillment", "content")
 targets = {a: f"metrodrip_transfer_ci_{a}" for a in aliases}
 connection = pymysql.connect(
-    host=env["MYSQL_HOST"], port=int(env.get("MYSQL_PORT", "3306")),
-    user=env["MYSQL_USER"], password=env["MYSQL_PASSWORD"], autocommit=True,
+    host=env["MYSQL_HOST"],
+    port=int(env.get("MYSQL_PORT", "3306")),
+    user=env["MYSQL_USER"],
+    password=env["MYSQL_PASSWORD"],
+    autocommit=True,
 )
 created = []
 
@@ -35,7 +38,7 @@ try:
             created.append(schema)
     old = dict(env, DATABASE_LAYOUT="legacy", MYSQL_DATABASE=legacy)
     manage("migrate", "--noinput", settings_env=old)
-    seed = '''
+    seed = """
 from apps.accounts.models import Customer, WishlistItem
 from apps.catalog.models import Category, Product, ProductVariant
 from apps.inventory.models import StockRecord
@@ -50,7 +53,7 @@ StockRecord.objects.create(variant=v,qty_on_hand=8)
 o=Order.objects.create(order_no="MD-2026-00001",customer=u,subtotal=12500,total=12500)
 OrderItem.objects.create(order=o,variant=v,qty=1,unit_price_snapshot=12500)
 WishlistItem.objects.create(customer=u,product=p)
-'''
+"""
     manage("shell", "-c", seed, settings_env=old)
     # Rewind only the snapshot additions, then prove real legacy rows backfill.
     manage("migrate", "orders", "0004", "--noinput", settings_env=old)
@@ -62,7 +65,7 @@ WishlistItem.objects.create(customer=u,product=p)
             new[f"MYSQL_SCHEMA_{alias.upper()}"] = schema
         manage("migrate_service_schemas", settings_env=new)
         manage("transfer_service_data", "import", directory, settings_env=new)
-        verify = '''
+        verify = """
 from apps.accounts.models import Customer, WishlistItem
 from apps.orders.models import OrderItem
 u=Customer.objects.get(email="transfer@example.test")
@@ -75,7 +78,7 @@ assert line.snapshot_source == "legacy_catalog"
 assert WishlistItem.objects.get().product_id == line.product_ref
 assert line.variant.stock.qty_on_hand == 8
 print("Legacy snapshot, primary keys, membership and cross-service references verified")
-'''
+"""
         manage("shell", "-c", verify, settings_env=new)
 finally:
     with connection.cursor() as cursor:

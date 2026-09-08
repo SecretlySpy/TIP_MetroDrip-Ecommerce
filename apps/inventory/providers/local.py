@@ -140,9 +140,22 @@ class LocalInventoryProvider(InventoryProvider):
                     raise InvalidStockAdjustment("Refund payload changed on replay") from None
                 return
             for line in ordered:
+                StockRecord.objects.select_for_update().get(variant_id=line["variant_id"])
+                movements = StockMovement.objects.filter(
+                    variant_id=line["variant_id"], ref_order_id=order.pk
+                )
+                sold = -(movements.filter(reason=MovementReason.SALE).aggregate(
+                    total=models.Sum("delta")
+                )["total"] or 0)
+                returned = movements.filter(reason=MovementReason.RETURN).aggregate(
+                    total=models.Sum("delta")
+                )["total"] or 0
+                quantity = min(line["qty"], max(0, sold - returned))
+                if quantity == 0:
+                    continue
                 services.adjust_stock(
                     variant_id=line["variant_id"],
-                    delta=line["qty"],
+                    delta=quantity,
                     reason=MovementReason.RETURN,
                     ref_order=order,
                 )
@@ -184,6 +197,11 @@ class LocalInventoryProvider(InventoryProvider):
                         status_code=201,
                     )
             except IntegrityError:
+                record = IdempotencyRecord.objects.get(
+                    key_hash=_idempotency_key("reserve_lines", checkout_id)
+                )
+                if record.request_fingerprint != _fingerprint(ordered):
+                    raise ReservationUnavailable("Reservation payload changed on replay") from None
                 # Someone else claimed this checkout_id. Their rows are
                 # committed by the time the lock released, so a locking read
                 # returns them rather than a stale snapshot.
@@ -332,7 +350,9 @@ class LocalInventoryProvider(InventoryProvider):
 
             # Ledger row in the same transaction (Invariant 4).
             StockMovement.objects.create(
-                variant_id=variant_id, delta=delta, reason=reason,
+                variant_id=variant_id,
+                delta=delta,
+                reason=reason,
                 ref_order_id=ref_order.pk if ref_order else None,
             )
         return stock

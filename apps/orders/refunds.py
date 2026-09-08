@@ -18,6 +18,7 @@ def enqueue_refund(order):
             "order_id": order.pk,
             "order_no": order.order_no,
             "lines": list(order.items.values("variant_id", "qty")),
+            "checkout_ids": list(order.stock_holds.values_list("checkout_id", flat=True)),
         },
     )
 
@@ -36,7 +37,10 @@ def enqueue_refund(order):
 
 @register_handler(TOPIC_REFUND)
 def deliver_refund(payload):
-    from apps.inventory.services import restore_order_stock
+    from apps.inventory.services import release_holds, restore_order_stock
+
+    for checkout_id in payload.get("checkout_ids", []):
+        release_holds(checkout_id=checkout_id)
 
     restore_order_stock(
         order=SimpleNamespace(pk=payload["order_id"], order_no=payload["order_no"]),
