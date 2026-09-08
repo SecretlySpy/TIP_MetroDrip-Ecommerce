@@ -4,6 +4,8 @@ Nothing with status != approved may ever render publicly (M4.5 gate) — public
 querysets must always filter on ReviewStatus.APPROVED.
 """
 
+from apps.core.lifecycle import service_cascade
+
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
@@ -16,9 +18,9 @@ class ReviewStatus(models.TextChoices):
 
 class Review(models.Model):
     customer = models.ForeignKey(
-        "accounts.Customer", on_delete=models.CASCADE, related_name="reviews"
+        "accounts.Customer", db_constraint=False, db_column="customer_ref", on_delete=service_cascade, related_name="reviews"
     )
-    product = models.ForeignKey("catalog.Product", on_delete=models.CASCADE, related_name="reviews")
+    product = models.ForeignKey("catalog.Product", db_constraint=False, db_column="product_ref", on_delete=service_cascade, related_name="reviews")
     # Proof of purchase (FR-17): submission-time validation checks this order is
     # the customer's, is Delivered, and contains the product. PROTECT keeps the
     # evidence — an order with a review on it can't be hard-deleted.
@@ -35,6 +37,8 @@ class Review(models.Model):
     class Meta:
         ordering = ["-created_at"]
         constraints = [
+            models.CheckConstraint(condition=models.Q(status__in=['pending', 'approved', 'rejected']), name='chk_review_status'),
+
             # Validators improve form errors, while this database check also
             # protects imports, scripts, and any future bulk-write path.
             models.CheckConstraint(

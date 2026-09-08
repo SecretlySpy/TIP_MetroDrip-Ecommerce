@@ -5,6 +5,42 @@ import csv
 from django.http import HttpResponse
 
 
+class ServiceReferenceAdminMixin:
+    """Search remote IDs separately; never ask MySQL for a cross-schema JOIN."""
+
+    list_select_related = ()
+
+    def get_queryset(self, request):
+        from config.database_layout import owner
+
+        query = super().get_queryset(request)
+        references = [field.name for field in self.model._meta.fields
+                      if field.is_relation and owner(field.related_model._meta.app_label)
+                      != owner(self.model._meta.app_label)]
+        return query.prefetch_related(*references)
+
+    def get_search_results(self, request, queryset, search_term):
+        from django.db.models import Q
+        from config.database_layout import owner
+
+        if not search_term:
+            return queryset, False
+        criteria = Q()
+        for name in self.get_search_fields(request):
+            first, _, rest = name.partition("__")
+            field = self.model._meta.get_field(first)
+            if rest and field.is_relation and owner(field.related_model._meta.app_label) != owner(
+                self.model._meta.app_label
+            ):
+                ids = list(field.related_model.objects.filter(
+                    **{rest + "__icontains": search_term}
+                ).values_list("pk", flat=True))
+                criteria |= Q(**{field.attname + "__in": ids})
+            else:
+                criteria |= Q(**{name + "__icontains": search_term})
+        return queryset.filter(criteria).distinct(), True
+
+
 class ExportCsvMixin:
     """Add an "Export Selected as CSV" action to a ModelAdmin.
 

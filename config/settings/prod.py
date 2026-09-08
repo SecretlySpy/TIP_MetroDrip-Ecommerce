@@ -277,3 +277,8 @@ DATABASES["default"]["CONN_MAX_AGE"] = 60  # noqa: F405
 
 # LOGGING is defined in base.py (correlation-id filter + cid=… format).
 # Container platforms collect stdout/stderr; do not override here.
+
+# Apply schema ownership after this module has finalized connection settings.
+from config.database_layout import configure_databases  # noqa: E402
+
+DATABASES, DATABASE_ROUTERS = configure_databases(DATABASES["default"])

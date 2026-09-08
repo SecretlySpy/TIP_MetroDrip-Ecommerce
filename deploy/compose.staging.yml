@@ -274,7 +274,7 @@ services:
       # Shared schema, exclusive writer (ADR-P3-013): the ledger maps Django's
       # tables and is their only writer. Django owns the DDL, so create_all is
       # skipped and migrations remain the single schema authority.
-      MYSQL_DATABASE_INVENTORY: "${MYSQL_DATABASE:?Set MYSQL_DATABASE in deploy/.env.staging}"
+      MYSQL_DATABASE_INVENTORY: "${MYSQL_SCHEMA_CATALOG:-db_catalog}"
       SKIP_CREATE_ALL: "1"
       INVENTORY_SERVICE_TOKEN: "${INVENTORY_SERVICE_TOKEN:?Set INVENTORY_SERVICE_TOKEN in deploy/.env.staging}"
     depends_on:

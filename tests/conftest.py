@@ -60,3 +60,19 @@ def _clear_content_type_cache():
         ContentType.objects.clear_cache()
     except Exception:  # noqa: BLE001
         pass
+
+
+@pytest.fixture(scope="session")
+def django_db_modify_db_settings():
+    """Give each schema an independent InnoDB test database."""
+    from django.conf import settings
+    for alias, database in settings.DATABASES.items():
+        database.setdefault("TEST", {})["DEPENDENCIES"] = []
+
+
+def pytest_collection_modifyitems(items):
+    """Existing integration tests now exercise the five routed databases."""
+    for item in items:
+        marker = item.get_closest_marker("django_db")
+        if marker is not None:
+            marker.kwargs["databases"] = "__all__"

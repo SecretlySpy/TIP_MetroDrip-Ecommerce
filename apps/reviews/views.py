@@ -35,7 +35,7 @@ def submit_review(request):
         messages.error(request, "You can only review items from delivered orders.")
     elif not 1 <= rating <= 5:
         messages.error(request, "Pick a rating from 1 to 5 stars.")
-    elif not order.items.filter(variant__product=product).exists():
+    elif not order.items.filter(product_ref=product.pk).exists():
         messages.error(request, "That product is not part of this order.")
     else:
         _, created = Review.objects.update_or_create(

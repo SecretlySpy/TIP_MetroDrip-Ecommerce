@@ -39,12 +39,12 @@ class PayMongoPaymentProvider(PaymentProvider):
     def create_checkout_session(self, order, success_url, cancel_url):
         line_items = [
             {
-                "name": f"{item.variant.product.name} ({item.variant.sku})",
+                "name": f"{item.product_name_snapshot} ({item.sku_snapshot})",
                 "quantity": item.qty,
                 "amount": item.unit_price_snapshot,
                 "currency": "PHP",
             }
-            for item in order.items.select_related("variant__product")
+            for item in order.items.all()
         ]
         if order.shipping_fee > 0:
             line_items.append(

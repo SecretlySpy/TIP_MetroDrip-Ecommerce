@@ -4,6 +4,8 @@ Reviews have moderation actions (approve/reject) per FR-17. Nothing with
 status != approved may ever render publicly (M4.5 gate).
 """
 
+from apps.core.admin import ServiceReferenceAdminMixin
+
 from django.contrib import admin
 
 from config.consoles import merchant_site
@@ -12,7 +14,7 @@ from .models import Review, ReviewStatus
 
 
 @admin.register(Review, site=merchant_site)
-class ReviewAdmin(admin.ModelAdmin):
+class ReviewAdmin(ServiceReferenceAdminMixin, admin.ModelAdmin):
     list_display = ("product", "customer", "rating", "status", "created_at")
     list_filter = ("status", "rating", "created_at")
     search_fields = ("product__name", "customer__email", "body")

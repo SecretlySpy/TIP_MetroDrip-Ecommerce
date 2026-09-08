@@ -17,6 +17,7 @@ whichever side owns the rows.
 import logging
 
 from django.utils import timezone
+from django.db import transaction
 
 from apps.inventory.services import (
     InsufficientStock,
@@ -43,7 +44,7 @@ def _retire(message):
 TOPIC_STOCK_COMMIT = "stock.commit"
 
 
-def consume_order_holds(order):
+def _consume_committed_order_holds(order):
     """Commit every active hold on `order`, then cover any shortfall.
 
     Called inside the same transaction as the payment status flip. While the
@@ -105,7 +106,8 @@ def consume_order_holds(order):
             state=StockHoldState.COMMITTED, committed_at=timezone.now()
         )
 
-    _cover_shortfall(order, committed_by_variant)
+    if not order.stock_holds.filter(state=StockHoldState.UNKNOWN).exists():
+        _cover_shortfall(order, committed_by_variant)
     return committed_by_variant
 
 
@@ -218,3 +220,43 @@ def reconcile_unknown_holds(*, limit=100):
         resolved += 1
         logger.info("Hold %s reconciled to committed.", hold.checkout_id)
     return resolved
+
+
+TOPIC_ORDER_FULFILL = "order.fulfill_stock"
+
+
+def consume_order_holds(order):
+    """Commit payment and durable stock intent together before contacting Catalog.
+
+    With five connections a Catalog commit cannot roll back with Orders. Never
+    consume stock until the payment transaction commits. A crash in this window
+    leaves the persisted outbox instruction for the scheduler.
+    """
+    message = enqueue(topic=TOPIC_ORDER_FULFILL, payload={"order_id": order.pk})
+
+    def attempt():
+        try:
+            deliver_order_stock(message.payload)
+        except Exception:
+            logger.exception("Deferred stock fulfillment for order %s", order.pk)
+        else:
+            _retire(message)
+
+    transaction.on_commit(attempt, using=order._state.db, robust=True)
+    return {}
+
+
+@register_handler(TOPIC_ORDER_FULFILL)
+def deliver_order_stock(payload):
+    from apps.orders.models import Order, OrderStatus
+
+    with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=payload["order_id"])
+        if order.status in (OrderStatus.CANCELLED, OrderStatus.REFUNDED):
+            return
+        if order.status == OrderStatus.PENDING:
+            raise ValueError("Cannot consume inventory for an unpaid order")
+        result = _consume_committed_order_holds(order)
+        if order.stock_holds.filter(state=StockHoldState.UNKNOWN).exists():
+            raise ReservationUnavailable("Stock outcome remains unknown")
+        return result

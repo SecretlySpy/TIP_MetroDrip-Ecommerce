@@ -11,6 +11,8 @@ Shipment includes a manual waybill entry field (FR-7 fallback) so the store
 owner can enter tracking numbers even without J&T API integration.
 """
 
+from apps.core.admin import ServiceReferenceAdminMixin
+
 from django.contrib import admin
 
 from config.consoles import merchant_site
@@ -38,7 +40,7 @@ class ShippingZoneAdmin(admin.ModelAdmin):
 
 
 @admin.register(Shipment, site=merchant_site)
-class ShipmentAdmin(admin.ModelAdmin):
+class ShipmentAdmin(ServiceReferenceAdminMixin, admin.ModelAdmin):
     list_display = ("order", "courier", "waybill_no", "status", "booked_at")
     list_filter = ("courier", "status")
     search_fields = ("order__order_no", "waybill_no")

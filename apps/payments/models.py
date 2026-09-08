@@ -36,3 +36,9 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"{self.order_id} {self.method} {self.status}"
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=models.Q(method__in=['card', 'gcash', 'maya']), name='chk_payment_method'),
+            models.CheckConstraint(condition=models.Q(status__in=['pending', 'paid', 'failed', 'refunded']), name='chk_payment_status'),
+        ]

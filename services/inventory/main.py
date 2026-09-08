@@ -13,28 +13,19 @@ path", and it contradicted the exclusive-writer decision in ADR-P3-013.
 """
 
 import logging
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response
 
 from . import api, database
-from .database import Base
 
 logger = logging.getLogger("metrodrip.inventory")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if not os.environ.get("SKIP_CREATE_ALL"):
-        # No longer swallowed. A service that cannot reach or create its own
-        # schema has nothing to serve, and hiding that behind a green container
-        # is how two schema authorities over the same table names went unnoticed.
-        #
-        # Django owns this DDL under ADR-P3-013, so deployments set
-        # SKIP_CREATE_ALL and let migrations be the single authority.
-        async with database.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    # Schema creation is exclusively Django's responsibility. A service must
+    # never silently create a second, divergent inventory schema.
 
     yield
 

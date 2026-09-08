@@ -100,7 +100,7 @@ class LocalInventoryProvider(InventoryProvider):
         """Place a TTL-bound hold on `qty` units of one SKU (B-1/B-2, FR-5)."""
         _require_positive_int(qty, "qty")
 
-        with transaction.atomic():
+        with transaction.atomic(using=stock_database()):
             # The row lock serializes competing buyers; both concurrency gates
             # (2 buyers/1 unit and 20 buyers/10 units) prove exactly-N successes.
             stock = StockRecord.objects.select_for_update().get(variant_id=variant_id)
@@ -141,7 +141,7 @@ class LocalInventoryProvider(InventoryProvider):
         expires_at = timezone.now() + datetime.timedelta(minutes=ttl)
         ordered = sorted(lines, key=lambda line: int(line["variant_id"]))
 
-        with transaction.atomic():
+        with transaction.atomic(using=stock_database()):
             # Replay guard, and it must be a *write* to be one. This was a plain
             # SELECT — which concurrency gate G5 proved is not a guard at all:
             # five simultaneous retries of one checkout_id each saw "nothing
@@ -153,7 +153,7 @@ class LocalInventoryProvider(InventoryProvider):
             # service uses (ADR-P3-016); the local path needs it for the same
             # reason, since a client can have several retries in flight at once.
             try:
-                with transaction.atomic():
+                with transaction.atomic(using=stock_database()):
                     IdempotencyRecord.objects.create(
                         key_hash=_idempotency_key("reserve_lines", checkout_id),
                         request_fingerprint=_fingerprint(ordered),
@@ -200,20 +200,18 @@ class LocalInventoryProvider(InventoryProvider):
         truth (Invariant 3) and providers retry it.
         """
         committed: dict[int, int] = {}
-        reservations = list(
-            Reservation.objects.filter(
-                checkout_id=checkout_id, status=ReservationStatus.ACTIVE
-            ).values_list("pk", "variant_id", "qty")
-        )
-        for reservation_id, variant_id, qty in reservations:
-            try:
-                self.commit_reservation(reservation_id=reservation_id, order_id=order_id)
-            except InvalidReservationState:
-                # Lost a race with the sweep or another commit; the shortfall
-                # loop downstream re-reserves whatever is missing.
-                logger.warning("reservation %s was not committable", reservation_id)
-                continue
-            committed[variant_id] = committed.get(variant_id, 0) + qty
+        with transaction.atomic(using=stock_database()):
+            reservations = list(Reservation.objects.select_for_update()
+                                .filter(checkout_id=checkout_id).order_by("pk"))
+            for reservation in reservations:
+                if reservation.status == ReservationStatus.COMMITTED:
+                    if reservation.order_id != order_id:
+                        raise InvalidReservationState("Hold belongs to another order")
+                elif reservation.status == ReservationStatus.ACTIVE:
+                    self.commit_reservation(reservation_id=reservation.pk, order_id=order_id)
+                else:
+                    continue
+                committed[reservation.variant_id] = committed.get(reservation.variant_id, 0) + reservation.qty
         return committed
 
     def release_holds(self, *, checkout_id):
@@ -235,7 +233,7 @@ class LocalInventoryProvider(InventoryProvider):
 
     def release_reservation(self, reservation_id):
         """Give an abandoned/cancelled hold back to availability (idempotent)."""
-        with transaction.atomic():
+        with transaction.atomic(using=stock_database()):
             reservation = Reservation.objects.select_for_update().get(pk=reservation_id)
             if reservation.status in (ReservationStatus.RELEASED, ReservationStatus.EXPIRED):
                 return reservation
@@ -253,7 +251,7 @@ class LocalInventoryProvider(InventoryProvider):
         """
         if order_id is None and order is not None:
             order_id = order.pk
-        with transaction.atomic():
+        with transaction.atomic(using=stock_database()):
             reservation = Reservation.objects.select_for_update().get(pk=reservation_id)
             if reservation.status != ReservationStatus.ACTIVE:
                 raise InvalidReservationState(
@@ -292,7 +290,7 @@ class LocalInventoryProvider(InventoryProvider):
         if reason in (MovementReason.RESTOCK, MovementReason.RETURN) and delta < 0:
             raise InvalidStockAdjustment(f"{reason} requires a positive delta.")
 
-        with transaction.atomic():
+        with transaction.atomic(using=stock_database()):
             stock = StockRecord.objects.select_for_update().get(variant_id=variant_id)
             new_on_hand = stock.qty_on_hand + delta
             if new_on_hand < stock.qty_reserved:
@@ -323,7 +321,7 @@ class LocalInventoryProvider(InventoryProvider):
         expired_count = 0
         for reservation_id in candidate_ids:
             try:
-                with transaction.atomic():
+                with transaction.atomic(using=stock_database()):
                     reservation = Reservation.objects.select_for_update().get(pk=reservation_id)
                     # Re-check under lock: a commit/release may have won the race.
                     if (
@@ -367,3 +365,8 @@ class LocalInventoryProvider(InventoryProvider):
             variant_id: found.get(variant_id) or _absent_stock_record(variant_id)
             for variant_id in wanted
         }
+
+
+def stock_database():
+    from django.db import router
+    return router.db_for_write(StockRecord)

@@ -1,0 +1,50 @@
+name: Five-schema alignment
+on:
+  push:
+    branches: ["codex/align-five-schema-erd"]
+  pull_request:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports: ["3306:3306"]
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-retries=12
+    env:
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: "3306"
+      DJANGO_SECRET_KEY: ci-only-schema-alignment-key
+      DATABASE_LAYOUT: five
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements.txt
+      - name: Check models and migration state
+        run: |
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+      - name: Test five-schema ownership and transaction boundaries
+        run: pytest tests/test_schema_alignment.py -vv --maxfail=10
+      - name: Full regression suite
+        run: pytest --maxfail=15
+      - name: Formatting diagnostics
+        if: always()
+        run: |
+          ruff check . --fix > /tmp/ruff-diagnostics.txt || true
+          ruff format .
+          git diff > /tmp/formatting.patch
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: formatting-diagnostics
+          path: |
+            /tmp/ruff-diagnostics.txt
+            /tmp/formatting.patch

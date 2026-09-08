@@ -149,6 +149,9 @@ class ProductVariant(models.Model):
 
     class Meta:
         constraints = [
+            models.CheckConstraint(condition=models.Q(size__in=['XS', 'S', 'M', 'L', 'XL', 'XXL']), name='chk_variant_size'),
+            models.CheckConstraint(condition=models.Q(fit__in=['slim', 'regular', 'oversized']), name='chk_variant_fit'),
+
             # One SKU per axis combination (§1: Size × Color × Fit = one SKU).
             models.UniqueConstraint(
                 fields=["product", "size", "color", "fit"], name="uniq_variant_axes"

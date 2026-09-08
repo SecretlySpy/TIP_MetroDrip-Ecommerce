@@ -6,6 +6,8 @@ the shipping-address snapshot. An unusable password therefore means an account
 cannot log in yet; it is not used as a guest-identity flag.
 """
 
+from apps.core.lifecycle import service_cascade
+
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -149,13 +151,18 @@ class Customer(AbstractBaseUser, PermissionsMixin):
             and (self.is_superuser or self.role == StaffRole.ADMINISTRATOR)
         )
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=models.Q(role__in=['customer', 'merchant', 'administrator']), name='chk_customer_role'),
+        ]
+
 
 class WishlistItem(models.Model):
     """FR-16: product saved by a logged-in customer. Product-level, not variant-level."""
 
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="wishlist_items")
     product = models.ForeignKey(
-        "catalog.Product", on_delete=models.CASCADE, related_name="wishlisted_by"
+        "catalog.Product", db_constraint=False, db_column="product_ref", on_delete=service_cascade, related_name="wishlisted_by"
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

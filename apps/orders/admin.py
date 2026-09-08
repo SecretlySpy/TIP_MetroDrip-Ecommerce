@@ -11,6 +11,8 @@ second copy of this screen (ADR-F-001).
 
 import logging
 
+from apps.core.admin import ServiceReferenceAdminMixin
+
 from django.contrib import admin
 from django.db import transaction
 
@@ -28,8 +30,8 @@ class OrderItemInline(admin.TabularInline):
 
     model = OrderItem
     extra = 0
-    fields = ("variant", "qty", "unit_price_display")
-    readonly_fields = ("variant", "qty", "unit_price_display")
+    fields = ("sku_snapshot", "product_name_snapshot", "size_snapshot", "color_snapshot", "fit_snapshot", "qty", "unit_price_display")
+    readonly_fields = ("sku_snapshot", "product_name_snapshot", "size_snapshot", "color_snapshot", "fit_snapshot", "qty", "unit_price_display")
 
     @admin.display(description="Unit Price")
     def unit_price_display(self, obj):
@@ -45,7 +47,7 @@ class OrderItemInline(admin.TabularInline):
 
 
 @admin.register(Order, site=merchant_site)
-class OrderAdmin(ExportCsvMixin, admin.ModelAdmin):
+class OrderAdmin(ServiceReferenceAdminMixin, ExportCsvMixin, admin.ModelAdmin):
     list_display = (
         "order_no",
         "customer",
@@ -150,7 +152,7 @@ class OrderAdmin(ExportCsvMixin, admin.ModelAdmin):
         from .models import Order
 
         order = get_object_or_404(
-            Order.objects.select_related("shipment").prefetch_related("items__variant__product"),
+            Order.objects.prefetch_related("shipment", "items"),
             pk=object_id,
         )
         return render(

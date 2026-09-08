@@ -16,6 +16,8 @@ Both tiers are enforced server-side in `get_readonly_fields` and the
 between an account and an escalation (NFR-10).
 """
 
+from apps.core.admin import ServiceReferenceAdminMixin
+
 from django.contrib import admin
 from django.contrib.admin.models import LogEntry
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
@@ -180,7 +182,7 @@ class CustomerAdmin(BaseUserAdmin, ExportCsvMixin):
 
 
 @admin.register(WishlistItem)
-class WishlistItemAdmin(admin.ModelAdmin):
+class WishlistItemAdmin(ServiceReferenceAdminMixin, admin.ModelAdmin):
     list_display = ("customer", "product", "created_at")
     search_fields = ("customer__email", "product__name")
     readonly_fields = ("customer", "product", "created_at")
@@ -188,7 +190,7 @@ class WishlistItemAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         # Both list columns dereference a FK; without this the changelist issues
         # two extra queries per row.
-        return super().get_queryset(request).select_related("customer", "product")
+        return super().get_queryset(request).select_related("customer").prefetch_related("product")
 
     def has_add_permission(self, request):
         # Wishlist items are managed by the storefront, not the admin.
