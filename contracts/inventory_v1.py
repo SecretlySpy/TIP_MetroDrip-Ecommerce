@@ -111,6 +111,7 @@ class CommitRequest(BaseModel):
     """Turn a hold into a sale. `order_no` is a label for the audit row only."""
 
     order_no: str = ""
+    order_ref: int | None = Field(default=None, gt=0)
 
 
 class ReleaseResponse(BaseModel):
@@ -142,6 +143,7 @@ class AdjustRequest(BaseModel):
     delta: int
     reason: str
     ref_order_no: str = ""
+    ref_order_ref: int | None = Field(default=None, gt=0)
 
 
 class AdjustResponse(BaseModel):

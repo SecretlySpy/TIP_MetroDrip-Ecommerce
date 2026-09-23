@@ -31,6 +31,7 @@ DEBUG = False  # never default-on; dev.py opts in explicitly
 ALLOWED_HOSTS: list[str] = []
 
 INSTALLED_APPS = [
+    "apps.core",
     "whitenoise.runserver_nostatic",
     # Replaces "django.contrib.admin" so the admin uses MetroDrip branding.
     # AdminConfig still autodiscovers every app's admin.py exactly as before.
@@ -346,3 +347,8 @@ SIMPLE_JWT = {
 MOBILE_APP_SCHEME = os.environ.get("MOBILE_APP_SCHEME", "metrodrip")
 # Push provider registry key (simulated | expo) — simulated logs, never sends.
 PUSH_PROVIDER = os.environ.get("PUSH_PROVIDER", "simulated")
+
+# Apply schema ownership after this module has finalized connection settings.
+from config.database_layout import configure_databases  # noqa: E402
+
+DATABASES, DATABASE_ROUTERS = configure_databases(DATABASES["default"])

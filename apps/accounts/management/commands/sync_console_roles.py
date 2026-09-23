@@ -23,7 +23,7 @@ from django.contrib import admin
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
-from django.db import transaction
+from django.db import router, transaction
 
 from apps.accounts.models import Customer, StaffRole
 from config.consoles import merchant_site
@@ -148,7 +148,7 @@ class Command(BaseCommand):
         dry_run = options["dry_run"]
         # One transaction so a failure part-way through cannot leave one console
         # granted and the other not.
-        with transaction.atomic():
+        with transaction.atomic(using=router.db_for_write(Customer)):
             for role, site in (
                 (StaffRole.ADMINISTRATOR, admin.site),
                 (StaffRole.MERCHANT, merchant_site),
@@ -159,7 +159,7 @@ class Command(BaseCommand):
                 self._sync_memberships(dry_run)
 
             if dry_run:
-                transaction.set_rollback(True)
+                transaction.set_rollback(True, using=router.db_for_write(Customer))
                 self.stdout.write(self.style.WARNING("Dry run — nothing was written."))
 
     def _sync_group(self, role, site, dry_run):

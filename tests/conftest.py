@@ -60,3 +60,49 @@ def _clear_content_type_cache():
         ContentType.objects.clear_cache()
     except Exception:  # noqa: BLE001
         pass
+
+
+@pytest.fixture(scope="session")
+def django_db_modify_db_settings():
+    """Give each schema an independent InnoDB test database."""
+    from django.conf import settings
+
+    for database in settings.DATABASES.values():
+        database.setdefault("TEST", {})["DEPENDENCIES"] = []
+
+
+def pytest_collection_modifyitems(items):
+    """Existing integration tests now exercise the five routed databases."""
+    for item in items:
+        marker = item.get_closest_marker("django_db")
+        if marker is not None:
+            marker.kwargs["databases"] = "__all__"
+
+        elif {"db", "transactional_db"}.intersection(item.fixturenames):
+            item.add_marker(pytest.mark.django_db(databases="__all__"))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _truncate_disposable_test_tables():
+    """Clean test databases with DDL; audit DELETE triggers must remain active.
+
+    Django's MySQL flush uses DELETE, which correctly fails on the append-only
+    ledger. TRUNCATE is reserved here for disposable test database teardown,
+    after test transactions have ended. Application DELETE guards are not bypassed.
+    """
+    from django.db.backends.mysql.operations import DatabaseOperations
+
+    original = DatabaseOperations.sql_flush
+
+    def sql_flush(self, style, tables, **kwargs):
+        if not tables:
+            return []
+        return (
+            ["SET FOREIGN_KEY_CHECKS = 0;"]
+            + [f"TRUNCATE TABLE {self.quote_name(table)};" for table in tables]
+            + ["SET FOREIGN_KEY_CHECKS = 1;"]
+        )
+
+    DatabaseOperations.sql_flush = sql_flush
+    yield
+    DatabaseOperations.sql_flush = original

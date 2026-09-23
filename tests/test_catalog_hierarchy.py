@@ -193,7 +193,7 @@ class TestCategoryTree:
         self, django_assert_num_queries, hoodies, tees, hoodies_men, hoodies_women
     ):
         """NFR-1: one query for roots, one for children — never per-category."""
-        with django_assert_num_queries(2):
+        with django_assert_num_queries(2, using="catalog"):
             tree = get_category_tree()
             for root in tree:
                 list(root.child_categories)

@@ -16,13 +16,14 @@ whichever side owns the rows.
 
 import logging
 
+from django.db import transaction
 from django.utils import timezone
 
 from apps.inventory.services import (
     InsufficientStock,
     ReservationUnavailable,
     commit_holds,
-    reserve_stock,
+    reserve_lines,
 )
 from apps.orders.models import OutboxState, StockHoldState
 from apps.orders.outbox import enqueue, register_handler
@@ -43,25 +44,17 @@ def _retire(message):
 TOPIC_STOCK_COMMIT = "stock.commit"
 
 
-def consume_order_holds(order):
-    """Commit every active hold on `order`, then cover any shortfall.
+def _consume_committed_order_holds(order):
+    """Commit or replay each receipt after the payment has committed.
 
-    Called inside the same transaction as the payment status flip. While the
-    ledger is in-process that makes "paid" and "stock consumed" atomic. Once it
-    is remote they are two systems, so durable intent is recorded first: an
-    outbox row committed with the payment (ADR-P3-018). Delivery is then
-    at-least-once against the ledger's idempotency keys, which is exactly-once
-    in effect.
-
-    The synchronous attempt below is kept because it is what makes stock move
-    *immediately* in the common case; the outbox exists for when it does not.
-
-    Returns `{variant_id: qty}` actually committed.
+    Catalog owns each stock transaction. Orders records per-hold intent and
+    retires it after an idempotent owner response; the outer fulfillment intent
+    remains pending if any hold or shortfall is unresolved.
     """
     committed_by_variant: dict[int, int] = {}
 
     checkout_ids = (
-        order.stock_holds.filter(state=StockHoldState.ACTIVE)
+        order.stock_holds.filter(state__in=[StockHoldState.ACTIVE, StockHoldState.COMMITTED])
         .values_list("checkout_id", flat=True)
         .distinct()
     )
@@ -82,7 +75,7 @@ def consume_order_holds(order):
                 checkout_id=checkout_id,
                 order_no=order.order_no,
                 order_id=order.pk,
-                # This runs with the payment transaction open, so the remote
+                # This runs with the delivery transaction open, so the remote
                 # budget is one tight attempt and the outbox row enqueued above
                 # carries the retry (ADR-P3-028).
                 inside_transaction=True,
@@ -105,26 +98,16 @@ def consume_order_holds(order):
             state=StockHoldState.COMMITTED, committed_at=timezone.now()
         )
 
-    _cover_shortfall(order, committed_by_variant)
+    if not order.stock_holds.filter(state=StockHoldState.UNKNOWN).exists():
+        _cover_shortfall(order, committed_by_variant)
     return committed_by_variant
 
 
 def _cover_shortfall(order, committed_by_variant):
-    """Re-reserve and commit anything the holds did not cover.
+    """Replace expired holds with stable, replayable reservation keys.
 
-    A hold can expire between checkout and payment confirmation, so the units
-    a paid order needs may no longer be held. This is the safety valve for
-    that; it is also the last line of defence when a commit came back
-    uncertain. When even this fails the order is paid and cannot be fulfilled,
-    which is a refund decision for a human — hence CRITICAL.
-
-    **This path keeps the full retry budget on purpose** (ADR-P3-028), and the
-    asymmetry with `consume_order_holds` above is the whole point. Cutting the
-    retries there is free because an outbox row was already committed and the
-    drainer will finish the job. Nothing enqueues these calls: this *is* the
-    last attempt, so a tight budget here would trade lock-hold time for orders
-    that are paid and unfulfillable. Do not "make it consistent" — the two paths
-    differ because their safety nets differ.
+    Failure leaves the durable order fulfillment instruction pending. After
+    retry exhaustion the operator can refund; no incomplete work is retired.
     """
     for item in order.items.all():
         shortfall = item.qty - committed_by_variant.get(item.variant_id, 0)
@@ -132,11 +115,9 @@ def _cover_shortfall(order, committed_by_variant):
             continue
         try:
             replacement_id = f"shortfall-{order.pk}-{item.variant_id}"
-            reserve_stock(
-                variant_id=item.variant_id,
-                qty=shortfall,
-                order=order,
+            reserve_lines(
                 checkout_id=replacement_id,
+                lines=[{"variant_id": item.variant_id, "qty": shortfall}],
             )
             commit_holds(
                 checkout_id=replacement_id,
@@ -146,13 +127,14 @@ def _cover_shortfall(order, committed_by_variant):
             committed_by_variant[item.variant_id] = (
                 committed_by_variant.get(item.variant_id, 0) + shortfall
             )
-        except (InsufficientStock, ReservationUnavailable):
+        except (InsufficientStock, ReservationUnavailable) as error:
             logger.critical(
                 "Order %s PAID but variant %s short by %d units — manual refund needed",
                 order.order_no,
                 item.variant_id,
                 shortfall,
             )
+            raise ReservationUnavailable("Paid stock fulfillment remains incomplete") from error
 
 
 @register_handler(TOPIC_STOCK_COMMIT)
@@ -218,3 +200,43 @@ def reconcile_unknown_holds(*, limit=100):
         resolved += 1
         logger.info("Hold %s reconciled to committed.", hold.checkout_id)
     return resolved
+
+
+TOPIC_ORDER_FULFILL = "order.fulfill_stock"
+
+
+def consume_order_holds(order):
+    """Commit payment and durable stock intent together before contacting Catalog.
+
+    With five connections a Catalog commit cannot roll back with Orders. Never
+    consume stock until the payment transaction commits. A crash in this window
+    leaves the persisted outbox instruction for the scheduler.
+    """
+    message = enqueue(topic=TOPIC_ORDER_FULFILL, payload={"order_id": order.pk})
+
+    def attempt():
+        try:
+            deliver_order_stock(message.payload)
+        except Exception:
+            logger.exception("Deferred stock fulfillment for order %s", order.pk)
+        else:
+            _retire(message)
+
+    transaction.on_commit(attempt, using=order._state.db, robust=True)
+    return {}
+
+
+@register_handler(TOPIC_ORDER_FULFILL)
+def deliver_order_stock(payload):
+    from apps.orders.models import Order, OrderStatus
+
+    with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=payload["order_id"])
+        if order.status in (OrderStatus.CANCELLED, OrderStatus.REFUNDED):
+            return
+        if order.status == OrderStatus.PENDING:
+            raise ValueError("Cannot consume inventory for an unpaid order")
+        result = _consume_committed_order_holds(order)
+        if order.stock_holds.filter(state=StockHoldState.UNKNOWN).exists():
+            raise ReservationUnavailable("Stock outcome remains unknown")
+        return result

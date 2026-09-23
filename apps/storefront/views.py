@@ -374,7 +374,7 @@ def checkout_success(request, token):
         raise Http404 from None
 
     try:
-        order = Order.objects.prefetch_related("items__variant__product").get(pk=order_id)
+        order = Order.objects.prefetch_related("items").get(pk=order_id)
     except Order.DoesNotExist:
         raise Http404 from None
 
@@ -428,8 +428,9 @@ def order_status(request, token):
 
     try:
         order = (
-            Order.objects.select_related("payment", "shipment")
-            .prefetch_related("items__variant__product")
+            Order.objects.select_related("payment")
+            .prefetch_related("shipment")
+            .prefetch_related("items")
             .get(pk=order_id)
         )
     except Order.DoesNotExist:
@@ -463,8 +464,9 @@ def order_invoice(request, token):
 
     try:
         order = (
-            Order.objects.select_related("payment", "shipment")
-            .prefetch_related("items__variant__product")
+            Order.objects.select_related("payment")
+            .prefetch_related("shipment")
+            .prefetch_related("items")
             .get(pk=order_id)
         )
     except Order.DoesNotExist:

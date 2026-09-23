@@ -84,19 +84,19 @@
         {% for item in order.items.all %}
           <div class="summary-line" style="align-items: flex-start;">
             <div>
-              <p class="text-mono" style="font-weight: 700;">{{ item.variant.product.name }}</p>
+              <p class="text-mono" style="font-weight: 700;">{{ item.product_name_snapshot }}</p>
               <p class="text-mono text-muted" style="font-size: 0.7rem;">
-                {{ item.variant.get_size_display }} / {{ item.variant.color }} / {{ item.variant.get_fit_display }}
+                {{ item.get_size_display }} / {{ item.color_snapshot }} / {{ item.get_fit_display }}
                 × {{ item.qty }}
               </p>
-              <span class="sku-tag">{{ item.variant.sku }}</span>
+              <span class="sku-tag">{{ item.sku_snapshot }}</span>
 
               {# FR-17: verified purchase review — owner of a delivered order only #}
               {% if order.status == "delivered" and request.user == order.customer %}
                 <form method="POST" action="{% url 'reviews:submit-review' %}" class="mt-sm" style="display: flex; gap: var(--space-sm); align-items: center; flex-wrap: wrap;">
                   {% csrf_token %}
                   <input type="hidden" name="order_no" value="{{ order.order_no }}">
-                  <input type="hidden" name="product_id" value="{{ item.variant.product.id }}">
+                  <input type="hidden" name="product_id" value="{{ item.product_ref }}">
                   <select name="rating" required class="form-select" style="width: auto; padding: 0.25rem 0.5rem; font-size: 0.75rem;">
                     <option value="">Rate…</option>
                     <option value="5">★★★★★</option>

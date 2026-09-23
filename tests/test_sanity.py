@@ -13,7 +13,10 @@ def test_settings_import():
 
 def test_database_is_mysql_utf8mb4():
     db = settings.DATABASES["default"]
-    assert db["ENGINE"] == "django.db.backends.mysql"
+    from django.db import connections
+    from django.db.backends.mysql.base import DatabaseWrapper
+
+    assert isinstance(connections["default"], DatabaseWrapper)
     assert db["OPTIONS"]["charset"] == "utf8mb4"
     assert "INNODB" in db["OPTIONS"]["init_command"].upper()
 

@@ -18,6 +18,7 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
       - --default-storage-engine=InnoDB
+      - --log-bin-trust-function-creators=ON
     environment:
       MYSQL_DATABASE: "${MYSQL_DATABASE:?Set MYSQL_DATABASE in deploy/.env.staging}"
       MYSQL_USER: "${MYSQL_USER:?Set MYSQL_USER in deploy/.env.staging}"
@@ -25,6 +26,7 @@ services:
       MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in deploy/.env.staging}"
     volumes:
       - dbdata:/var/lib/mysql
+      - ./init-service-schemas.sh:/docker-entrypoint-initdb.d/20-service-schemas.sh:ro
     networks:
       - database
     healthcheck:
@@ -274,7 +276,7 @@ services:
       # Shared schema, exclusive writer (ADR-P3-013): the ledger maps Django's
       # tables and is their only writer. Django owns the DDL, so create_all is
       # skipped and migrations remain the single schema authority.
-      MYSQL_DATABASE_INVENTORY: "${MYSQL_DATABASE:?Set MYSQL_DATABASE in deploy/.env.staging}"
+      MYSQL_DATABASE_INVENTORY: "${MYSQL_SCHEMA_CATALOG:-db_catalog}"
       SKIP_CREATE_ALL: "1"
       INVENTORY_SERVICE_TOKEN: "${INVENTORY_SERVICE_TOKEN:?Set INVENTORY_SERVICE_TOKEN in deploy/.env.staging}"
     depends_on:

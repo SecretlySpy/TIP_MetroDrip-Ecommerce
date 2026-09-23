@@ -115,12 +115,12 @@
         {% for item in order.items.all %}
           <tr>
             <td>
-              {{ item.variant.product.name }}<br>
+              {{ item.product_name_snapshot }}<br>
               <span style="color: var(--muted); font-size: 11px;">
-                {{ item.variant.get_size_display }} / {{ item.variant.color }} / {{ item.variant.get_fit_display }}
+                {{ item.get_size_display }} / {{ item.color_snapshot }} / {{ item.get_fit_display }}
               </span>
             </td>
-            <td>{{ item.variant.sku }}</td>
+            <td>{{ item.sku_snapshot }}</td>
             <td class="right">{{ item.qty }}</td>
             <td class="right">{{ item.unit_price_snapshot|centavos_to_peso }}</td>
             {# line_total is computed in Python — templates cannot multiply money safely. #}

@@ -105,7 +105,7 @@ def profile_view(request):
         return redirect("accounts:profile")
 
     orders = Order.objects.filter(customer=request.user).order_by("-created_at")[:5]
-    wishlist = WishlistItem.objects.filter(customer=request.user).select_related(
+    wishlist = WishlistItem.objects.filter(customer=request.user).prefetch_related(
         "product", "product__category"
     )
     return render(

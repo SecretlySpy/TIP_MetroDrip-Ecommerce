@@ -175,7 +175,7 @@ def test_password_plus_a_valid_token_signs_in(client, enrolled_merchant, real_ca
         reverse("merchant:login"),
         {"username": "merchant@test.local", "password": PASSWORD, "otp_token": token},
     )
-    assert response.status_code == 302
+    assert response.status_code == 302, response.context["form"].errors
     assert response.wsgi_request.user.is_authenticated
 
 
