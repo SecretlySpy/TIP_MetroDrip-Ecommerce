@@ -914,3 +914,24 @@ The plan was not careless — it cited real file paths and real ADR numbers. It 
 - **Alternatives considered:** Publishing from a branch was rejected because it reintroduces a second generated source tree. Uploading the repository root was rejected because it unnecessarily broadens the public artifact. Disabling import resolution would hide real alias mistakes. Trusting Expo's cache was rejected because fresh CI runners never share that state.
 - **Consequences:** A Pages deploy cannot accidentally expose ordinary repository files and fails on missing or unsafe local asset references. Deployment permission exists only in the job that uses it. Mobile lint is slightly slower but deterministic across developer and clean CI environments. Repository administrators must leave Pages Source set to GitHub Actions; no secret or publication branch is required.
 - **Verification / review trigger:** Run `pytest tests/test_guide_structure.py tests/test_pages_build.py`, build into a fresh directory, inspect its file inventory, run `npm ci && npm run lint`, validate both workflow YAML files, and confirm the deployed Pages URL after changes to the guide, asset policy, ESLint dependency graph, or Actions versions.
+
+## ADR-DB-001 — Implement the five logical schemas requested for Figma alignment
+
+- **Status:** Implemented on `codex/align-five-schema-erd`; deployment pending PR gates.
+- **Authority:** The repository owner explicitly requested five logical schemas,
+  Figma reference semantics, complete order snapshots and the missing ERD entities.
+  This supersedes ADR-P3-013's decision to defer the logical split.
+- **Decision:** Route Identity, Catalog, Orders, Fulfillment and Content to five
+  MySQL databases. Keep real keys within an owner; indexed cross-owner REF IDs
+  use application protection and durable lifecycle cleanup. Keep migrations as
+  the single DDL authority for Django and SQLAlchemy.
+- **History:** Freeze item identity/options/images/quantity/price and record legacy
+  snapshot provenance. Add MySQL guards against rewriting snapshots/audit history.
+- **Transactions:** Orders commits payment/refund intent to its outbox before stock
+  delivery. Catalog owns row locks, idempotency and bounded restoration of sold
+  stock. No distributed atomicity or five independent deployments are claimed.
+- **Migration:** Maintenance-window copy with original PK/M2M retention, hashes,
+  count checks, ownership validation and an orphan detector. Source data is retained.
+  After target writes begin, rollback requires reconciliation/restore.
+- **Evidence and operations:** [Schema contract and cutover guide](docs/five-schema-alignment.md),
+  [progress](docs/five-schema-alignment-progress.md), and PR #4.

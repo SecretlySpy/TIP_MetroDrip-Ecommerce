@@ -30,9 +30,9 @@ class EmailSmsNotificationProvider(NotificationProvider):
             return False
 
         lines = [
-            f"  {item.qty} × {item.variant.product.name} ({item.variant.sku}) — "
+            f"  {item.qty} × {item.product_name_snapshot} ({item.sku_snapshot}) — "
             f"{format_centavos(item.unit_price_snapshot * item.qty)}"
-            for item in order.items.select_related("variant__product")
+            for item in order.items.all()
         ]
         body = (
             f"Thanks for your order!\n\n"

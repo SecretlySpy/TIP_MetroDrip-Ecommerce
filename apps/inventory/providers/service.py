@@ -232,7 +232,7 @@ class ServiceInventoryProvider(InventoryProvider):
                 "POST",
                 f"{_base_url()}{ROUTE_COMMIT.format(checkout_id=checkout_id)}",
                 policy=_IN_TXN_WRITE_POLICY if inside_transaction else _WRITE_POLICY,
-                json=CommitRequest(order_no=order_no or "").model_dump(),
+                json=CommitRequest(order_no=order_no or "", order_ref=order_id).model_dump(),
                 service_token=_service_token(),
                 token_setting_name="INVENTORY_SERVICE_TOKEN",
                 idempotency_key=f"{checkout_id}:commit",
@@ -273,6 +273,17 @@ class ServiceInventoryProvider(InventoryProvider):
             "use commit_holds(checkout_id=...)."
         )
 
+    def restore_order_stock(self, *, order, lines):
+        # Each line has a stable provider idempotency key. A partial remote
+        # delivery is safe to retry; no line can be restored twice.
+        for line in sorted(lines, key=lambda item: item["variant_id"]):
+            self.adjust_stock(
+                variant_id=line["variant_id"],
+                delta=line["qty"],
+                reason="return",
+                ref_order=order,
+            )
+
     def adjust_stock(self, *, variant_id, delta, reason, ref_order=None, ref_order_no=""):
         """Apply a non-sale physical stock change through the ledger.
 
@@ -288,6 +299,7 @@ class ServiceInventoryProvider(InventoryProvider):
             delta=delta,
             reason=str(reason),
             ref_order_no=order_no,
+            ref_order_ref=getattr(ref_order, "pk", None),
         )
         # The key is derived from the request itself: an adjustment has no
         # natural client-side id, and a retry of the *same* adjustment must not

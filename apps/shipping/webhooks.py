@@ -83,7 +83,7 @@ def courier_webhook(request):
         return HttpResponse(status=200)
 
     try:
-        shipment = Shipment.objects.select_related("order").get(waybill_no=waybill)
+        shipment = Shipment.objects.prefetch_related("order").get(waybill_no=waybill)
     except Shipment.DoesNotExist:
         # Acknowledge to stop retry storms; surface for reconciliation.
         logger.error("Courier webhook: unknown waybill %s", waybill)

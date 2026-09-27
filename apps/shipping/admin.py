@@ -13,6 +13,7 @@ owner can enter tracking numbers even without J&T API integration.
 
 from django.contrib import admin
 
+from apps.core.admin import ServiceReferenceAdminMixin
 from config.consoles import merchant_site
 
 from .models import Shipment, ShippingZone
@@ -38,7 +39,7 @@ class ShippingZoneAdmin(admin.ModelAdmin):
 
 
 @admin.register(Shipment, site=merchant_site)
-class ShipmentAdmin(admin.ModelAdmin):
+class ShipmentAdmin(ServiceReferenceAdminMixin, admin.ModelAdmin):
     list_display = ("order", "courier", "waybill_no", "status", "booked_at")
     list_filter = ("courier", "status")
     search_fields = ("order__order_no", "waybill_no")

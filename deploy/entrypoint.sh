@@ -22,7 +22,11 @@ python manage.py collectstatic --noinput
 
 # Apply schema changes before traffic reaches the new application process. This
 # deployment intentionally permits one app replica only, avoiding migration races.
-python manage.py migrate --noinput
+if [ "${DATABASE_LAYOUT:-five}" = "five" ]; then
+  python manage.py migrate_service_schemas
+else
+  python manage.py migrate --noinput
+fi
 
 # Demo data is an explicit staging-only opt-in. The command itself is idempotent,
 # but no value other than the exact string "1" is allowed to trigger data writes.

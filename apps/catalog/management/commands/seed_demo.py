@@ -4,7 +4,7 @@ from django.conf import settings
 from django.contrib.flatpages.models import FlatPage
 from django.contrib.sites.models import Site
 from django.core.management.base import BaseCommand
-from django.db import transaction
+from django.db import router, transaction
 
 from apps.catalog.models import Category, Fit, Product, ProductVariant, Size
 from apps.cms.models import HomepageBanner
@@ -590,7 +590,7 @@ class Command(BaseCommand):
 
         # One transaction prevents a partially seeded catalog or a stock balance
         # without its matching audit entry if any later row fails to persist.
-        with transaction.atomic():
+        with transaction.atomic(using=router.db_for_write(ProductVariant)):
             for product_seed in product_seeds:
                 # Stable category slugs make reruns update descriptive seed fields
                 # while preserving the same database identity.

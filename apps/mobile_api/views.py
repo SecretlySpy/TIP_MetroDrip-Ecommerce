@@ -510,17 +510,17 @@ def _order_payload(order, *, include_items=True):
     if include_items:
         payload["items"] = [
             {
-                "product_name": item.variant.product.name,
-                "product_slug": item.variant.product.slug,
-                "sku": item.variant.sku,
-                "size": item.variant.size,
-                "color": item.variant.color,
-                "fit": item.variant.fit,
+                "product_name": item.product_name_snapshot,
+                "product_slug": item.product_slug_snapshot,
+                "sku": item.sku_snapshot,
+                "size": item.size_snapshot,
+                "color": item.color_snapshot,
+                "fit": item.fit_snapshot,
                 "qty": item.qty,
                 "unit_price": item.unit_price_snapshot,
                 "unit_price_display": format_centavos(item.unit_price_snapshot),
             }
-            for item in order.items.select_related("variant__product")
+            for item in order.items.all()
         ]
     return payload
 
@@ -531,8 +531,8 @@ class OrderListView(APIView):
     def get(self, request):
         orders = (
             Order.objects.filter(customer=request.user)
-            .prefetch_related("items__variant__product")
-            .select_related("shipment")
+            .prefetch_related("items")
+            .prefetch_related("shipment")
             .order_by("-created_at")[:50]
         )
         return Response({"results": [_order_payload(o, include_items=False) for o in orders]})
@@ -543,7 +543,7 @@ class OrderDetailView(APIView):
 
     def get(self, request, order_no):
         try:
-            order = Order.objects.prefetch_related("items__variant__product").get(
+            order = Order.objects.prefetch_related("items").get(
                 order_no=order_no, customer=request.user
             )
         except Order.DoesNotExist:
@@ -560,9 +560,7 @@ class OrderTrackView(APIView):
 
     def get(self, request, token):
         try:
-            order = Order.objects.prefetch_related("items__variant__product").get(
-                pk=Signer().unsign(token)
-            )
+            order = Order.objects.prefetch_related("items").get(pk=Signer().unsign(token))
         except (BadSignature, Order.DoesNotExist):
             return Response(
                 error_payload("not_found", "Order not found."), status=status.HTTP_404_NOT_FOUND
@@ -638,7 +636,7 @@ class WishlistView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        items = WishlistItem.objects.filter(customer=request.user).select_related(
+        items = WishlistItem.objects.filter(customer=request.user).prefetch_related(
             "product__category"
         )
         results = []
@@ -701,7 +699,7 @@ class ReviewCreateView(APIView):
             message = "You can only review items from delivered orders."
         elif not 1 <= rating <= 5:
             message = "Pick a rating from 1 to 5 stars."
-        elif not order.items.filter(variant__product=product).exists():
+        elif not order.items.filter(product_ref=product.pk).exists():
             message = "That product is not part of this order."
         else:
             Review.objects.update_or_create(
@@ -747,7 +745,7 @@ class NotificationListView(ListAPIView):
     serializer_class = NotificationSerializer
 
     def get_queryset(self):
-        return Notification.objects.filter(customer=self.request.user).select_related("order")
+        return Notification.objects.filter(customer=self.request.user).prefetch_related("order")
 
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)

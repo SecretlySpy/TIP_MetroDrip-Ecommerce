@@ -10,4 +10,6 @@ class PaymentsConfig(AppConfig):
         # @register_provider decorators and fills the registry — without this,
         # get_payment_provider() raises "Unknown payment provider". The names
         # are deliberately unused; do not "clean up" this import.
+        from apps.orders import refunds  # noqa: F401
+
         from .providers import paymongo, simulated  # noqa: F401
