@@ -6,9 +6,7 @@ lives here.
 """
 
 from django.db import models
-from django.db.models import Avg, Count, Max, Min, Q
-
-from apps.reviews.models import ReviewStatus
+from django.db.models import Count, Max, Min, Q
 
 from .models import Category, Product
 
@@ -43,19 +41,23 @@ def get_catalog_queryset(*, filters=None, sort=None, search=None):
             min_price=Min("variants__price_override", default=models.Value(None)),
             max_price=Max("variants__price_override", default=models.Value(None)),
             variant_count=Count("variants", distinct=True),
-            # Review stats (only approved reviews render publicly — M4.5 gate).
-            review_avg=Avg(
-                "reviews__rating",
-                filter=Q(reviews__status=ReviewStatus.APPROVED),
-            ),
-            review_count=Count(
-                "reviews",
-                filter=Q(reviews__status=ReviewStatus.APPROVED),
-                distinct=True,
-            ),
-            # Popularity = total units sold across all variants via order items.
-            total_sold=Count("variants__order_items", distinct=True),
         )
+    )
+
+    # Owner APIs return grouped values; no SQL crosses service schemas.
+    from apps.orders.read_api import product_sales
+    from apps.reviews.read_api import product_statistics
+
+    stats = product_statistics()
+    sold = product_sales()
+    qs = qs.annotate(
+        review_avg=_metric_case(
+            {key: value["average"] for key, value in stats.items()}, models.FloatField(), None
+        ),
+        review_count=_metric_case(
+            {key: value["count"] for key, value in stats.items()}, models.IntegerField(), 0
+        ),
+        total_sold=_metric_case(sold, models.IntegerField(), 0),
     )
 
     # --- Filters ---
@@ -200,17 +202,6 @@ def get_product_detail(slug):
         product = (
             Product.objects.filter(is_active=True, slug=slug)
             .select_related("category")
-            .annotate(
-                review_avg=Avg(
-                    "reviews__rating",
-                    filter=Q(reviews__status=ReviewStatus.APPROVED),
-                ),
-                review_count=Count(
-                    "reviews",
-                    filter=Q(reviews__status=ReviewStatus.APPROVED),
-                    distinct=True,
-                ),
-            )
             .prefetch_related(
                 models.Prefetch(
                     "variants",
@@ -220,20 +211,26 @@ def get_product_detail(slug):
                         )
                     ),
                 ),
-                models.Prefetch(
-                    "reviews",
-                    queryset=(
-                        Product.reviews.rel.related_model.objects.filter(
-                            status=ReviewStatus.APPROVED
-                        )
-                        .select_related("customer")
-                        .order_by("-created_at")
-                    ),
-                    to_attr="approved_reviews",
-                ),
             )
             .get()
         )
     except Product.DoesNotExist:
         return None
+    from apps.reviews.read_api import approved_reviews, product_statistics
+
+    stats = product_statistics([product.pk]).get(product.pk, {"average": None, "count": 0})
+    product.review_avg = stats["average"]
+    product.review_count = stats["count"]
+    product.approved_reviews = approved_reviews(product.pk)
     return product
+
+
+def _metric_case(values, field, default):
+    """Compose local catalog annotations from owner-provided scalar data."""
+    if not values:
+        return models.Value(default, output_field=field)
+    return models.Case(
+        *(models.When(pk=key, then=models.Value(value)) for key, value in values.items()),
+        default=models.Value(default),
+        output_field=field,
+    )

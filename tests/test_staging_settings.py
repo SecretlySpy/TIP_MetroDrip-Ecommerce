@@ -82,7 +82,7 @@ def test_staging_settings_parse_valid_environment_and_keep_https_enabled():
     assert parsed == {
         "allowed_hosts": ["staging.example.test", "health.example.test"],
         "csrf_origins": ["https://staging.example.test"],
-        "database": "metrodrip_staging_test",
+        "database": "db_orders",
         "port": "3306",
         "staging_host": "staging.example.test",
         "preview": True,

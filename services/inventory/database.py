@@ -33,7 +33,7 @@ def build_database_url(database: str | None = None) -> str:
     password = os.environ.get("MYSQL_PASSWORD", "metrodrip")
     host = os.environ.get("MYSQL_HOST", "127.0.0.1")
     port = os.environ.get("MYSQL_PORT", "3306")
-    name = database or os.environ.get("MYSQL_DATABASE_INVENTORY", "metrodrip_inventory")
+    name = database or os.environ.get("MYSQL_DATABASE_INVENTORY", "db_catalog")
     return f"mysql+aiomysql://{user}:{password}@{host}:{port}/{name}?charset=utf8mb4"
 
 

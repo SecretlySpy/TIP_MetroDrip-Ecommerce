@@ -298,3 +298,21 @@ def test_low_stock_scan_reports_skus_not_bare_ids(any_provider):
 
     skus = {row.variant.sku for row in flagged}
     assert variant.sku in skus, f"expected {variant.sku} among {skus}"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_refund_preserves_order_refs_and_restores_only_once(any_provider):
+    from apps.inventory.services import restore_order_stock
+    from apps.orders.models import Order
+
+    variant = _variant(sku=f"PAR-REFUND-{any_provider}", qty_on_hand=10)
+    order = Order.objects.create(order_no=f"MD-REFUND-{any_provider}", subtotal=10000, total=10000)
+    checkout_id = f"par-refund-{any_provider}"
+    reserve_lines(checkout_id=checkout_id, lines=[{"variant_id": variant.pk, "qty": 2}])
+    commit_holds(checkout_id=checkout_id, order_no=order.order_no, order_id=order.pk)
+    assert Reservation.objects.get(checkout_id=checkout_id).order_id == order.pk
+    assert StockMovement.objects.get(variant=variant, reason="sale").ref_order_id == order.pk
+    restore_order_stock(order=order, lines=[{"variant_id": variant.pk, "qty": 2}])
+    restore_order_stock(order=order, lines=[{"variant_id": variant.pk, "qty": 2}])
+    assert StockRecord.objects.get(variant=variant).qty_on_hand == 10
+    assert StockMovement.objects.filter(variant=variant, reason="return").count() == 1

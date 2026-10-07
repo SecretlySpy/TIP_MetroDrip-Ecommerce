@@ -101,7 +101,11 @@ def live_ledger(db):
     without a real COMMIT every read returns empty and the test proves the
     opposite of what it claims.
     """
-    from django.db import connection
+    from django.db import connections, router
+
+    from apps.inventory.models import StockRecord
+
+    connection = connections[router.db_for_write(StockRecord)]
 
     from services.inventory import database
 
@@ -161,10 +165,14 @@ def ledger_process(db, settings):
     import time
 
     import requests as real_requests
-    from django.db import connection
+    from django.db import connections, router
+
+    from apps.inventory.models import StockRecord
+
+    connection = connections[router.db_for_write(StockRecord)]
 
     schema = connection.settings_dict["NAME"]
-    database = settings.DATABASES["default"]
+    database = connection.settings_dict
     port = _free_port()
     token = "ledger-process-token"
 

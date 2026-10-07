@@ -104,6 +104,7 @@ def test_unknown_topic_is_dead_lettered_not_retried(topic_registry):
 
 
 @pytest.mark.django_db
+@pytest.mark.django_db(transaction=True, databases="__all__")
 def test_paid_order_enqueues_and_retires_its_stock_commit(client):
     """The happy path still moves stock synchronously and leaves no backlog."""
     from django.test import override_settings
